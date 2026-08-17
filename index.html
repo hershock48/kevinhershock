@@ -736,7 +736,9 @@ let sweepMode = false, lastSweep = null, swept = [];
 const BROOM_CURSOR = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='30' height='30'><line x1='26' y1='3' x2='13' y2='19' stroke='%238a5a2b' stroke-width='3.6' stroke-linecap='round'/><path d='M13 19 L3 27 L9 28.5 L15.5 21.5 Z' fill='%23d9a44a'/><path d='M15.5 21.5 L9 28.5 L17 29 L18 22.5 Z' fill='%23c8923d'/><rect x='11.6' y='17.6' width='7' height='4' rx='1.6' transform='rotate(40 15 19.5)' fill='%23a06a2c'/></svg>") 5 27, auto`;
 
 function enableSweep() {
+  if (sweepMode) return;
   sweepMode = true;
+  glueActive = false;          // done collecting — the stragglers just fall
   document.body.style.cursor = BROOM_CURSOR;
 }
 
@@ -894,6 +896,9 @@ function explode() {
   buildGlue();
   glueActive = false;
   setTimeout(() => { glueActive = true; }, 1700);   // let the glitter fall a bit first
+  /* hand over the broom once the message is made — no need to wait
+     for every last flake to clear the screen */
+  setTimeout(() => { if (stuckCount > 0) enableSweep(); }, 5200);
 
   /* burst flash, then the room goes dark so the glitter can actually
      glint — the veil lifts as the storm passes, revealing the site */
