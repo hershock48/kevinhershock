@@ -407,10 +407,20 @@ function pumpSound() {
   osc.frequency.exponentialRampToValueAtTime(f * 1.08, t0 + 0.09);
   const g2 = ac.createGain();
   g2.gain.setValueAtTime(0.0001, t0);
-  g2.gain.exponentialRampToValueAtTime(0.085, t0 + 0.02);
-  g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.17);
+  g2.gain.exponentialRampToValueAtTime(0.22, t0 + 0.02);
+  g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.19);
   osc.connect(g2); g2.connect(ac.destination);
-  osc.start(t0); osc.stop(t0 + 0.18);
+  osc.start(t0); osc.stop(t0 + 0.2);
+  /* a quieter octave above for shine */
+  const osc2 = ac.createOscillator(); osc2.type = "sine";
+  osc2.frequency.setValueAtTime(f * 2, t0);
+  osc2.frequency.exponentialRampToValueAtTime(f * 2.16, t0 + 0.09);
+  const g3 = ac.createGain();
+  g3.gain.setValueAtTime(0.0001, t0);
+  g3.gain.exponentialRampToValueAtTime(0.09, t0 + 0.02);
+  g3.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+  osc2.connect(g3); g3.connect(ac.destination);
+  osc2.start(t0); osc2.stop(t0 + 0.17);
 }
 /* past working size: a rising tension drone that tightens toward the pop */
 let drone = null;
@@ -428,7 +438,7 @@ function updateDrone(over) {
     }
     drone.osc.frequency.setTargetAtTime(110 + over * 360, t, 0.08);
     drone.lp.frequency.setTargetAtTime(550 + over * 1500, t, 0.1);
-    drone.g.gain.setTargetAtTime(0.012 + over * 0.055, t, 0.12);
+    drone.g.gain.setTargetAtTime(0.022 + over * 0.115, t, 0.12);
   } else if (drone) {
     drone.g.gain.setTargetAtTime(0, t, 0.12);
   }
@@ -453,41 +463,71 @@ function squeakSound() {
 function popSound() {
   const ac = audio(); if (!ac) return;
   const t0 = ac.currentTime;
-  /* crack */
+  /* everything routes through a compressor so it can be LOUD without shredding */
+  const comp = ac.createDynamicsCompressor();
+  comp.threshold.value = -18; comp.ratio.value = 8;
+  comp.attack.value = 0.001; comp.release.value = 0.2;
+  comp.connect(ac.destination);
+  /* crack — the latex letting go */
   const s1 = ac.createBufferSource(); s1.buffer = noise(ac);
   const hp = ac.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 1500;
   const g1 = ac.createGain();
-  g1.gain.setValueAtTime(0.9, t0);
-  g1.gain.exponentialRampToValueAtTime(0.001, t0 + 0.05);
-  s1.connect(hp); hp.connect(g1); g1.connect(ac.destination);
-  s1.start(t0); s1.stop(t0 + 0.06);
-  /* body */
+  g1.gain.setValueAtTime(1.4, t0);
+  g1.gain.exponentialRampToValueAtTime(0.001, t0 + 0.06);
+  s1.connect(hp); hp.connect(g1); g1.connect(comp);
+  s1.start(t0); s1.stop(t0 + 0.07);
+  /* snap layer — a second, higher crack right on top */
+  const s3 = ac.createBufferSource(); s3.buffer = noise(ac);
+  const bp2 = ac.createBiquadFilter(); bp2.type = "bandpass"; bp2.frequency.value = 4200; bp2.Q.value = 1.2;
+  const g4 = ac.createGain();
+  g4.gain.setValueAtTime(1.2, t0);
+  g4.gain.exponentialRampToValueAtTime(0.001, t0 + 0.04);
+  s3.connect(bp2); bp2.connect(g4); g4.connect(comp);
+  s3.start(t0); s3.stop(t0 + 0.05);
+  /* body — the air getting out all at once */
   const s2 = ac.createBufferSource(); s2.buffer = noise(ac);
   const lp = ac.createBiquadFilter(); lp.type = "lowpass";
-  lp.frequency.setValueAtTime(3200, t0);
-  lp.frequency.exponentialRampToValueAtTime(120, t0 + 0.45);
+  lp.frequency.setValueAtTime(4200, t0);
+  lp.frequency.exponentialRampToValueAtTime(90, t0 + 0.7);
   const g2 = ac.createGain();
-  g2.gain.setValueAtTime(0.7, t0);
-  g2.gain.exponentialRampToValueAtTime(0.001, t0 + 0.5);
-  s2.connect(lp); lp.connect(g2); g2.connect(ac.destination);
-  s2.start(t0); s2.stop(t0 + 0.55);
-  /* thump */
+  g2.gain.setValueAtTime(1.1, t0);
+  g2.gain.exponentialRampToValueAtTime(0.001, t0 + 0.75);
+  s2.connect(lp); lp.connect(g2); g2.connect(comp);
+  s2.start(t0); s2.stop(t0 + 0.8);
+  /* impact punch */
+  const sq = ac.createOscillator(); sq.type = "square";
+  sq.frequency.setValueAtTime(150, t0);
+  sq.frequency.exponentialRampToValueAtTime(55, t0 + 0.09);
+  const g5 = ac.createGain();
+  g5.gain.setValueAtTime(0.5, t0);
+  g5.gain.exponentialRampToValueAtTime(0.001, t0 + 0.1);
+  sq.connect(g5); g5.connect(comp);
+  sq.start(t0); sq.stop(t0 + 0.11);
+  /* deep boom */
   const osc = ac.createOscillator(); osc.type = "sine";
-  osc.frequency.setValueAtTime(90, t0);
-  osc.frequency.exponentialRampToValueAtTime(45, t0 + 0.28);
+  osc.frequency.setValueAtTime(75, t0);
+  osc.frequency.exponentialRampToValueAtTime(30, t0 + 0.55);
   const g3 = ac.createGain();
-  g3.gain.setValueAtTime(0.5, t0);
-  g3.gain.exponentialRampToValueAtTime(0.001, t0 + 0.3);
-  osc.connect(g3); g3.connect(ac.destination);
-  osc.start(t0); osc.stop(t0 + 0.32);
+  g3.gain.setValueAtTime(1.0, t0);
+  g3.gain.exponentialRampToValueAtTime(0.001, t0 + 0.6);
+  osc.connect(g3); g3.connect(comp);
+  osc.start(t0); osc.stop(t0 + 0.62);
+  /* long rumble tail under the falling glitter */
+  const s4 = ac.createBufferSource(); s4.buffer = noise(ac);
+  const lp2 = ac.createBiquadFilter(); lp2.type = "lowpass"; lp2.frequency.value = 160;
+  const g6 = ac.createGain();
+  g6.gain.setValueAtTime(0.45, t0 + 0.05);
+  g6.gain.exponentialRampToValueAtTime(0.001, t0 + 1.4);
+  s4.connect(lp2); lp2.connect(g6); g6.connect(comp);
+  s4.start(t0 + 0.05); s4.stop(t0 + 1.45);
   /* glitter shimmer: a drift of tiny high pings while the curtain falls */
-  for (let i = 0; i < 28; i++) {
-    const at = t0 + 0.15 + Math.random() * 3.2;
+  for (let i = 0; i < 34; i++) {
+    const at = t0 + 0.15 + Math.random() * 3.4;
     const o = ac.createOscillator(); o.type = "sine";
     o.frequency.value = 2600 + Math.random() * 5400;
     const g = ac.createGain();
     g.gain.setValueAtTime(0.0001, at);
-    g.gain.exponentialRampToValueAtTime(0.022, at + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.035, at + 0.01);
     g.gain.exponentialRampToValueAtTime(0.0001, at + 0.28);
     o.connect(g); g.connect(ac.destination);
     o.start(at); o.stop(at + 0.3);
