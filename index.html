@@ -102,9 +102,15 @@
     position: fixed;
     z-index: 9;
     display: none;
-    cursor: pointer;
     transition: transform 1.1s ease;
   }
+  #screw {
+    position: fixed;
+    z-index: 9;
+    display: none;
+  }
+  #screwWheel { cursor: grab; }
+  #screwWheel.grabbing { cursor: grabbing; }
   #cork.out { animation: corkbob 2.4s ease-in-out infinite; }
   @keyframes corkbob {
     0%, 100% { transform: translateY(0); }
@@ -178,10 +184,27 @@
 </div>
 <div id="cork">
   <svg width="34" height="42" viewBox="0 0 34 42">
-    <path d="M8 40 L5 10 Q5 4 17 4 Q29 4 29 10 L26 40 Q26 42 17 42 Q8 42 8 40 Z" fill="#c9a36a" stroke="#8f7146" stroke-width="2"/>
-    <ellipse cx="17" cy="8" rx="12" ry="4" fill="#b8925c"/>
-    <line x1="10" y1="16" x2="11" y2="34" stroke="#8f7146" stroke-width="1.4" opacity="0.6"/>
-    <line x1="22" y1="14" x2="21" y2="35" stroke="#8f7146" stroke-width="1.4" opacity="0.6"/>
+    <path d="M8 40 L5 10 Q5 4 17 4 Q29 4 29 10 L26 40 Q26 42 17 42 Q8 42 8 40 Z" fill="#a87947" stroke="#6e4b28" stroke-width="2"/>
+    <ellipse cx="17" cy="8" rx="12" ry="4" fill="#936538"/>
+    <line x1="10" y1="16" x2="11" y2="34" stroke="#6e4b28" stroke-width="1.4" opacity="0.7"/>
+    <line x1="22" y1="14" x2="21" y2="35" stroke="#6e4b28" stroke-width="1.4" opacity="0.7"/>
+    <circle cx="14" cy="24" r="1.3" fill="#7d5730"/>
+    <circle cx="20" cy="30" r="1" fill="#7d5730"/>
+  </svg>
+</div>
+<div id="screw">
+  <svg width="90" height="160" viewBox="0 0 90 160">
+    <g id="screwWheel" style="transform-origin: 45px 22px;">
+      <circle cx="45" cy="22" r="26" fill="rgba(0,0,0,0)"/>
+      <circle cx="45" cy="22" r="18" fill="none" stroke="#c0392b" stroke-width="6"/>
+      <line x1="27" y1="22" x2="63" y2="22" stroke="#c0392b" stroke-width="4.5" stroke-linecap="round"/>
+      <line x1="45" y1="4" x2="45" y2="40" stroke="#c0392b" stroke-width="4.5" stroke-linecap="round"/>
+      <circle cx="45" cy="22" r="5" fill="#96281b"/>
+    </g>
+    <rect x="39" y="42" width="12" height="12" rx="2" fill="#5f6468"/>
+    <rect x="42" y="52" width="6" height="44" rx="2" fill="#8d9296"/>
+    <path d="M45 96 L37 103 L53 110 L37 117 L53 124 L37 131 L53 138 L44 145 L45 153"
+          fill="none" stroke="#b9bec4" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>
 </div>
 <div id="flash"></div>
@@ -695,7 +718,7 @@ function frame(now) {
   }
 
   tickParticles(dt);
-  if (tapShown) { waterStep(dt); waterDraw(); }
+  if (tapShown) { waterStep(dt); waterDraw(); updateScrew(dt); }
   requestAnimationFrame(frame);
 }
 
@@ -1572,6 +1595,27 @@ function waterDraw() {
       ctx.arc(b.x + Math.sin(b.ph) * b.w * 3, b.y, b.r, 0, Math.PI * 2);
       ctx.stroke();
     }
+
+    /* the quote, written down the wall, readable only underwater —
+       the rising water finds the "e" first and climbs the sentence */
+    const QUOTE = "Proster says patience is a virtue";
+    const rows = QUOTE.length;
+    const rowH = Math.min(30, (H - 90) / rows);
+    const qx = Math.max(70, W * 0.13);
+    ctx.font = `italic ${Math.round(rowH * 0.8)}px Georgia, "Times New Roman", serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    for (let i = 0; i < rows; i++) {
+      const q = QUOTE[i];
+      if (q === " ") continue;
+      const qy = 55 + rowH / 2 + i * rowH;
+      const depth = qy - surfaceY(qx, level, agit);
+      if (depth <= 0) continue;
+      ctx.globalAlpha = Math.min(0.9, depth / 45);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(q, qx + Math.sin(wT * 1.2 + qy * 0.045) * 2, qy);
+    }
+    ctx.globalAlpha = 1;
   }
   /* droplets */
   ctx.fillStyle = "rgba(190,225,250,0.85)";
@@ -1613,12 +1657,19 @@ function updateKey(dt) {
   keyEl.style.transform = `rotate(${Math.sin(wT * 1.7) * 14}deg)`;
 }
 
+/* the dot covers the whole screen at this stage, so a body-only cursor
+   never shows — set it on everything that can sit under the pointer */
+function setGlobalCursor(c) {
+  document.body.style.cursor = c;
+  dotEl.style.cursor = c || "default";
+}
+
 keyEl.addEventListener("pointerdown", (e) => {
   e.preventDefault();
   if (keyState !== "floating" && keyState !== "atTop") return;
   keyState = "held";
   keyEl.style.display = "none";
-  document.body.style.cursor = KEY_CURSOR;
+  setGlobalCursor(KEY_CURSOR);
 });
 
 function thunkSound() {
@@ -1656,7 +1707,7 @@ chestEl.addEventListener("pointerdown", () => {
   }
   /* the key fits */
   keyState = "used";
-  document.body.style.cursor = "";
+  setGlobalCursor("");
   chestOpen = true;
   tapSqueak();                              // old hinges
   chestEl.classList.add("open");
@@ -1670,28 +1721,99 @@ chestEl.addEventListener("pointerdown", () => {
       corkEl.style.transform = "translateY(-46px)";
       setTimeout(() => corkEl.classList.add("out"), 1150);
     });
+    setTimeout(startScrew, 2400);
   }, 1000);
 });
 
-corkEl.addEventListener("pointerdown", () => {
-  if (!corkOut || drainOpen) return;
-  drainOpen = true;
-  corkPopSound();
-  corkEl.style.transition = "transform 0.9s ease, opacity 0.9s ease";
-  corkEl.style.transform = "translateY(-220px) rotate(160deg)";
-  corkEl.style.opacity = "0";
-  setTimeout(() => { corkEl.style.display = "none"; }, 950);
-  /* the gurgle */
-  const ac = audio();
-  if (ac) {
-    const src = ac.createBufferSource(); src.buffer = noise(ac); src.loop = true;
-    const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 1.6;
-    const g = ac.createGain(); g.gain.value = 0.16;
-    src.connect(bp); bp.connect(g); g.connect(ac.destination);
-    src.start();
-    gurgle = { src, bp, g };
+/* ---- the spigot becomes a corkscrew ---- */
+const screwEl = document.getElementById("screw");
+const screwWheelEl = document.getElementById("screwWheel");
+let screwState = "none", screwY = 0, screwTargetY = 0, screwSpin = 0;
+let extractDeg = 0, screwDrag = null;
+
+function startScrew() {
+  if (screwState !== "none") return;
+  screwState = "descending";
+  valveFlow = 0; tapRot = 0;                 // the tap gives itself up
+  tapEl.classList.remove("on");              // and fades away
+  corkEl.classList.remove("out");            // hold still, this won't hurt
+  corkEl.style.transition = "none";
+  corkEl.style.transform = "translateY(-46px)";
+  screwTargetY = window.innerHeight - 290;
+  screwY = -180;
+  screwEl.style.left = (window.innerWidth / 2 - 45) + "px";
+  screwEl.style.top = screwY + "px";
+  screwEl.style.display = "block";
+}
+
+function updateScrew(dt) {
+  if (screwState === "descending") {
+    screwY += 150 * dt;
+    screwSpin += 300 * dt;                   // it screws its way down
+    if (screwY >= screwTargetY) {
+      screwY = screwTargetY;
+      screwState = "in";
+      thunkSound();                          // bit into the cork
+    }
+    screwEl.style.top = screwY + "px";
+    screwWheelEl.setAttribute("transform", `rotate(${screwSpin} 45 22)`);
+  } else if (screwState === "in") {
+    const ext = Math.min(1, extractDeg / 720);
+    screwEl.style.top = (screwTargetY - ext * 26) + "px";
+    corkEl.style.transform = `translateY(${-46 - ext * 26}px)`;
+    screwWheelEl.setAttribute("transform", `rotate(${screwSpin + extractDeg} 45 22)`);
+    if (ext >= 1) {
+      screwState = "done";
+      corkPopSound();
+      drainOpen = true;
+      startGurgle();
+      screwEl.style.transition = "top 0.5s ease, opacity 1.2s ease 0.9s";
+      screwEl.style.top = (screwTargetY - 150) + "px";
+      screwEl.style.opacity = "0";
+      corkEl.style.transition = "transform 0.5s ease, opacity 1.2s ease 0.9s";
+      corkEl.style.transform = "translateY(-190px) rotate(40deg)";
+      corkEl.style.opacity = "0";
+      setTimeout(() => { screwEl.style.display = "none"; corkEl.style.display = "none"; }, 2300);
+    }
   }
+}
+
+/* twist the corkscrew to pull the cork */
+screwWheelEl.addEventListener("pointerdown", (e) => {
+  if (screwState !== "in") return;
+  e.preventDefault();
+  screwWheelEl.setPointerCapture(e.pointerId);
+  screwWheelEl.classList.add("grabbing");
+  const r = screwWheelEl.getBoundingClientRect();
+  screwDrag = {
+    cx: r.left + r.width / 2, cy: r.top + r.height / 2,
+    last: Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)),
+  };
 });
+screwWheelEl.addEventListener("pointermove", (e) => {
+  if (!screwDrag || screwState !== "in") return;
+  const a = Math.atan2(e.clientY - screwDrag.cy, e.clientX - screwDrag.cx);
+  let d = a - screwDrag.last;
+  if (d > Math.PI) d -= Math.PI * 2;
+  if (d < -Math.PI) d += Math.PI * 2;
+  screwDrag.last = a;
+  const before = extractDeg;
+  extractDeg = Math.min(720, extractDeg + Math.abs(d) * 57.2958);
+  if (((before / 150) | 0) !== ((extractDeg / 150) | 0)) tapSqueak();
+});
+const endScrewDrag = () => { screwDrag = null; screwWheelEl.classList.remove("grabbing"); };
+screwWheelEl.addEventListener("pointerup", endScrewDrag);
+screwWheelEl.addEventListener("pointercancel", endScrewDrag);
+
+function startGurgle() {
+  const ac = audio(); if (!ac) return;
+  const src = ac.createBufferSource(); src.buffer = noise(ac); src.loop = true;
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 1.6;
+  const g = ac.createGain(); g.gain.value = 0.16;
+  src.connect(bp); bp.connect(g); g.connect(ac.destination);
+  src.start();
+  gurgle = { src, bp, g };
+}
 
 /* ================= boot ================= */
 function boot() {
