@@ -387,21 +387,57 @@ function noise(ac) {
 function pumpSound() {
   const ac = audio(); if (!ac) return;
   const t0 = ac.currentTime;
+  /* the sound climbs with the air: every pump sits a little higher than
+     the last, so you can hear yourself going somewhere */
+  const level = Math.max(0, Math.min(1, inf / EXPLODE_AT));
   const src = ac.createBufferSource(); src.buffer = noise(ac);
   const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 0.8;
-  bp.frequency.setValueAtTime(700, t0);
-  bp.frequency.exponentialRampToValueAtTime(220, t0 + 0.16);
+  bp.frequency.setValueAtTime(550 + 1150 * level, t0);
+  bp.frequency.exponentialRampToValueAtTime(240 + 520 * level, t0 + 0.16);
   const gn = ac.createGain();
   gn.gain.setValueAtTime(0.0001, t0);
-  gn.gain.exponentialRampToValueAtTime(0.4, t0 + 0.035);
+  gn.gain.exponentialRampToValueAtTime(0.34 + 0.16 * level, t0 + 0.035);
   gn.gain.exponentialRampToValueAtTime(0.001, t0 + 0.18);
   src.connect(bp); bp.connect(gn); gn.connect(ac.destination);
   src.start(t0); src.stop(t0 + 0.2);
+  /* a soft note under the whoosh, walking up an octave ladder */
+  const f = 175 * Math.pow(2, level * 2.5);
+  const osc = ac.createOscillator(); osc.type = "triangle";
+  osc.frequency.setValueAtTime(f, t0);
+  osc.frequency.exponentialRampToValueAtTime(f * 1.08, t0 + 0.09);
+  const g2 = ac.createGain();
+  g2.gain.setValueAtTime(0.0001, t0);
+  g2.gain.exponentialRampToValueAtTime(0.085, t0 + 0.02);
+  g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.17);
+  osc.connect(g2); g2.connect(ac.destination);
+  osc.start(t0); osc.stop(t0 + 0.18);
+}
+/* past working size: a rising tension drone that tightens toward the pop */
+let drone = null;
+function updateDrone(over) {
+  if (!AC) return;
+  const t = AC.currentTime;
+  if (over > 0.02 && !exploded) {
+    if (!drone) {
+      const osc = AC.createOscillator(); osc.type = "sawtooth";
+      const lp = AC.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 700;
+      const g = AC.createGain(); g.gain.value = 0;
+      osc.connect(lp); lp.connect(g); g.connect(AC.destination);
+      osc.start();
+      drone = { osc, lp, g };
+    }
+    drone.osc.frequency.setTargetAtTime(110 + over * 360, t, 0.08);
+    drone.lp.frequency.setTargetAtTime(550 + over * 1500, t, 0.1);
+    drone.g.gain.setTargetAtTime(0.012 + over * 0.055, t, 0.12);
+  } else if (drone) {
+    drone.g.gain.setTargetAtTime(0, t, 0.12);
+  }
 }
 function squeakSound() {
   const ac = audio(); if (!ac) return;
   const t0 = ac.currentTime;
-  const f0 = 260 + Math.random() * 320;
+  const over = Math.max(0, inf - 1);
+  const f0 = 240 + over * 520 + Math.random() * 180;
   const osc = ac.createOscillator(); osc.type = "sawtooth";
   osc.frequency.setValueAtTime(f0, t0);
   osc.frequency.linearRampToValueAtTime(f0 * 1.5, t0 + 0.07);
@@ -494,7 +530,7 @@ function frame(now) {
     if (inf < 0) { inf = 0; vel = 0; }
 
     if (inf >= EXPLODE_AT) { explode(); }
-    else { renderLetters(now); renderPump(dt); }
+    else { renderLetters(now); renderPump(dt); updateDrone(Math.max(0, inf - 1)); }
   }
 
   tickParticles(dt);
@@ -721,6 +757,10 @@ function svgToScreen(x, y) {
 
 function explode() {
   exploded = true;
+  if (drone && AC) {           // the tension snaps
+    drone.g.gain.cancelScheduledValues(AC.currentTime);
+    drone.g.gain.setTargetAtTime(0, AC.currentTime, 0.015);
+  }
   popSound();
   buildGlue();
   glueActive = false;
