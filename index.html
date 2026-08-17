@@ -21,7 +21,7 @@
     align-items: flex-start;
     justify-content: center;
     padding-top: 6vh;
-    transition: opacity 1.6s ease;
+    transition: opacity 1.4s ease;
   }
   #stage.gone { opacity: 0; pointer-events: none; }
   #heroSvg { width: 100%; height: auto; max-height: 88vh; display: block; }
@@ -35,11 +35,7 @@
   .arrowGrp { animation: bounce 0.9s ease-in-out infinite; }
   @keyframes bounce {
     0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(12px); }
-  }
-  .arrowTxt {
-    font-family: "Comic Sans MS", "Chalkboard SE", "Segoe Print", cursive;
-    font-weight: bold;
+    50% { transform: translateY(14px); }
   }
   .noselect { user-select: none; -webkit-user-select: none; }
 </style>
@@ -66,11 +62,27 @@ const LETTERS = {
   O: { w: 60, subs: ["M30 4 C7 4 7 96 30 96 C53 96 53 4 30 4 Z"] },
   C: { w: 54, subs: ["M46 15 C35 -1 10 8 10 50 C10 92 35 101 46 85"] },
 };
-const PALETTE = ["#ff4d6d","#ff9f1c","#ffd60a","#06d6a0","#118ab2","#9b5de5",
-                 "#ff70a6","#00bbf9","#ef476f","#8ac926","#f7b32b","#43bccd","#c77dff"];
-const NAME = "KEVIN HERSHOCK";
+const PALETTE = ["#e63950","#ff8c00","#ffcf00","#00b869","#0f7fb5","#8b46d9",
+                 "#ff5d9e","#00a8e8","#d92645","#6cb520","#e8a013","#2aa8b8","#a95fe0"];
 const SPACE_W = 34;
 const LETTER_GAP = 10;
+
+/* latex color helper: amt>0 lighten toward white, amt<0 darken */
+function shade(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  if (amt >= 0) { r += (255 - r) * amt; g += (255 - g) * amt; b += (255 - b) * amt; }
+  else { r *= 1 + amt; g *= 1 + amt; b *= 1 + amt; }
+  return `rgb(${r | 0},${g | 0},${b | 0})`;
+}
+function subEnds(d) {
+  const nums = d.match(/-?\d+(?:\.\d+)?/g).map(Number);
+  return {
+    sx: nums[0], sy: nums[1],
+    ex: nums[nums.length - 2], ey: nums[nums.length - 1],
+    closed: /z\s*$/i.test(d),
+  };
+}
 
 /* ================= state ================= */
 const PUMP_STEP = 0.085;        // air per pump
@@ -78,13 +90,13 @@ const EXPLODE_AT = 1.42;        // keep pumping past "full" -> boom
 const IDLE_MS = 950;            // stop pumping this long -> deflate
 const DECAY_PER_S = 0.30;       // deflate speed
 
-let target = 0;                 // where the air wants to be
-let inf = 0;                    // rendered inflation (springs toward target)
+let target = 0;
+let inf = 0;
 let vel = 0;
 let lastPump = -1e9;
 let exploded = false;
-let pumpPressT = 0;             // 0..1 handle press animation
-let letters = [];               // built per layout
+let pumpPressT = 0;
+let letters = [];
 let layoutW = 0, layoutH = 0;
 let heroSvg = null, pumpPlunger = null;
 const stage = document.getElementById("stage");
@@ -121,6 +133,15 @@ function buildSvg() {
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   svg.setAttribute("preserveAspectRatio", "xMidYMin meet");
 
+  const mkPath = (d, cap) => {
+    const p = document.createElementNS(NS, "path");
+    p.setAttribute("d", d);
+    p.setAttribute("fill", "none");
+    p.setAttribute("stroke-linecap", cap || "round");
+    p.setAttribute("stroke-linejoin", "round");
+    return p;
+  };
+
   letters = [];
   let ci = 0;
   lines.forEach((line, li) => {
@@ -131,40 +152,54 @@ function buildSvg() {
       const def = LETTERS[ch];
       const g = document.createElementNS(NS, "g");
       const color = PALETTE[ci % PALETTE.length];
-      const paths = [], glosses = [];
+
+      /* real twisting-balloon look, four layers per balloon segment:
+         1. dark rim (cylinder edge shadow)
+         2. main saturated latex
+         3. soft light tint, offset toward the light
+         4. hard white specular streak (the glossy shine line) */
+      const dark = [], main = [], tint = [], gloss = [];
       for (const d of def.subs) {
-        const p = document.createElementNS(NS, "path");
-        p.setAttribute("d", d);
-        p.setAttribute("fill", "none");
-        p.setAttribute("stroke", color);
-        p.setAttribute("stroke-linecap", "round");
-        p.setAttribute("stroke-linejoin", "round");
-        g.appendChild(p);
-        paths.push(p);
+        const p = mkPath(d); p.setAttribute("stroke", shade(color, -0.32));
+        g.appendChild(p); dark.push(p);
       }
       for (const d of def.subs) {
-        const p = document.createElementNS(NS, "path");
-        p.setAttribute("d", d);
-        p.setAttribute("fill", "none");
-        p.setAttribute("stroke", "#ffffff");
-        p.setAttribute("stroke-linecap", "round");
-        p.setAttribute("stroke-linejoin", "round");
-        p.setAttribute("opacity", "0");
-        g.appendChild(p);
-        glosses.push(p);
+        const p = mkPath(d);
+        g.appendChild(p); main.push(p);
       }
-      // knot: little tie-off at the base of the letter
+      for (const d of def.subs) {
+        const p = mkPath(d); p.setAttribute("stroke", shade(color, 0.34));
+        g.appendChild(p); tint.push(p);
+      }
+      for (const d of def.subs) {
+        const p = mkPath(d); p.setAttribute("stroke", "#ffffff");
+        g.appendChild(p); gloss.push(p);
+      }
+
+      /* knot where the balloon was tied + nubs at the tail ends */
+      const ends = def.subs.map(subEnds);
       const knot = document.createElementNS(NS, "circle");
-      knot.setAttribute("fill", color);
-      knot.setAttribute("cx", def.w / 2);
-      knot.setAttribute("cy", 99);
+      knot.setAttribute("fill", shade(color, -0.42));
+      knot.setAttribute("cx", ends[0].sx);
+      knot.setAttribute("cy", ends[0].sy);
       knot.setAttribute("r", 0);
       g.appendChild(knot);
+      const nubs = [];
+      for (const e of ends) {
+        if (e.closed) continue;
+        const nub = document.createElementNS(NS, "circle");
+        nub.setAttribute("fill", shade(color, -0.28));
+        nub.setAttribute("cx", e.ex);
+        nub.setAttribute("cy", e.ey);
+        nub.setAttribute("r", 0);
+        g.appendChild(nub);
+        nubs.push(nub);
+      }
 
       svg.appendChild(g);
-      const jitter = (Math.random() * 8 - 4);      // limp tilt when flat
-      const phase = Math.random() * Math.PI * 2;   // wobble phase
-      letters.push({ g, paths, glosses, knot, x, base, w: def.w, color, jitter, phase });
+      const jitter = (Math.random() * 8 - 4);
+      const phase = Math.random() * Math.PI * 2;
+      letters.push({ g, dark, main, tint, gloss, knot, nubs, x, base, w: def.w, color, jitter, phase });
       x += def.w + LETTER_GAP;
       ci++;
     }
@@ -177,15 +212,13 @@ function buildSvg() {
 }
 
 function buildPump(svg, NS, base, firstLetter) {
-  const px = 62;                 // pump center x
+  const px = 62;
   const ground = base + 8;
 
-  // hose: from pump base over to the first balloon's knot
-  const hx = firstLetter.x + firstLetter.w / 2;
-  const hy = firstLetter.base + 6;
+  const hy = firstLetter.base;
   const hose = document.createElementNS(NS, "path");
   hose.setAttribute("d",
-    `M${px + 38} ${ground - 6} C ${px + 80} ${ground + 14}, ${hx - 60} ${hy + 26}, ${hx} ${hy}`);
+    `M${px + 38} ${ground - 6} C ${px + 80} ${ground + 14}, ${firstLetter.x - 40} ${hy + 26}, ${firstLetter.x + 10} ${hy - 2}`);
   hose.setAttribute("fill", "none");
   hose.setAttribute("stroke", "#555");
   hose.setAttribute("stroke-width", "6");
@@ -194,14 +227,12 @@ function buildPump(svg, NS, base, firstLetter) {
 
   const pump = document.createElementNS(NS, "g");
 
-  // base plate
   const plate = document.createElementNS(NS, "rect");
   plate.setAttribute("x", px - 46); plate.setAttribute("y", ground - 10);
   plate.setAttribute("width", 92); plate.setAttribute("height", 12);
   plate.setAttribute("rx", 6); plate.setAttribute("fill", "#c0392b");
   pump.appendChild(plate);
 
-  // cylinder
   const cyl = document.createElementNS(NS, "rect");
   cyl.setAttribute("x", px - 20); cyl.setAttribute("y", ground - 90);
   cyl.setAttribute("width", 40); cyl.setAttribute("height", 82);
@@ -218,7 +249,6 @@ function buildPump(svg, NS, base, firstLetter) {
   collar.setAttribute("rx", 5); collar.setAttribute("fill", "#96281b");
   pump.appendChild(collar);
 
-  // plunger (rod + T-handle) — this part moves
   const plunger = document.createElementNS(NS, "g");
   const rod = document.createElementNS(NS, "rect");
   rod.setAttribute("x", px - 4); rod.setAttribute("y", ground - 138);
@@ -233,33 +263,24 @@ function buildPump(svg, NS, base, firstLetter) {
   pump.appendChild(plunger);
   pumpPlunger = { el: plunger, travel: 34 };
 
-  // bouncing arrow + note
+  /* bouncing arrow — no words. if they can't figure it out, they're not allowed in. */
   const arrowWrap = document.createElementNS(NS, "g");
   arrowWrap.setAttribute("class", "arrowGrp");
-  arrowWrap.setAttribute("style", `transform-origin: ${px + 52}px ${ground - 190}px;`);
   const arrow = document.createElementNS(NS, "path");
-  const ax = px, ay = ground - 196; // arrow tip zone above handle
+  const ax = px, ay = ground - 200;
   arrow.setAttribute("d",
-    `M${ax} ${ay} L${ax} ${ay + 26} M${ax - 11} ${ay + 15} L${ax} ${ay + 28} L${ax + 11} ${ay + 15}`);
+    `M${ax} ${ay} L${ax} ${ay + 30} M${ax - 13} ${ay + 17} L${ax} ${ay + 32} L${ax + 13} ${ay + 17}`);
   arrow.setAttribute("stroke", "#e74c3c");
-  arrow.setAttribute("stroke-width", "7");
+  arrow.setAttribute("stroke-width", "8");
   arrow.setAttribute("stroke-linecap", "round");
   arrow.setAttribute("stroke-linejoin", "round");
   arrow.setAttribute("fill", "none");
   arrowWrap.appendChild(arrow);
-  const note = document.createElementNS(NS, "text");
-  note.setAttribute("x", px + 58); note.setAttribute("y", ay + 14);
-  note.setAttribute("class", "arrowTxt");
-  note.setAttribute("font-size", "24");
-  note.setAttribute("fill", "#e74c3c");
-  note.textContent = "push my handle!";
-  arrowWrap.appendChild(note);
   pump.appendChild(arrowWrap);
 
-  // big invisible hit area
   const hit = document.createElementNS(NS, "rect");
   hit.setAttribute("x", px - 60); hit.setAttribute("y", ground - 165);
-  hit.setAttribute("width", 260); hit.setAttribute("height", 180);
+  hit.setAttribute("width", 200); hit.setAttribute("height", 180);
   hit.setAttribute("fill", "transparent");
   hit.setAttribute("class", "pumpHit");
   hit.addEventListener("pointerdown", doPump);
@@ -273,7 +294,7 @@ function doPump(e) {
   if (e) e.preventDefault();
   if (exploded) return;
   target += PUMP_STEP;
-  vel += 0.55;                  // a gulp of air
+  vel += 0.55;
   lastPump = performance.now();
   pumpPressT = 1;
 }
@@ -290,11 +311,9 @@ function frame(now) {
   prevT = now;
 
   if (!exploded) {
-    // idle deflation
     if (now - lastPump > IDLE_MS && target > 0) {
       target = Math.max(0, target - DECAY_PER_S * dt);
     }
-    // spring inf -> target (springy, slightly underdamped = jiggly balloons)
     const k = 60, damp = 8.5;
     vel += (target - inf) * k * dt;
     vel *= Math.exp(-damp * dt);
@@ -313,12 +332,9 @@ function renderLetters(now) {
   const p = Math.min(1, inf);
   const over = Math.max(0, inf - 1);
   const ep = easeOut(p);
-  const strokeW = 3 + 20 * ep + 13 * over;
-  const glossW = Math.max(1.5, strokeW * 0.24);
-  const glossOp = 0.55 * ep;
+  const W = 3 + 20 * ep + 13 * over;
 
   for (const L of letters) {
-    // squash: flat on the ground when deflated
     const sy = 0.09 + 0.91 * ep + over * 0.06;
     const sx = 1 + 0.14 * (1 - ep) + over * 0.05;
     const limp = L.jitter * (1 - ep);
@@ -328,13 +344,26 @@ function renderLetters(now) {
     const cx = L.x + L.w / 2, by = L.base;
     L.g.setAttribute("transform",
       `translate(${cx} ${by}) scale(${sx} ${sy}) rotate(${limp + wob}) translate(${-L.w / 2} -100)`);
-    for (const path of L.paths) path.setAttribute("stroke-width", strokeW);
-    L.glosses.forEach((gp) => {
-      gp.setAttribute("stroke-width", glossW);
-      gp.setAttribute("opacity", glossOp);
-      gp.setAttribute("transform", `translate(${-strokeW * 0.14} ${-strokeW * 0.18})`);
-    });
-    L.knot.setAttribute("r", 2 + 4 * ep);
+
+    /* uninflated latex reads darker & matte; inflated latex is bright & glossy */
+    const mainCol = shade(L.color, -0.20 * (1 - ep));
+    for (const el of L.dark) el.setAttribute("stroke-width", W);
+    for (const el of L.main) {
+      el.setAttribute("stroke-width", Math.max(1.5, W * 0.80));
+      el.setAttribute("stroke", mainCol);
+    }
+    for (const el of L.tint) {
+      el.setAttribute("stroke-width", Math.max(1, W * 0.42));
+      el.setAttribute("opacity", 0.15 + 0.75 * ep);
+      el.setAttribute("transform", `translate(${-W * 0.09} ${-W * 0.12})`);
+    }
+    for (const el of L.gloss) {
+      el.setAttribute("stroke-width", Math.max(0.8, W * 0.15));
+      el.setAttribute("opacity", 0.85 * ep);
+      el.setAttribute("transform", `translate(${-W * 0.17} ${-W * 0.21})`);
+    }
+    L.knot.setAttribute("r", 1.5 + 3.6 * ep);
+    for (const nub of L.nubs) nub.setAttribute("r", Math.max(0.8, W * 0.17));
   }
 }
 
@@ -367,7 +396,7 @@ function explode() {
   // balloon scraps burst from each letter
   for (const L of letters) {
     const c = svgToScreen(L.x + L.w / 2, L.base - 50);
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < 16; i++) {
       const a = Math.random() * Math.PI * 2;
       const sp = 220 + Math.random() * 420;
       parts.push({
@@ -381,35 +410,37 @@ function explode() {
     L.g.style.display = "none";
   }
 
-  // glitter curtain: born across the top, sweeps down the whole page
-  const W = window.innerWidth;
-  const GLITTER = ["#ffd700","#ffdf6b","#c0c0c0","#e8e8e8","#ff4d6d","#06d6a0",
-                  "#118ab2","#9b5de5","#ff70a6","#ffd60a","#00bbf9","#f7b32b"];
-  for (let i = 0; i < 950; i++) {
+  /* THE WALL. a screen-consuming curtain of glitter that pours down
+     and unveils the site as it passes. */
+  const W = window.innerWidth, H = window.innerHeight;
+  const COUNT = Math.min(12000, Math.max(3500, Math.round((W * H) / 95)));
+  const GLITTER = ["#ffd700","#ffdf6b","#f5c518","#e8e8e8","#c0c0c0","#ffffff",
+                  "#ff4d6d","#06d6a0","#118ab2","#9b5de5","#ff70a6","#ffd60a",
+                  "#00bbf9","#f7b32b","#7ef9ff","#ffb3f2"];
+  for (let i = 0; i < COUNT; i++) {
+    const sparkle = Math.random() < 0.22;   // 4-point star flashes
     parts.push({
-      kind: "glitter",
+      kind: sparkle ? "sparkle" : "glitter",
       x: Math.random() * W,
-      y: -20 - Math.random() * window.innerHeight * 0.9,
-      vx: (Math.random() - 0.5) * 40,
-      vy: 160 + Math.random() * 260,
-      sway: 20 + Math.random() * 50,
-      swayF: 2 + Math.random() * 4,
+      y: H * 0.1 - Math.random() * H * 2.6,  // deep band above the screen
+      vx: (Math.random() - 0.5) * 50,
+      vy: 380 + Math.random() * 340,
+      sway: 15 + Math.random() * 45,
+      swayF: 2 + Math.random() * 5,
       ph: Math.random() * Math.PI * 2,
-      rot: Math.random() * Math.PI * 2, vr: (Math.random() - 0.5) * 16,
-      s: 3 + Math.random() * 5,
+      twF: 6 + Math.random() * 9,            // twinkle speed
+      rot: Math.random() * Math.PI * 2, vr: (Math.random() - 0.5) * 18,
+      s: sparkle ? 4 + Math.random() * 8 : 2.5 + Math.random() * 5.5,
       color: GLITTER[(Math.random() * GLITTER.length) | 0],
-      life: 7,
+      life: 12,
     });
   }
 
-  // pump & remnants fade away under the glitter, revealing the (blank, for now) site
-  setTimeout(() => stage.classList.add("gone"), 500);
+  setTimeout(() => stage.classList.add("gone"), 400);
 }
 
-let elapsed = 0;
 function tickParticles(dt) {
-  if (!parts.length) { ctx.clearRect(0, 0, canvas.width, canvas.height); return; }
-  elapsed += dt;
+  if (!parts.length) { ctx.clearRect(0, 0, window.innerWidth, window.innerHeight); return; }
   ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
   const H = window.innerHeight;
   parts = parts.filter(pt => {
@@ -427,20 +458,35 @@ function tickParticles(dt) {
       ctx.ellipse(0, 0, pt.w, pt.h, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
-    } else {
-      pt.ph += pt.swayF * dt;
-      pt.x += (pt.vx + Math.sin(pt.ph) * pt.sway) * dt;
-      pt.y += pt.vy * dt;
-      pt.rot += pt.vr * dt;
-      if (pt.y > H + 30) return false;
-      ctx.save();
-      ctx.translate(pt.x, pt.y); ctx.rotate(pt.rot);
-      const tw = 0.55 + 0.45 * Math.sin(pt.ph * 3 + pt.x); // twinkle
-      ctx.globalAlpha = tw;
-      ctx.fillStyle = pt.color;
-      ctx.fillRect(-pt.s / 2, -pt.s / 2, pt.s, pt.s * 0.7);
-      ctx.restore();
+      return true;
     }
+    pt.ph += pt.swayF * dt;
+    pt.x += (pt.vx + Math.sin(pt.ph) * pt.sway) * dt;
+    pt.y += pt.vy * dt;
+    pt.rot += pt.vr * dt;
+    if (pt.y > H + 40) return false;
+    if (pt.y < -60) return true;             // not on screen yet, skip drawing
+    const tw = Math.sin(pt.ph * pt.twF * 0.35 + pt.x * 0.05);
+    ctx.save();
+    ctx.translate(pt.x, pt.y); ctx.rotate(pt.rot);
+    if (pt.kind === "sparkle") {
+      /* hard white-hot 4-point star with color core, flashing */
+      const flash = Math.pow(Math.abs(tw), 3);
+      ctx.globalAlpha = 0.25 + 0.75 * flash;
+      const s = pt.s * (0.7 + 0.6 * flash);
+      ctx.fillStyle = pt.color;
+      ctx.fillRect(-s / 2, -s * 0.13, s, s * 0.26);
+      ctx.fillRect(-s * 0.13, -s / 2, s * 0.26, s);
+      ctx.fillStyle = "#ffffff";
+      const c = s * 0.45;
+      ctx.fillRect(-c / 2, -c * 0.2, c, c * 0.4);
+      ctx.fillRect(-c * 0.2, -c / 2, c * 0.4, c);
+    } else {
+      ctx.globalAlpha = 0.45 + 0.55 * Math.abs(tw);
+      ctx.fillStyle = pt.color;
+      ctx.fillRect(-pt.s / 2, -pt.s / 2, pt.s, pt.s * 0.72);
+    }
+    ctx.restore();
     return true;
   });
 }
