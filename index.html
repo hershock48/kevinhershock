@@ -718,6 +718,78 @@ const glueCanvas = document.getElementById("glue");
 let scraps = [], buckets = [], glitterAlive = 0;
 let glueCtx = null, glueMask = null, glueW = 0, glueH = 0;
 let stuckPts = [], stuckCount = 0, glueActive = false;
+let sweepMode = false, lastSweep = null, swept = [];
+const BROOM_CURSOR = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='30' height='30'><line x1='26' y1='3' x2='13' y2='19' stroke='%238a5a2b' stroke-width='3.6' stroke-linecap='round'/><path d='M13 19 L3 27 L9 28.5 L15.5 21.5 Z' fill='%23d9a44a'/><path d='M15.5 21.5 L9 28.5 L17 29 L18 22.5 Z' fill='%23c8923d'/><rect x='11.6' y='17.6' width='7' height='4' rx='1.6' transform='rotate(40 15 19.5)' fill='%23a06a2c'/></svg>") 5 27, auto`;
+
+function enableSweep() {
+  sweepMode = true;
+  document.body.style.cursor = BROOM_CURSOR;
+}
+
+let lastSwish = 0;
+function sweepSwish(dist) {
+  if (!AC) return;
+  const nw = performance.now();
+  if (nw - lastSwish < 140 || dist < 6) return;
+  lastSwish = nw;
+  const t0 = AC.currentTime;
+  const s = AC.createBufferSource(); s.buffer = noise(AC);
+  const bp = AC.createBiquadFilter(); bp.type = "bandpass";
+  bp.frequency.value = 2400 + Math.random() * 800; bp.Q.value = 0.6;
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(0.06, t0 + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.14);
+  s.connect(bp); bp.connect(g); g.connect(AC.destination);
+  s.start(t0); s.stop(t0 + 0.15);
+}
+
+/* sweep the glitter off the writing */
+window.addEventListener("pointermove", (e) => {
+  if (!sweepMode || !glueCtx) return;
+  const x = e.clientX, y = e.clientY;
+  if (lastSweep) {
+    const dx = x - lastSweep.x, dy = y - lastSweep.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 0.5) {
+      glueCtx.globalCompositeOperation = "destination-out";
+      glueCtx.fillStyle = "#000";
+      const steps = Math.max(1, Math.min(12, (dist / 8) | 0));
+      for (let i = 0; i <= steps; i++) {
+        const px = lastSweep.x + dx * i / steps;
+        const py = lastSweep.y + dy * i / steps;
+        glueCtx.beginPath();
+        glueCtx.arc(px, py, 20, 0, Math.PI * 2);
+        glueCtx.fill();
+      }
+      glueCtx.globalCompositeOperation = "source-over";
+      /* fling the freed flakes in the direction of the stroke */
+      const keep = [];
+      let flung = 0;
+      const fvx = Math.max(-600, Math.min(600, dx * 15));
+      const fvy = Math.max(-600, Math.min(600, dy * 15));
+      for (const q of stuckPts) {
+        const ddx = q.x - x, ddy = q.y - y;
+        if (ddx * ddx + ddy * ddy < 900) {
+          if (flung < 26 && swept.length < 900) {
+            swept.push({
+              x: q.x, y: q.y,
+              vx: fvx + (Math.random() - 0.5) * 140,
+              vy: fvy - 40 - Math.random() * 90,
+              c: q.c, s: 1.6 + Math.random() * 2,
+              life: 0.9 + Math.random() * 0.5,
+            });
+            flung++;
+          }
+        } else keep.push(q);
+      }
+      stuckPts = keep;
+      if (!stuckPts.length) document.body.style.cursor = "";  // all clean
+      sweepSwish(dist);
+    }
+  }
+  lastSweep = { x, y };
+});
 const STUCK_MAX = 40000;
 
 /* the message, written in glue, waiting for the glitter to find it */
@@ -895,7 +967,7 @@ function explode() {
 
 function tickParticles(dt) {
   const W = window.innerWidth, H = window.innerHeight;
-  if (!scraps.length && !glitterAlive && !stuckPts.length) { ctx.clearRect(0, 0, W, H); return; }
+  if (!scraps.length && !glitterAlive && !stuckPts.length && !swept.length) { ctx.clearRect(0, 0, W, H); return; }
   ctx.clearRect(0, 0, W, H);
 
   /* latex scraps */
@@ -988,6 +1060,28 @@ function tickParticles(dt) {
   ctx.globalCompositeOperation = "source-over";
   ctx.globalAlpha = 1;
   glitterAlive = alive;
+
+  /* the storm is over and the message is made: hand them the broom */
+  if (exploded && !sweepMode && alive === 0 && stuckCount > 0) enableSweep();
+
+  /* freed flakes tumbling away from the broom */
+  if (swept.length) {
+    let w2 = 0;
+    for (let i = 0; i < swept.length; i++) {
+      const q = swept[i];
+      q.life -= dt;
+      if (q.life <= 0) continue;
+      q.vy += 900 * dt;
+      q.x += q.vx * dt; q.y += q.vy * dt;
+      q.vx *= 1 - Math.min(1, 2.5 * dt);
+      ctx.globalAlpha = Math.min(1, q.life * 1.4);
+      ctx.fillStyle = q.c;
+      ctx.fillRect(q.x - q.s / 2, q.y - q.s / 2, q.s, q.s * 0.8);
+      swept[w2++] = q;
+    }
+    swept.length = w2;
+    ctx.globalAlpha = 1;
+  }
 
   /* the glitter caught in the glue keeps catching the light forever */
   if (stuckPts.length) {
