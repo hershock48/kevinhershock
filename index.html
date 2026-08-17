@@ -977,15 +977,7 @@ function buildGlue() {
   glueMask = new Uint8Array(W * H);
   for (let i = 0; i < glueMask.length; i++) glueMask[i] = img[i * 4 + 3] > 60 ? 1 : 0;
 
-  /* the glue itself: a faint wet sheen, just visible once the room darkens */
-  glueCtx.font = m.font;
-  glueCtx.textAlign = "center"; glueCtx.textBaseline = "middle";
-  glueCtx.lineJoin = glueCtx.lineCap = "round";
-  glueCtx.strokeStyle = "rgba(200,205,215,0.045)";
-  glueCtx.lineWidth = size * 0.10;
-  glueCtx.strokeText(GLUE_TEXT, cx, cy);
-  glueCtx.fillStyle = "rgba(255,255,255,0.035)";
-  glueCtx.fillText(GLUE_TEXT, cx, cy);
+  /* no sheen, no hint — the glue is invisible until the glitter finds it */
 }
 
 /* a flake lands in the glue and becomes part of the art */
@@ -1026,7 +1018,7 @@ function explode() {
   popSound();
   buildGlue();
   glueActive = false;
-  setTimeout(() => { glueActive = true; }, 1700);   // let the glitter fall a bit first
+  setTimeout(() => { glueActive = true; }, 2300);   // let the glitter fall a while first
   /* hand over the broom once the message is made — no need to wait
      for every last flake to clear the screen */
   setTimeout(() => { if (stuckCount > 0) enableSweep(); }, 5200);
