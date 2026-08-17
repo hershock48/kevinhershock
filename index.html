@@ -31,6 +31,12 @@
     pointer-events: none;
     z-index: 10;
   }
+  #glue {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 7;
+  }
   #veil {
     position: fixed;
     inset: 0;
@@ -55,6 +61,7 @@
 <body>
 <div id="stage" class="noselect"></div>
 <div id="veil"></div>
+<canvas id="glue"></canvas>
 <canvas id="glitter"></canvas>
 <div id="flash"></div>
 
@@ -631,7 +638,74 @@ function renderPump(dt) {
    bucketed by material so the canvas can draw tens of thousands fast. */
 const canvas = document.getElementById("glitter");
 const ctx = canvas.getContext("2d");
+const glueCanvas = document.getElementById("glue");
 let scraps = [], buckets = [], glitterAlive = 0;
+let glueCtx = null, glueMask = null, glueW = 0, glueH = 0;
+let stuckPts = [], stuckCount = 0;
+const STUCK_MAX = 40000;
+
+/* the message, written in glue, waiting for the glitter to find it */
+const GLUE_TEXT = "fuck you";
+function buildGlue() {
+  const W = window.innerWidth, H = window.innerHeight;
+  glueW = W; glueH = H;
+  const dpr = Math.min(1.5, window.devicePixelRatio || 1);
+  glueCanvas.width = W * dpr;
+  glueCanvas.height = H * dpr;
+  glueCtx = glueCanvas.getContext("2d");
+  glueCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  /* offscreen pass to find every pixel of glue */
+  const mc = document.createElement("canvas");
+  mc.width = W; mc.height = H;
+  const m = mc.getContext("2d");
+  const fam = `"Segoe Script","Bradley Hand","Brush Script MT","Comic Sans MS",cursive`;
+  let size = Math.round(Math.min(H * 0.30, W * 0.28));
+  m.textAlign = "center"; m.textBaseline = "middle";
+  while (size > 40) {
+    m.font = `600 ${size}px ${fam}`;
+    if (m.measureText(GLUE_TEXT).width <= W * 0.78) break;
+    size -= 8;
+  }
+  const cx = W / 2, cy = H * 0.46;
+  m.lineJoin = m.lineCap = "round";
+  m.filter = "blur(2px)";                 // squeezed-from-the-bottle edges
+  m.strokeStyle = "#fff"; m.lineWidth = size * 0.10;
+  m.strokeText(GLUE_TEXT, cx, cy);
+  m.fillStyle = "#fff";
+  m.fillText(GLUE_TEXT, cx, cy);
+  m.filter = "none";
+  const img = m.getImageData(0, 0, W, H).data;
+  glueMask = new Uint8Array(W * H);
+  for (let i = 0; i < glueMask.length; i++) glueMask[i] = img[i * 4 + 3] > 60 ? 1 : 0;
+
+  /* the glue itself: a faint wet sheen, just visible once the room darkens */
+  glueCtx.font = m.font;
+  glueCtx.textAlign = "center"; glueCtx.textBaseline = "middle";
+  glueCtx.lineJoin = glueCtx.lineCap = "round";
+  glueCtx.strokeStyle = "rgba(200,205,215,0.13)";
+  glueCtx.lineWidth = size * 0.10;
+  glueCtx.strokeText(GLUE_TEXT, cx, cy);
+  glueCtx.fillStyle = "rgba(255,255,255,0.10)";
+  glueCtx.fillText(GLUE_TEXT, cx, cy);
+}
+
+/* a flake lands in the glue and becomes part of the art */
+function stickFlake(p, bucket) {
+  const s = p.s;
+  glueCtx.globalAlpha = 0.9;
+  glueCtx.fillStyle = bucket.dim;
+  glueCtx.fillRect(p.x - s / 2, p.y - s / 2, s * 0.9, s * 0.75);
+  if (Math.random() < 0.45) {
+    glueCtx.fillStyle = bucket.glint;
+    glueCtx.globalAlpha = 0.85;
+    const g = s * 0.5;
+    glueCtx.fillRect(p.x - g / 2, p.y - g / 2, g, g);
+  }
+  glueCtx.globalAlpha = 1;
+  if (stuckPts.length < 6000) stuckPts.push({ x: p.x, y: p.y, c: bucket.glint });
+  stuckCount++;
+}
 function sizeCanvas() {
   const dpr = Math.min(1.5, window.devicePixelRatio || 1);
   canvas.width = window.innerWidth * dpr;
@@ -648,6 +722,7 @@ function svgToScreen(x, y) {
 function explode() {
   exploded = true;
   popSound();
+  buildGlue();
 
   /* burst flash, then the room goes dark so the glitter can actually
      glint — the veil lifts as the storm passes, revealing the site */
@@ -738,7 +813,7 @@ function explode() {
 
 function tickParticles(dt) {
   const W = window.innerWidth, H = window.innerHeight;
-  if (!scraps.length && !glitterAlive) { ctx.clearRect(0, 0, W, H); return; }
+  if (!scraps.length && !glitterAlive && !stuckPts.length) { ctx.clearRect(0, 0, W, H); return; }
   ctx.clearRect(0, 0, W, H);
 
   /* latex scraps */
@@ -783,6 +858,14 @@ function tickParticles(dt) {
       if (p.vy < 160) p.vy += 500 * dt;
       p.vx *= 1 - Math.min(1, 1.6 * dt);
       if (p.life <= 0 || p.y > H + 30) continue;
+      /* glue check: flakes crossing the wet writing get caught in it */
+      if (glueMask && stuckCount < STUCK_MAX
+          && p.x > 0 && p.x < glueW && p.y > 0 && p.y < glueH
+          && glueMask[(p.y | 0) * glueW + (p.x | 0)]
+          && Math.random() < 0.06) {   /* low per-frame odds = even coat top to bottom */
+        stickFlake(p, bucket);
+        continue;
+      }
       arr[j++] = p;
       if (p.y < -30) continue;
       const c = Math.cos(p.phi);
@@ -822,6 +905,24 @@ function tickParticles(dt) {
   ctx.globalCompositeOperation = "source-over";
   ctx.globalAlpha = 1;
   glitterAlive = alive;
+
+  /* the glitter caught in the glue keeps catching the light forever */
+  if (stuckPts.length) {
+    ctx.globalCompositeOperation = "lighter";
+    const n = Math.max(6, (stuckPts.length * 0.004) | 0);
+    for (let i = 0; i < n; i++) {
+      const q = stuckPts[(Math.random() * stuckPts.length) | 0];
+      const a = Math.random();
+      if (a < 0.5) continue;
+      ctx.globalAlpha = (a - 0.5) * 1.6;
+      ctx.fillStyle = q.c;
+      const s = 1.5 + a * 3;
+      ctx.fillRect(q.x - s / 2, q.y - s * 0.14, s, s * 0.28);
+      ctx.fillRect(q.x - s * 0.14, q.y - s / 2, s * 0.28, s);
+    }
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 1;
+  }
 }
 
 /* ================= boot ================= */
