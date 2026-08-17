@@ -31,6 +31,16 @@
     pointer-events: none;
     z-index: 10;
   }
+  #goo {
+    position: fixed;
+    inset: 0;
+    z-index: 8;
+    opacity: 0;
+    transition: opacity 2.5s ease;
+    display: none;
+    pointer-events: none;
+  }
+  #goo.on { opacity: 1; }
   #glue {
     position: fixed;
     inset: 0;
@@ -138,6 +148,7 @@
 <canvas id="glue"></canvas>
 <canvas id="glitter"></canvas>
 <div id="dot"></div>
+<canvas id="goo"></canvas>
 <div id="tap">
   <svg width="140" height="120" viewBox="0 0 140 120">
     <rect x="63" y="0" width="14" height="48" rx="2" fill="#8d9296"/>
@@ -722,7 +733,7 @@ function frame(now) {
   }
 
   tickParticles(dt);
-  if (tapShown) { waterStep(dt); waterDraw(); updateScrew(dt); }
+  if (tapShown) { waterStep(dt); waterDraw(); updateScrew(dt); gooFrame(dt); }
   requestAnimationFrame(frame);
 }
 
@@ -1747,15 +1758,16 @@ chestEl.addEventListener("pointerdown", () => {
   chestEl.classList.add("open");
   setTimeout(() => {
     corkOut = true;
+    /* the cork is the plug: seated snug in the chest, clogging it up */
     const r = chestEl.getBoundingClientRect();
     corkEl.style.left = (r.left + r.width / 2 - 17) + "px";
     corkEl.style.top = (r.top + 8) + "px";
+    corkEl.style.transform = "translateY(2px)";
     corkEl.style.display = "block";
     requestAnimationFrame(() => {
-      corkEl.style.transform = "translateY(-46px)";
-      setTimeout(() => corkEl.classList.add("out"), 1150);
+      corkEl.style.transform = "translateY(-14px)";   // just peeking above the rim
     });
-    setTimeout(startScrew, 2400);
+    setTimeout(startScrew, 2000);
   }, 1000);
 });
 
@@ -1770,10 +1782,9 @@ function startScrew() {
   screwState = "descending";
   valveFlow = 0; tapRot = 0;                 // the tap gives itself up
   tapEl.classList.remove("on");              // and fades away
-  corkEl.classList.remove("out");            // hold still, this won't hurt
   corkEl.style.transition = "none";
-  corkEl.style.transform = "translateY(-46px)";
-  screwTargetY = window.innerHeight - 290;
+  corkEl.style.transform = "translateY(-14px)";
+  screwTargetY = window.innerHeight - 263;
   screwY = -180;
   screwEl.style.left = (window.innerWidth / 2 - 80) + "px";
   screwEl.style.top = screwY + "px";
@@ -1794,21 +1805,23 @@ function updateScrew(dt) {
   } else if (screwState === "in") {
     if (!screwDrag) screwSpin += 46 * dt;    // idles in circles — an invitation
     const ext = Math.min(1, extractDeg / 720);
-    screwEl.style.top = (screwTargetY - ext * 26) + "px";
-    corkEl.style.transform = `translateY(${-46 - ext * 26}px)`;
+    screwEl.style.top = (screwTargetY - ext * 70) + "px";
+    corkEl.style.transform = `translateY(${-14 - ext * 70}px)`;
     screwWheelEl.setAttribute("transform", `rotate(${screwSpin + extractDeg} 80 22)`);
     if (ext >= 1) {
       screwState = "done";
       corkPopSound();
       drainOpen = true;
       startGurgle();
-      screwEl.style.transition = "top 0.5s ease, opacity 1.2s ease 0.9s";
-      screwEl.style.top = (screwTargetY - 150) + "px";
+      activateGoo();
+      /* unplugged — the corkscrew rises up and away with its prize */
+      screwEl.style.transition = "top 1.4s ease-in, opacity 0.6s ease 1.3s";
+      screwEl.style.top = (screwTargetY - 70 - 320) + "px";
       screwEl.style.opacity = "0";
-      corkEl.style.transition = "transform 0.5s ease, opacity 1.2s ease 0.9s";
-      corkEl.style.transform = "translateY(-190px) rotate(40deg)";
+      corkEl.style.transition = "transform 1.4s ease-in, opacity 0.6s ease 1.3s";
+      corkEl.style.transform = "translateY(-404px) rotate(14deg)";
       corkEl.style.opacity = "0";
-      setTimeout(() => { screwEl.style.display = "none"; corkEl.style.display = "none"; }, 2300);
+      setTimeout(() => { screwEl.style.display = "none"; corkEl.style.display = "none"; }, 2100);
     }
   }
 }
@@ -1839,6 +1852,152 @@ screwWheelEl.addEventListener("pointermove", (e) => {
 const endScrewDrag = () => { screwDrag = null; screwWheelEl.classList.remove("grabbing"); };
 screwWheelEl.addEventListener("pointerup", endScrewDrag);
 screwWheelEl.addEventListener("pointercancel", endScrewDrag);
+
+/* ================= the goo =================
+   What the water was hiding: rainbow slime over everything. Push on it
+   and it gushes out from under your finger — like those gel shoes. */
+const gooCanvas = document.getElementById("goo");
+const gtx = gooCanvas.getContext("2d");
+let gooActive = false, gooBlobs = [], gooGush = [], gooSpecks = [], lastSquelch = 0;
+
+function sizeGoo() {
+  gooCanvas.width = window.innerWidth;
+  gooCanvas.height = window.innerHeight;
+}
+function activateGoo() {
+  if (gooActive) return;
+  const W = window.innerWidth, H = window.innerHeight;
+  sizeGoo();
+  gooBlobs = [];
+  const N = 26;
+  for (let i = 0; i < N; i++) {
+    gooBlobs.push({
+      bx: Math.random() * W, by: Math.random() * H,
+      x: 0, y: 0, vx: 0, vy: 0,
+      r: 150 + Math.random() * 200,
+      hue: (i * 360 / N + Math.random() * 24) % 360,
+      f1: 0.1 + Math.random() * 0.25, p1: Math.random() * 6.3,
+      f2: 0.1 + Math.random() * 0.25, p2: Math.random() * 6.3,
+    });
+  }
+  gooSpecks = [];
+  for (let i = 0; i < 150; i++) {
+    gooSpecks.push({ x: Math.random() * W, y: Math.random() * H, r: 0.8 + Math.random() * 1.8 });
+  }
+  gooCanvas.style.display = "block";
+  requestAnimationFrame(() => gooCanvas.classList.add("on"));
+  gooActive = true;
+}
+
+function gooPress(x, y, str) {
+  for (const b of gooBlobs) {
+    const dx = b.x - x, dy = b.y - y;
+    const d = Math.hypot(dx, dy);
+    if (d < 300 && d > 0.01) {
+      const f = (1 - d / 300) * 950 * str;
+      b.vx += (dx / d) * f;
+      b.vy += (dy / d) * f;
+    }
+  }
+  if (gooGush.length < 24) gooGush.push({ x, y, r: 8, vr: 260 * (0.6 + str * 0.6), life: 1 });
+  const nw = performance.now();
+  if (nw - lastSquelch > 160) { lastSquelch = nw; squelchSound(str); }
+}
+window.addEventListener("pointerdown", (e) => { if (gooActive) gooPress(e.clientX, e.clientY, 1); });
+window.addEventListener("pointermove", (e) => { if (gooActive && e.buttons) gooPress(e.clientX, e.clientY, 0.35); });
+
+function squelchSound(v) {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass";
+  lp.frequency.setValueAtTime(520, t0);
+  lp.frequency.exponentialRampToValueAtTime(160, t0 + 0.22);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(0.22 * v, t0 + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.26);
+  s.connect(lp); lp.connect(g); g.connect(ac.destination);
+  s.start(t0); s.stop(t0 + 0.28);
+  const o = ac.createOscillator(); o.type = "sine";
+  o.frequency.setValueAtTime(130, t0);
+  o.frequency.exponentialRampToValueAtTime(55, t0 + 0.16);
+  const g2 = ac.createGain();
+  g2.gain.setValueAtTime(0.12 * v, t0);
+  g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.18);
+  o.connect(g2); g2.connect(ac.destination);
+  o.start(t0); o.stop(t0 + 0.2);
+}
+
+function gooFrame(dt) {
+  if (!gooActive) return;
+  const W = window.innerWidth, H = window.innerHeight;
+
+  /* base: a slow-cycling rainbow wash */
+  const ang = wT * 0.12;
+  const gx = Math.cos(ang), gy = Math.sin(ang);
+  const grad = gtx.createLinearGradient(
+    W / 2 - gx * W * 0.6, H / 2 - gy * H * 0.6,
+    W / 2 + gx * W * 0.6, H / 2 + gy * H * 0.6);
+  for (let k = 0; k <= 6; k++) {
+    grad.addColorStop(k / 6, `hsl(${((wT * 7) + k * 60) % 360},72%,58%)`);
+  }
+  gtx.fillStyle = grad;
+  gtx.fillRect(0, 0, W, H);
+
+  /* the blobs ooze around their drifting homes, shoved aside by presses */
+  for (const b of gooBlobs) {
+    const hx = b.bx + Math.sin(wT * b.f1 + b.p1) * 55;
+    const hy = b.by + Math.sin(wT * b.f2 + b.p2) * 45;
+    if (!b.x && !b.y) { b.x = hx; b.y = hy; }
+    b.vx += (hx - b.x) * 2.1 * dt * 60 * 0.016;
+    b.vy += (hy - b.y) * 2.1 * dt * 60 * 0.016;
+    const damp = Math.exp(-1.7 * dt);
+    b.vx *= damp; b.vy *= damp;
+    b.x += b.vx * dt; b.y += b.vy * dt;
+    const rg = gtx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r);
+    rg.addColorStop(0, `hsla(${(b.hue + wT * 5) % 360},85%,62%,0.72)`);
+    rg.addColorStop(1, "hsla(0,0%,100%,0)");
+    gtx.fillStyle = rg;
+    gtx.fillRect(b.x - b.r, b.y - b.r, b.r * 2, b.r * 2);
+  }
+
+  /* trapped-air specks + a plastic-sheen streak, so it reads as goo under film */
+  gtx.fillStyle = "rgba(255,255,255,0.13)";
+  for (const sp of gooSpecks) {
+    gtx.beginPath();
+    gtx.arc(sp.x, sp.y, sp.r, 0, Math.PI * 2);
+    gtx.fill();
+  }
+  gtx.save();
+  gtx.translate(W * 0.5, H * 0.4);
+  gtx.rotate(-0.5 + Math.sin(wT * 0.3) * 0.06);
+  const sheen = gtx.createLinearGradient(0, -60, 0, 60);
+  sheen.addColorStop(0, "rgba(255,255,255,0)");
+  sheen.addColorStop(0.5, "rgba(255,255,255,0.12)");
+  sheen.addColorStop(1, "rgba(255,255,255,0)");
+  gtx.fillStyle = sheen;
+  gtx.fillRect(-W, -60, W * 2, 120);
+  gtx.restore();
+
+  /* gushes: the squish rippling out from under your press */
+  for (let i = gooGush.length - 1; i >= 0; i--) {
+    const gsh = gooGush[i];
+    gsh.life -= dt * 1.5;
+    if (gsh.life <= 0) { gooGush.splice(i, 1); continue; }
+    gsh.r += gsh.vr * dt;
+    gtx.beginPath();
+    gtx.arc(gsh.x, gsh.y, gsh.r, 0, Math.PI * 2);
+    gtx.strokeStyle = `rgba(255,255,255,${0.45 * gsh.life})`;
+    gtx.lineWidth = 7 * gsh.life + 1;
+    gtx.stroke();
+    gtx.beginPath();
+    gtx.arc(gsh.x, gsh.y, gsh.r * 0.75, 0, Math.PI * 2);
+    gtx.strokeStyle = `rgba(0,0,0,${0.10 * gsh.life})`;
+    gtx.lineWidth = 10 * gsh.life + 1;
+    gtx.stroke();
+  }
+}
 
 function startGurgle() {
   const ac = audio(); if (!ac) return;
