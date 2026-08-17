@@ -31,13 +31,32 @@
     pointer-events: none;
     z-index: 10;
   }
+  #veil {
+    position: fixed;
+    inset: 0;
+    background: #0f0e13;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 5;
+    transition: opacity 0.3s ease;
+  }
+  #flash {
+    position: fixed;
+    inset: 0;
+    background: #fff;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 20;
+  }
   .pumpHit { cursor: pointer; }
   .noselect { user-select: none; -webkit-user-select: none; }
 </style>
 </head>
 <body>
 <div id="stage" class="noselect"></div>
+<div id="veil"></div>
 <canvas id="glitter"></canvas>
+<div id="flash"></div>
 
 <script>
 "use strict";
@@ -73,7 +92,7 @@ function shade(hex, amt) {
 
 /* ================= state ================= */
 const PUMP_STEP = 0.085;
-const EXPLODE_AT = 1.42;
+const EXPLODE_AT = 1.8;        // strain limit — burst
 const IDLE_MS = 950;
 const DECAY_PER_S = 0.30;
 
@@ -87,6 +106,8 @@ let letters = [];
 let layoutW = 0, layoutH = 0;
 let heroSvg = null, pumpPlunger = null, hoseInfo = null;
 const stage = document.getElementById("stage");
+const flashEl = document.getElementById("flash");
+const veilEl = document.getElementById("veil");
 
 /* ================= layout / svg build ================= */
 function currentLines() {
@@ -120,7 +141,6 @@ function buildSvg() {
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   svg.setAttribute("preserveAspectRatio", "xMidYMin meet");
 
-  /* metal gradients for a real-looking pump */
   const defs = document.createElementNS(NS, "defs");
   defs.innerHTML =
     `<linearGradient id="barrel" x1="0" y1="0" x2="1" y2="0">
@@ -134,8 +154,17 @@ function buildSvg() {
        <stop offset="0" stop-color="#8d9296"/>
        <stop offset="0.45" stop-color="#d3d6d9"/>
        <stop offset="1" stop-color="#63676c"/>
-     </linearGradient>`;
+     </linearGradient>
+     <filter id="soft" x="-50%" y="-50%" width="200%" height="300%">
+       <feGaussianBlur stdDeviation="3"/>
+     </filter>`;
   svg.appendChild(defs);
+
+  /* soft ground shadows — light comes from the upper left, matching the
+     balloon speculars, so shadows fall just right of each letter */
+  const shadowGroup = document.createElementNS(NS, "g");
+  shadowGroup.setAttribute("filter", "url(#soft)");
+  svg.appendChild(shadowGroup);
 
   const mkPath = (d) => {
     const p = document.createElementNS(NS, "path");
@@ -157,17 +186,29 @@ function buildSvg() {
       const g = document.createElementNS(NS, "g");
       const color = PALETTE[ci % PALETTE.length];
 
-      /* four layers per balloon segment: dark rim, latex body,
-         soft light band, hard specular streak */
-      const dark = [], main = [], tint = [], gloss = [];
+      /* two-phase latex tube: a thin dull uninflated "tail" layer, plus a
+         5-layer glossy stack for the inflated phase (dark rim, latex body,
+         light band, broad specular streak, hard hairline streak) */
+      const dark = [], main = [], tint = [], gloss = [], gloss2 = [], tail = [];
+      for (const d of def.subs) { const p = mkPath(d); p.setAttribute("stroke", shade(color, -0.30)); p.setAttribute("opacity", "0.95"); g.appendChild(p); tail.push(p); }
       for (const d of def.subs) { const p = mkPath(d); p.setAttribute("stroke", shade(color, -0.32)); g.appendChild(p); dark.push(p); }
       for (const d of def.subs) { const p = mkPath(d); g.appendChild(p); main.push(p); }
-      for (const d of def.subs) { const p = mkPath(d); p.setAttribute("stroke", shade(color, 0.34)); g.appendChild(p); tint.push(p); }
+      for (const d of def.subs) { const p = mkPath(d); p.setAttribute("stroke", shade(color, 0.45)); g.appendChild(p); tint.push(p); }
       for (const d of def.subs) { const p = mkPath(d); p.setAttribute("stroke", "#ffffff"); g.appendChild(p); gloss.push(p); }
+      for (const d of def.subs) { const p = mkPath(d); p.setAttribute("stroke", "#ffffff"); g.appendChild(p); gloss2.push(p); }
+
+      const shadow = document.createElementNS(NS, "ellipse");
+      shadow.setAttribute("cx", x + def.w / 2 + 6);
+      shadow.setAttribute("cy", base + 7);
+      shadow.setAttribute("rx", def.w * 0.6);
+      shadow.setAttribute("ry", 4);
+      shadow.setAttribute("fill", "#1a1a18");
+      shadow.setAttribute("opacity", "0.05");
+      shadowGroup.appendChild(shadow);
 
       svg.appendChild(g);
       letters.push({
-        g, dark, main, tint, gloss,
+        g, dark, main, tint, gloss, gloss2, tail, shadow,
         subDs: def.subs, subs: null,
         x, base, w: def.w, color,
         phase: Math.random() * Math.PI * 2,
@@ -177,7 +218,7 @@ function buildSvg() {
     }
   });
 
-  buildPump(svg, NS, firstBase, letters[0]);
+  buildPump(svg, NS, firstBase, letters[0], shadowGroup);
   stage.innerHTML = "";
   stage.appendChild(svg);
   heroSvg = svg;
@@ -190,7 +231,7 @@ function sampleAll() {
   for (const L of letters) {
     L.subs = L.subDs.map((d, j) => {
       const el = L.dark[j];
-      el.setAttribute("d", d);               // restore original for measuring
+      el.setAttribute("d", d);
       const len = el.getTotalLength();
       const N = Math.max(16, Math.min(40, Math.round(len / 7)));
       const pts = [];
@@ -202,7 +243,6 @@ function sampleAll() {
         if (p.x > maxX) maxX = p.x;
       }
       const closed = /z\s*$/i.test(d);
-      /* where this balloon lies when it's a limp noodle on the ground */
       const spillLen = Math.min(len * 0.5, L.w * 1.25);
       let spillX = (minX + maxX) / 2 - spillLen / 2;
       spillX = Math.max(-4, Math.min(spillX, L.w + 4 - spillLen));
@@ -218,7 +258,7 @@ function sampleAll() {
   }
 }
 
-function buildPump(svg, NS, base, firstLetter) {
+function buildPump(svg, NS, base, firstLetter, shadowGroup) {
   const px = 62;
   const ground = base + 8;
   const NSrect = (x, y, w, h, rx, fill) => {
@@ -229,12 +269,18 @@ function buildPump(svg, NS, base, firstLetter) {
     return r;
   };
 
+  /* pump's ground shadow */
+  const psh = document.createElementNS(NS, "ellipse");
+  psh.setAttribute("cx", px + 8); psh.setAttribute("cy", ground + 4);
+  psh.setAttribute("rx", 62); psh.setAttribute("ry", 5);
+  psh.setAttribute("fill", "#1a1a18"); psh.setAttribute("opacity", "0.13");
+  shadowGroup.appendChild(psh);
+
   /* rubber hose: out of the brass fitting, down onto the floor with a
-     little slack, then up to the nozzle the first balloon is tied onto.
-     The balloon's mouth (bottom of the K) sits exactly on the nozzle tip. */
+     little slack, then up to the nozzle the first balloon is tied onto. */
   const ox = px + 28, oy = ground - 12;
-  const A = { x: firstLetter.x + 10, y: base - 4 };     // nozzle tip = balloon mouth
-  const th = -30 * Math.PI / 180;                        // nozzle angle, up-and-right
+  const A = { x: firstLetter.x + 10, y: base - 4 };
+  const th = -30 * Math.PI / 180;
   const B = { x: A.x - Math.cos(th) * 14, y: A.y - Math.sin(th) * 14 };
   const mid = (ox + B.x) / 2;
   const hoseD = `M${ox} ${oy}`
@@ -275,44 +321,33 @@ function buildPump(svg, NS, base, firstLetter) {
     hoseInfo.circles.push(c);
   }
 
-  /* nozzle assembly: steel ferrule, tapered brass tip, and the balloon's
-     rolled neck stretched over it */
+  /* nozzle: steel ferrule, tapered brass tip, balloon's rolled neck over it */
   const ng = document.createElementNS(NS, "g");
   ng.setAttribute("transform", `translate(${A.x} ${A.y}) rotate(-30)`);
-  const ferrule = NSrect(-15, -4, 8, 8, 1.5, "#8d9296");
-  ng.appendChild(ferrule);
+  ng.appendChild(NSrect(-15, -4, 8, 8, 1.5, "#8d9296"));
   const cone = document.createElementNS(NS, "polygon");
   cone.setAttribute("points", "-8,-3.6 0,-1.5 0,1.5 -8,3.6");
   cone.setAttribute("fill", "#b08d57");
   ng.appendChild(cone);
-  const neck = NSrect(-2.5, -2.7, 7, 5.4, 2.7, shade(firstLetter.color, -0.30));
-  ng.appendChild(neck);
+  ng.appendChild(NSrect(-2.5, -2.7, 7, 5.4, 2.7, shade(firstLetter.color, -0.30)));
   svg.appendChild(ng);
 
   const pump = document.createElementNS(NS, "g");
-
-  /* rubber base feet */
   pump.appendChild(NSrect(px - 52, ground - 10, 104, 10, 5, "#2e3134"));
   pump.appendChild(NSrect(px - 58, ground - 4, 30, 6, 3, "#232527"));
   pump.appendChild(NSrect(px + 28, ground - 4, 30, 6, 3, "#232527"));
-
-  /* steel barrel */
   pump.appendChild(NSrect(px - 17, ground - 92, 34, 84, 6, "url(#barrel)"));
-  /* top + bottom collars */
   pump.appendChild(NSrect(px - 21, ground - 100, 42, 11, 4, "#43474c"));
   pump.appendChild(NSrect(px - 21, ground - 12, 42, 8, 3, "#43474c"));
-  /* brass outlet fitting the hose plugs into */
   pump.appendChild(NSrect(px + 14, ground - 18, 16, 9, 2, "#b08d57"));
 
-  /* plunger: polished rod + T-handle with rubber grips */
   const plunger = document.createElementNS(NS, "g");
   plunger.appendChild(NSrect(px - 3.5, ground - 148, 7, 56, 2, "url(#rod)"));
   plunger.appendChild(NSrect(px - 14, ground - 158, 28, 12, 3, "#3a3d40"));
   plunger.appendChild(NSrect(px - 47, ground - 160, 35, 15, 7.5, "#17181a"));
   plunger.appendChild(NSrect(px + 12, ground - 160, 35, 15, 7.5, "#17181a"));
-  const gripHiL = NSrect(px - 43, ground - 157, 27, 3, 1.5, "#4a4d50");
-  const gripHiR = NSrect(px + 16, ground - 157, 27, 3, 1.5, "#4a4d50");
-  plunger.appendChild(gripHiL); plunger.appendChild(gripHiR);
+  plunger.appendChild(NSrect(px - 43, ground - 157, 27, 3, 1.5, "#4a4d50"));
+  plunger.appendChild(NSrect(px + 16, ground - 157, 27, 3, 1.5, "#4a4d50"));
   pump.appendChild(plunger);
   pumpPlunger = { el: plunger, travel: 40 };
 
@@ -325,6 +360,97 @@ function buildPump(svg, NS, base, firstLetter) {
   svg.appendChild(pump);
 }
 
+/* ================= sound (synthesized, no assets) ================= */
+let AC = null, noiseBuf = null;
+function audio() {
+  try {
+    if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)();
+    if (AC.state === "suspended") AC.resume();
+    return AC;
+  } catch (e) { return null; }
+}
+function noise(ac) {
+  if (noiseBuf) return noiseBuf;
+  const b = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+  const d = b.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  noiseBuf = b;
+  return b;
+}
+function pumpSound() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const src = ac.createBufferSource(); src.buffer = noise(ac);
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 0.8;
+  bp.frequency.setValueAtTime(700, t0);
+  bp.frequency.exponentialRampToValueAtTime(220, t0 + 0.16);
+  const gn = ac.createGain();
+  gn.gain.setValueAtTime(0.0001, t0);
+  gn.gain.exponentialRampToValueAtTime(0.4, t0 + 0.035);
+  gn.gain.exponentialRampToValueAtTime(0.001, t0 + 0.18);
+  src.connect(bp); bp.connect(gn); gn.connect(ac.destination);
+  src.start(t0); src.stop(t0 + 0.2);
+}
+function squeakSound() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const f0 = 260 + Math.random() * 320;
+  const osc = ac.createOscillator(); osc.type = "sawtooth";
+  osc.frequency.setValueAtTime(f0, t0);
+  osc.frequency.linearRampToValueAtTime(f0 * 1.5, t0 + 0.07);
+  osc.frequency.linearRampToValueAtTime(f0 * 0.85, t0 + 0.15);
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1300;
+  const gn = ac.createGain();
+  gn.gain.setValueAtTime(0.0001, t0);
+  gn.gain.exponentialRampToValueAtTime(0.05, t0 + 0.03);
+  gn.gain.exponentialRampToValueAtTime(0.001, t0 + 0.16);
+  osc.connect(lp); lp.connect(gn); gn.connect(ac.destination);
+  osc.start(t0); osc.stop(t0 + 0.18);
+}
+function popSound() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  /* crack */
+  const s1 = ac.createBufferSource(); s1.buffer = noise(ac);
+  const hp = ac.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 1500;
+  const g1 = ac.createGain();
+  g1.gain.setValueAtTime(0.9, t0);
+  g1.gain.exponentialRampToValueAtTime(0.001, t0 + 0.05);
+  s1.connect(hp); hp.connect(g1); g1.connect(ac.destination);
+  s1.start(t0); s1.stop(t0 + 0.06);
+  /* body */
+  const s2 = ac.createBufferSource(); s2.buffer = noise(ac);
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass";
+  lp.frequency.setValueAtTime(3200, t0);
+  lp.frequency.exponentialRampToValueAtTime(120, t0 + 0.45);
+  const g2 = ac.createGain();
+  g2.gain.setValueAtTime(0.7, t0);
+  g2.gain.exponentialRampToValueAtTime(0.001, t0 + 0.5);
+  s2.connect(lp); lp.connect(g2); g2.connect(ac.destination);
+  s2.start(t0); s2.stop(t0 + 0.55);
+  /* thump */
+  const osc = ac.createOscillator(); osc.type = "sine";
+  osc.frequency.setValueAtTime(90, t0);
+  osc.frequency.exponentialRampToValueAtTime(45, t0 + 0.28);
+  const g3 = ac.createGain();
+  g3.gain.setValueAtTime(0.5, t0);
+  g3.gain.exponentialRampToValueAtTime(0.001, t0 + 0.3);
+  osc.connect(g3); g3.connect(ac.destination);
+  osc.start(t0); osc.stop(t0 + 0.32);
+  /* glitter shimmer: a drift of tiny high pings while the curtain falls */
+  for (let i = 0; i < 28; i++) {
+    const at = t0 + 0.15 + Math.random() * 3.2;
+    const o = ac.createOscillator(); o.type = "sine";
+    o.frequency.value = 2600 + Math.random() * 5400;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(0.022, at + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.28);
+    o.connect(g); g.connect(ac.destination);
+    o.start(at); o.stop(at + 0.3);
+  }
+}
+
 /* ================= pumping ================= */
 function doPump(e) {
   if (e) e.preventDefault();
@@ -334,6 +460,8 @@ function doPump(e) {
   lastPump = performance.now();
   pumpPressT = 1;
   if (hoseInfo && hoseInfo.len) hoseInfo.pulses.push(0);
+  pumpSound();
+  if (inf > 1) squeakSound();     // latex creaks past its working size
 }
 window.addEventListener("keydown", (e) => {
   if (e.code === "Space" || e.code === "Enter") doPump(e);
@@ -366,26 +494,28 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-/* air fills each balloon from its mouth toward its tip; whatever
-   isn't inflated yet stays a limp noodle draped on the ground */
+/* Two-phase balloon physics (like a real 260): behind the fill front the
+   tube is at full working diameter; ahead of it the latex is a thin limp
+   tail. Extra air LENGTHENS the inflated phase — the front advances.
+   Overpumping stretches the whole thing: it swells (decelerating — strain
+   stiffening), pales (the membrane thins), and shakes (tension climbs). */
 function renderLetters(now) {
   const p = Math.min(1, inf);
   const over = Math.max(0, inf - 1);
-  const ep = easeOut(p);
-  const f = p * 1.38;                   // fill front sweeps mouth -> tip as you pump
+  const f = p * 1.38;
   const ts = now / 1000;
+  const overN = 1 - Math.exp(-over * 2.0);
+  const thin = 0.30 * overN;
 
   for (const L of letters) {
     if (!L.subs) continue;
-    const wob = over > 0 ? Math.sin(now / 60 + L.phase) * over * 9 : 0;
-    L.g.setAttribute("transform",
-      over > 0
-        ? `translate(${L.x} ${L.base - 100}) translate(${L.w / 2} 50) rotate(${wob}) translate(${-L.w / 2} -50)`
-        : `translate(${L.x} ${L.base - 100})`);
+    let mSum = 0;
 
     for (let j = 0; j < L.subs.length; j++) {
       const S = L.subs[j];
-      let dstr = "", sum = 0;
+      const iF = Math.min(S.N - 1, Math.floor((f - 0.165) * (S.N - 1)));
+      let dIn = "", dTail = "", sum = 0;
+      const tailStart = Math.max(0, iF);
       for (let i = 0; i < S.N; i++) {
         const t = i / (S.N - 1);
         const li = clamp01((f - t) / 0.33);
@@ -398,8 +528,7 @@ function renderLetters(now) {
         let yF = S.ground
                  - Math.abs(Math.sin(t * Math.PI * S.humps + S.ph2)) * S.ampY
                  + Math.sin(ts * 1.4 + S.ph1 + t * 5) * 1.4 * flop;
-        /* the first balloon's mouth is tied onto the pump nozzle:
-           it stays put even when the rest of it is limp on the floor */
+        /* the first balloon's mouth is tied onto the pump nozzle */
         if (L === letters[0] && j === 0) {
           const pin = Math.max(0, 1 - t / 0.22);
           const P0 = S.pts[0];
@@ -408,27 +537,70 @@ function renderLetters(now) {
         }
         const X = xF + (P.x - xF) * sm;
         const Y = yF + (P.y - yF) * sm;
-        dstr += (i ? "L" : "M") + X.toFixed(1) + " " + Y.toFixed(1);
+        const pt = X.toFixed(1) + " " + Y.toFixed(1);
+        if (i <= iF) dIn += (i ? "L" : "M") + pt;
+        if (i >= tailStart) dTail += (i > tailStart ? "L" : "M") + pt;
       }
-      if (S.closed) dstr += "Z";
-      const m = sum / S.N;              // how inflated this tube is
-      const Ws = 3 + 20 * m + 13 * over;
+      const m = sum / S.N;
+      mSum += m;
+      const hasIn = iF >= 1;
+      const hasTail = iF < S.N - 1;
+      if (S.closed && !hasTail) dIn += "Z";
 
-      L.dark[j].setAttribute("d", dstr);
-      L.main[j].setAttribute("d", dstr);
-      L.tint[j].setAttribute("d", dstr);
-      L.gloss[j].setAttribute("d", dstr);
+      /* working diameter arrives almost at once (pressure peaks early),
+         then only overpumping swells it further */
+      const Ws = 23 * (0.7 + 0.3 * clamp01(m * 2.5)) * (1 + 0.42 * overN);
 
-      L.dark[j].setAttribute("stroke-width", Ws);
-      L.main[j].setAttribute("stroke-width", Math.max(1.5, Ws * 0.80));
-      L.main[j].setAttribute("stroke", shade(L.color, -0.20 * (1 - m)));
-      L.tint[j].setAttribute("stroke-width", Math.max(1, Ws * 0.42));
-      L.tint[j].setAttribute("opacity", 0.15 + 0.75 * m);
-      L.tint[j].setAttribute("transform", `translate(${-Ws * 0.09} ${-Ws * 0.12})`);
-      L.gloss[j].setAttribute("stroke-width", Math.max(0.8, Ws * 0.15));
-      L.gloss[j].setAttribute("opacity", 0.85 * m);
-      L.gloss[j].setAttribute("transform", `translate(${-Ws * 0.17} ${-Ws * 0.21})`);
+      if (hasIn) {
+        L.dark[j].setAttribute("d", dIn);
+        L.main[j].setAttribute("d", dIn);
+        L.tint[j].setAttribute("d", dIn);
+        L.gloss[j].setAttribute("d", dIn);
+        L.gloss2[j].setAttribute("d", dIn);
+        L.dark[j].setAttribute("opacity", "1");
+        L.dark[j].setAttribute("stroke-width", Ws);
+        L.dark[j].setAttribute("stroke", shade(L.color, -0.34 + 0.5 * thin));
+        L.main[j].setAttribute("opacity", "1");
+        L.main[j].setAttribute("stroke-width", Ws * 0.80);
+        L.main[j].setAttribute("stroke", shade(L.color, thin));
+        L.tint[j].setAttribute("opacity", "0.85");
+        L.tint[j].setAttribute("stroke-width", Ws * 0.45);
+        L.tint[j].setAttribute("transform", `translate(${-Ws * 0.09} ${-Ws * 0.12})`);
+        L.gloss[j].setAttribute("opacity", "0.95");
+        L.gloss[j].setAttribute("stroke-width", Ws * 0.18 * (1 + 0.3 * overN));
+        L.gloss[j].setAttribute("transform", `translate(${-Ws * 0.16} ${-Ws * 0.20})`);
+        L.gloss2[j].setAttribute("opacity", "0.9");
+        L.gloss2[j].setAttribute("stroke-width", Math.max(0.5, Ws * 0.08));
+        L.gloss2[j].setAttribute("transform", `translate(${-Ws * 0.26} ${-Ws * 0.30})`);
+      } else {
+        L.dark[j].setAttribute("opacity", "0");
+        L.main[j].setAttribute("opacity", "0");
+        L.tint[j].setAttribute("opacity", "0");
+        L.gloss[j].setAttribute("opacity", "0");
+        L.gloss2[j].setAttribute("opacity", "0");
+      }
+      if (hasTail) {
+        L.tail[j].setAttribute("d", dTail);
+        L.tail[j].setAttribute("opacity", "0.95");
+        L.tail[j].setAttribute("stroke-width", 3.4);
+      } else {
+        L.tail[j].setAttribute("opacity", "0");
+      }
     }
+
+    /* whole-balloon stretch: grows as it fills, keeps swelling overpumped,
+       anchored at the nozzle for the first balloon, baseline for the rest */
+    const mAvg = mSum / L.subs.length;
+    const G = 0.86 + 0.14 * mAvg + 0.26 * overN;
+    const tension = over > 0 ? Math.sin(now / 55 + L.phase) * over * 7 : 0;
+    const ax = (L === letters[0]) ? L.subs[0].pts[0].x : L.w / 2;
+    const ay = (L === letters[0]) ? L.subs[0].pts[0].y : 100;
+    L.g.setAttribute("transform",
+      `translate(${L.x} ${L.base - 100}) translate(${ax} ${ay}) scale(${G}) rotate(${tension}) translate(${-ax} ${-ay})`);
+
+    /* ground shadow tracks how much balloon is standing over it */
+    L.shadow.setAttribute("opacity", (0.04 + 0.10 * mAvg).toFixed(3));
+    L.shadow.setAttribute("rx", (L.w * (0.72 - 0.17 * mAvg) * G).toFixed(1));
   }
 }
 
@@ -438,7 +610,6 @@ function renderPump(dt) {
   const down = Math.sin(Math.min(1, pumpPressT) * Math.PI) * pumpPlunger.travel;
   pumpPlunger.el.setAttribute("transform", `translate(0 ${down})`);
 
-  /* gulps of air visibly travel down the hose into the balloon */
   if (hoseInfo && hoseInfo.len) {
     hoseInfo.pulses = hoseInfo.pulses
       .map(p => p + dt * hoseInfo.len * 2.8)
@@ -454,14 +625,18 @@ function renderPump(dt) {
   }
 }
 
-/* ================= explosion + glitter ================= */
+/* ================= explosion + glitter =================
+   Real glitter is a cloud of tiny metallic mirrors: almost dark until a
+   flake's face catches the light, then a hard white-hot glint. Flakes are
+   bucketed by material so the canvas can draw tens of thousands fast. */
 const canvas = document.getElementById("glitter");
 const ctx = canvas.getContext("2d");
-let parts = [];
+let scraps = [], buckets = [], glitterAlive = 0;
 function sizeCanvas() {
-  canvas.width = window.innerWidth * devicePixelRatio;
-  canvas.height = window.innerHeight * devicePixelRatio;
-  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  const dpr = Math.min(1.5, window.devicePixelRatio || 1);
+  canvas.width = window.innerWidth * dpr;
+  canvas.height = window.innerHeight * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
 function svgToScreen(x, y) {
@@ -472,15 +647,32 @@ function svgToScreen(x, y) {
 
 function explode() {
   exploded = true;
+  popSound();
 
-  // balloon scraps burst from each letter
+  /* burst flash, then the room goes dark so the glitter can actually
+     glint — the veil lifts as the storm passes, revealing the site */
+  flashEl.style.transition = "none";
+  flashEl.style.opacity = "0.85";
+  veilEl.style.opacity = "1";
+  setTimeout(() => {
+    flashEl.style.transition = "opacity 0.6s ease";
+    flashEl.style.opacity = "0";
+  }, 60);
+  setTimeout(() => {
+    veilEl.style.transition = "opacity 3s ease";
+    veilEl.style.opacity = "0";
+  }, 3400);
+
+  /* latex scraps burst from each letter */
+  const letterCenters = [];
   for (const L of letters) {
     const c = svgToScreen(L.x + L.w / 2, L.base - 50);
-    for (let i = 0; i < 16; i++) {
+    letterCenters.push(c);
+    for (let i = 0; i < 24; i++) {
       const a = Math.random() * Math.PI * 2;
       const sp = 220 + Math.random() * 420;
-      parts.push({
-        kind: "scrap", x: c.x, y: c.y,
+      scraps.push({
+        x: c.x, y: c.y,
         vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 180,
         rot: Math.random() * Math.PI * 2, vr: (Math.random() - 0.5) * 14,
         w: 6 + Math.random() * 12, h: 3 + Math.random() * 4,
@@ -488,86 +680,148 @@ function explode() {
       });
     }
     L.g.style.display = "none";
+    L.shadow.setAttribute("opacity", "0");
   }
 
-  /* THE WALL. a screen-consuming curtain of glitter that pours down
-     and unveils the site as it passes. */
-  const W = window.innerWidth, H = window.innerHeight;
-  const COUNT = Math.min(12000, Math.max(3500, Math.round((W * H) / 95)));
-  const GLITTER = ["#ffd700","#ffdf6b","#f5c518","#e8e8e8","#c0c0c0","#ffffff",
-                  "#ff4d6d","#06d6a0","#118ab2","#9b5de5","#ff70a6","#ffd60a",
-                  "#00bbf9","#f7b32b","#7ef9ff","#ffb3f2"];
-  for (let i = 0; i < COUNT; i++) {
-    const sparkle = Math.random() < 0.22;
-    parts.push({
-      kind: sparkle ? "sparkle" : "glitter",
-      x: Math.random() * W,
-      y: H * 0.1 - Math.random() * H * 2.6,
-      vx: (Math.random() - 0.5) * 50,
-      vy: 380 + Math.random() * 340,
-      sway: 15 + Math.random() * 45,
-      swayF: 2 + Math.random() * 5,
-      ph: Math.random() * Math.PI * 2,
-      twF: 6 + Math.random() * 9,
-      rot: Math.random() * Math.PI * 2, vr: (Math.random() - 0.5) * 18,
-      s: sparkle ? 4 + Math.random() * 8 : 2.5 + Math.random() * 5.5,
-      color: GLITTER[(Math.random() * GLITTER.length) | 0],
-      life: 12,
-    });
+  /* glitter materials: gold, silver, rose gold, and holographic hues */
+  const MATS = [
+    { dim: "#a8861c", glint: "#fff3c4", wt: 0.30 },
+    { dim: "#9aa0a5", glint: "#ffffff", wt: 0.25 },
+    { dim: "#a06a55", glint: "#ffd9c9", wt: 0.10 },
+  ];
+  for (let h = 0; h < 12; h++) {
+    MATS.push({ dim: `hsl(${h * 30},70%,52%)`, glint: `hsl(${h * 30},100%,88%)`, wt: 0.35 / 12 });
   }
+  buckets = MATS.map(mt => ({ dim: mt.dim, glint: mt.glint, wt: mt.wt, arr: [], glints: [] }));
+  const cum = [];
+  let acc = 0;
+  for (const b of buckets) { acc += b.wt; cum.push(acc); }
+
+  const W = window.innerWidth, H = window.innerHeight;
+  const COUNT = Math.min(80000, Math.max(24000, Math.round((W * H) / 10)));
+  const BURST = Math.min(7000, Math.round(COUNT * 0.09));
+  for (let i = 0; i < COUNT; i++) {
+    const r = Math.random() * acc;
+    let bi = 0;
+    while (cum[bi] < r) bi++;
+    const s = Math.random() < 0.06 ? 3.6 + Math.random() * 1.6 : 1.5 + Math.random() * 2.1;
+    const pt = {
+      x: 0, y: 0, vx: 0, vy: 0,
+      phi: Math.random() * Math.PI * 2,
+      w1: 3 + Math.random() * 7,          // tumble rate
+      sway: 12 + Math.random() * 40,
+      swayF: 1.5 + Math.random() * 4,
+      ph: Math.random() * Math.PI * 2,
+      s, life: 16,
+    };
+    if (i < BURST) {
+      /* the first wave erupts from the letters themselves */
+      const c = letterCenters[(Math.random() * letterCenters.length) | 0];
+      const a = Math.random() * Math.PI * 2;
+      const sp = 150 + Math.random() * 550;
+      pt.x = c.x; pt.y = c.y;
+      pt.vx = Math.cos(a) * sp;
+      pt.vy = Math.sin(a) * sp * 0.6;
+    } else {
+      /* the wall: three screens of curtain above the viewport */
+      pt.x = Math.random() * W;
+      pt.y = H * 0.1 - Math.random() * H * 3.2;
+      pt.vx = (Math.random() - 0.5) * 40;
+      pt.vy = 200 + s * 70 + Math.random() * 160;   // small flakes drift slower
+    }
+    buckets[bi].arr.push(pt);
+  }
+  glitterAlive = COUNT;
 
   setTimeout(() => stage.classList.add("gone"), 400);
 }
 
 function tickParticles(dt) {
-  if (!parts.length) { ctx.clearRect(0, 0, window.innerWidth, window.innerHeight); return; }
-  ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-  const H = window.innerHeight;
-  parts = parts.filter(pt => {
+  const W = window.innerWidth, H = window.innerHeight;
+  if (!scraps.length && !glitterAlive) { ctx.clearRect(0, 0, W, H); return; }
+  ctx.clearRect(0, 0, W, H);
+
+  /* latex scraps */
+  let k = 0;
+  for (let i = 0; i < scraps.length; i++) {
+    const pt = scraps[i];
     pt.life -= dt;
-    if (pt.life <= 0) return false;
-    if (pt.kind === "scrap") {
-      pt.vy += 900 * dt;
-      pt.x += pt.vx * dt; pt.y += pt.vy * dt;
-      pt.rot += pt.vr * dt;
-      ctx.save();
-      ctx.translate(pt.x, pt.y); ctx.rotate(pt.rot);
-      ctx.fillStyle = pt.color;
-      ctx.globalAlpha = Math.min(1, pt.life);
-      ctx.beginPath();
-      ctx.ellipse(0, 0, pt.w, pt.h, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-      return true;
-    }
-    pt.ph += pt.swayF * dt;
-    pt.x += (pt.vx + Math.sin(pt.ph) * pt.sway) * dt;
-    pt.y += pt.vy * dt;
+    if (pt.life <= 0) continue;
+    pt.vy += 900 * dt;
+    pt.x += pt.vx * dt; pt.y += pt.vy * dt;
     pt.rot += pt.vr * dt;
-    if (pt.y > H + 40) return false;
-    if (pt.y < -60) return true;
-    const tw = Math.sin(pt.ph * pt.twF * 0.35 + pt.x * 0.05);
     ctx.save();
     ctx.translate(pt.x, pt.y); ctx.rotate(pt.rot);
-    if (pt.kind === "sparkle") {
-      const flash = Math.pow(Math.abs(tw), 3);
-      ctx.globalAlpha = 0.25 + 0.75 * flash;
-      const s = pt.s * (0.7 + 0.6 * flash);
-      ctx.fillStyle = pt.color;
-      ctx.fillRect(-s / 2, -s * 0.13, s, s * 0.26);
-      ctx.fillRect(-s * 0.13, -s / 2, s * 0.26, s);
-      ctx.fillStyle = "#ffffff";
-      const c = s * 0.45;
-      ctx.fillRect(-c / 2, -c * 0.2, c, c * 0.4);
-      ctx.fillRect(-c * 0.2, -c / 2, c * 0.4, c);
-    } else {
-      ctx.globalAlpha = 0.45 + 0.55 * Math.abs(tw);
-      ctx.fillStyle = pt.color;
-      ctx.fillRect(-pt.s / 2, -pt.s / 2, pt.s, pt.s * 0.72);
-    }
+    ctx.fillStyle = pt.color;
+    ctx.globalAlpha = Math.min(1, pt.life);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, pt.w, pt.h, 0, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
-    return true;
-  });
+    scraps[k++] = pt;
+  }
+  scraps.length = k;
+
+  const slow = dt > 0.045;
+  let alive = 0;
+
+  /* pass 1: the dark bodies of tumbling flakes (foreshortened as they turn) */
+  for (const bucket of buckets) {
+    const arr = bucket.arr;
+    if (slow && arr.length > 400) arr.length = (arr.length * 0.85) | 0;
+    ctx.fillStyle = bucket.dim;
+    bucket.glints.length = 0;
+    let j = 0;
+    for (let i = 0; i < arr.length; i++) {
+      const p = arr[i];
+      p.life -= dt;
+      p.ph += p.swayF * dt;
+      p.phi += p.w1 * dt;
+      p.x += (p.vx + Math.sin(p.ph) * p.sway) * dt;
+      p.y += p.vy * dt;
+      /* burst flakes decelerate into a gentle fall */
+      if (p.vy < 160) p.vy += 500 * dt;
+      p.vx *= 1 - Math.min(1, 1.6 * dt);
+      if (p.life <= 0 || p.y > H + 30) continue;
+      arr[j++] = p;
+      if (p.y < -30) continue;
+      const c = Math.cos(p.phi);
+      const c2 = c * c, c4 = c2 * c2;
+      const b8 = c4 * c4;                       // sharp specular lobe
+      const fore = Math.abs(Math.sin(p.phi));   // face turns away -> sliver
+      ctx.globalAlpha = 0.2 + 0.55 * fore;
+      const w = p.s * (0.25 + 0.75 * fore);
+      ctx.fillRect(p.x - w / 2, p.y - p.s * 0.4, w, p.s * 0.8);
+      if (b8 > 0.72) bucket.glints.push(p.x, p.y, p.s, b8);
+    }
+    arr.length = j;
+    alive += j;
+  }
+
+  /* pass 2: additive glints — the mirror faces catching the light */
+  ctx.globalCompositeOperation = "lighter";
+  for (const bucket of buckets) {
+    const gl = bucket.glints;
+    if (!gl.length) continue;
+    ctx.fillStyle = bucket.glint;
+    for (let i = 0; i < gl.length; i += 4) {
+      const x = gl[i], y = gl[i + 1], s = gl[i + 2], b = gl[i + 3];
+      const a = (b - 0.72) / 0.28;
+      ctx.globalAlpha = a;
+      const gs = s * (1.3 + 1.6 * a);
+      ctx.fillRect(x - gs / 2, y - gs / 2, gs, gs);
+      if (a > 0.75) {
+        /* the brightest faces flare into little star rays */
+        ctx.globalAlpha = (a - 0.75) * 2.8;
+        const r = gs * 2.6, t = gs * 0.28;
+        ctx.fillRect(x - r / 2, y - t / 2, r, t);
+        ctx.fillRect(x - t / 2, y - r / 2, t, r);
+      }
+    }
+  }
+  ctx.globalCompositeOperation = "source-over";
+  ctx.globalAlpha = 1;
+  glitterAlive = alive;
 }
 
 /* ================= boot ================= */
