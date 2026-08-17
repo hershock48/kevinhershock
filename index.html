@@ -56,6 +56,19 @@
   }
   .pumpHit { cursor: pointer; }
   .noselect { user-select: none; -webkit-user-select: none; }
+  #dot {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 0;
+    height: 0;
+    border-radius: 50%;
+    background: #e63950;
+    cursor: pointer;
+    z-index: 8;
+    display: none;
+  }
 </style>
 </head>
 <body>
@@ -63,6 +76,7 @@
 <div id="veil"></div>
 <canvas id="glue"></canvas>
 <canvas id="glitter"></canvas>
+<div id="dot"></div>
 <div id="flash"></div>
 
 <script>
@@ -784,7 +798,10 @@ window.addEventListener("pointermove", (e) => {
         } else keep.push(q);
       }
       stuckPts = keep;
-      if (!stuckPts.length) document.body.style.cursor = "";  // all clean
+      if (!stuckPts.length) {
+        document.body.style.cursor = "";        // all clean
+        setTimeout(showDot, 900);               // ...and then, a dot
+      }
       sweepSwish(dist);
     }
   }
@@ -1101,6 +1118,57 @@ function tickParticles(dt) {
     ctx.globalAlpha = 1;
   }
 }
+
+/* ================= the dot ================= */
+const dotEl = document.getElementById("dot");
+const DOT_COLORS = ["#e63950","#ff8c00","#ffcf00","#00b869","#00a8e8","#8b46d9",
+                    "#ff5d9e","#2aa8b8","#d92645","#6cb520","#ffd60a","#9b5de5"];
+let dotShown = false, dotN = 0, dotSize = 0, dotDone = false;
+
+function bloopSound(n) {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const f = 200 * Math.pow(2, n * 0.12);
+  const osc = ac.createOscillator(); osc.type = "sine";
+  osc.frequency.setValueAtTime(f * 0.9, t0);
+  osc.frequency.exponentialRampToValueAtTime(f, t0 + 0.06);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(0.18, t0 + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
+  osc.connect(g); g.connect(ac.destination);
+  osc.start(t0); osc.stop(t0 + 0.24);
+}
+
+function showDot() {
+  if (dotShown) return;
+  dotShown = true;
+  dotEl.style.display = "block";
+  dotEl.style.transition = "width 0.5s ease, height 0.5s ease, background 0.5s ease";
+  requestAnimationFrame(() => {
+    dotSize = 14;
+    dotEl.style.width = dotSize + "px";
+    dotEl.style.height = dotSize + "px";
+  });
+}
+
+dotEl.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  if (dotDone) return;
+  dotN++;
+  dotSize *= 1.55;
+  const dur = Math.min(2.8, 0.4 + dotN * 0.16);
+  dotEl.style.transition = `width ${dur}s ease, height ${dur}s ease, background ${dur * 0.7}s ease`;
+  dotEl.style.width = dotSize + "px";
+  dotEl.style.height = dotSize + "px";
+  dotEl.style.background = DOT_COLORS[dotN % DOT_COLORS.length];
+  bloopSound(dotN);
+  const diag = Math.hypot(window.innerWidth, window.innerHeight);
+  if (dotSize > diag * 1.25) {
+    dotDone = true;                 // it is the screen now
+    dotEl.style.cursor = "default";
+  }
+});
 
 /* ================= boot ================= */
 function boot() {
