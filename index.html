@@ -32,11 +32,6 @@
     z-index: 10;
   }
   .pumpHit { cursor: pointer; }
-  .arrowGrp { animation: bounce 0.9s ease-in-out infinite; }
-  @keyframes bounce {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(14px); }
-  }
   .noselect { user-select: none; -webkit-user-select: none; }
 </style>
 </head>
@@ -75,20 +70,12 @@ function shade(hex, amt) {
   else { r *= 1 + amt; g *= 1 + amt; b *= 1 + amt; }
   return `rgb(${r | 0},${g | 0},${b | 0})`;
 }
-function subEnds(d) {
-  const nums = d.match(/-?\d+(?:\.\d+)?/g).map(Number);
-  return {
-    sx: nums[0], sy: nums[1],
-    ex: nums[nums.length - 2], ey: nums[nums.length - 1],
-    closed: /z\s*$/i.test(d),
-  };
-}
 
 /* ================= state ================= */
-const PUMP_STEP = 0.085;        // air per pump
-const EXPLODE_AT = 1.42;        // keep pumping past "full" -> boom
-const IDLE_MS = 950;            // stop pumping this long -> deflate
-const DECAY_PER_S = 0.30;       // deflate speed
+const PUMP_STEP = 0.085;
+const EXPLODE_AT = 1.42;
+const IDLE_MS = 950;
+const DECAY_PER_S = 0.30;
 
 let target = 0;
 let inf = 0;
@@ -133,11 +120,28 @@ function buildSvg() {
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   svg.setAttribute("preserveAspectRatio", "xMidYMin meet");
 
-  const mkPath = (d, cap) => {
+  /* metal gradients for a real-looking pump */
+  const defs = document.createElementNS(NS, "defs");
+  defs.innerHTML =
+    `<linearGradient id="barrel" x1="0" y1="0" x2="1" y2="0">
+       <stop offset="0" stop-color="#7d8288"/>
+       <stop offset="0.28" stop-color="#d7dade"/>
+       <stop offset="0.5" stop-color="#f2f4f5"/>
+       <stop offset="0.72" stop-color="#b9bec3"/>
+       <stop offset="1" stop-color="#6b7075"/>
+     </linearGradient>
+     <linearGradient id="rod" x1="0" y1="0" x2="1" y2="0">
+       <stop offset="0" stop-color="#8d9296"/>
+       <stop offset="0.45" stop-color="#d3d6d9"/>
+       <stop offset="1" stop-color="#63676c"/>
+     </linearGradient>`;
+  svg.appendChild(defs);
+
+  const mkPath = (d) => {
     const p = document.createElementNS(NS, "path");
     p.setAttribute("d", d);
     p.setAttribute("fill", "none");
-    p.setAttribute("stroke-linecap", cap || "round");
+    p.setAttribute("stroke-linecap", "round");
     p.setAttribute("stroke-linejoin", "round");
     return p;
   };
@@ -153,53 +157,21 @@ function buildSvg() {
       const g = document.createElementNS(NS, "g");
       const color = PALETTE[ci % PALETTE.length];
 
-      /* real twisting-balloon look, four layers per balloon segment:
-         1. dark rim (cylinder edge shadow)
-         2. main saturated latex
-         3. soft light tint, offset toward the light
-         4. hard white specular streak (the glossy shine line) */
+      /* four layers per balloon segment: dark rim, latex body,
+         soft light band, hard specular streak */
       const dark = [], main = [], tint = [], gloss = [];
-      for (const d of def.subs) {
-        const p = mkPath(d); p.setAttribute("stroke", shade(color, -0.32));
-        g.appendChild(p); dark.push(p);
-      }
-      for (const d of def.subs) {
-        const p = mkPath(d);
-        g.appendChild(p); main.push(p);
-      }
-      for (const d of def.subs) {
-        const p = mkPath(d); p.setAttribute("stroke", shade(color, 0.34));
-        g.appendChild(p); tint.push(p);
-      }
-      for (const d of def.subs) {
-        const p = mkPath(d); p.setAttribute("stroke", "#ffffff");
-        g.appendChild(p); gloss.push(p);
-      }
-
-      /* knot where the balloon was tied + nubs at the tail ends */
-      const ends = def.subs.map(subEnds);
-      const knot = document.createElementNS(NS, "circle");
-      knot.setAttribute("fill", shade(color, -0.42));
-      knot.setAttribute("cx", ends[0].sx);
-      knot.setAttribute("cy", ends[0].sy);
-      knot.setAttribute("r", 0);
-      g.appendChild(knot);
-      const nubs = [];
-      for (const e of ends) {
-        if (e.closed) continue;
-        const nub = document.createElementNS(NS, "circle");
-        nub.setAttribute("fill", shade(color, -0.28));
-        nub.setAttribute("cx", e.ex);
-        nub.setAttribute("cy", e.ey);
-        nub.setAttribute("r", 0);
-        g.appendChild(nub);
-        nubs.push(nub);
-      }
+      for (const d of def.subs) { const p = mkPath(d); p.setAttribute("stroke", shade(color, -0.32)); g.appendChild(p); dark.push(p); }
+      for (const d of def.subs) { const p = mkPath(d); g.appendChild(p); main.push(p); }
+      for (const d of def.subs) { const p = mkPath(d); p.setAttribute("stroke", shade(color, 0.34)); g.appendChild(p); tint.push(p); }
+      for (const d of def.subs) { const p = mkPath(d); p.setAttribute("stroke", "#ffffff"); g.appendChild(p); gloss.push(p); }
 
       svg.appendChild(g);
-      const jitter = (Math.random() * 8 - 4);
-      const phase = Math.random() * Math.PI * 2;
-      letters.push({ g, dark, main, tint, gloss, knot, nubs, x, base, w: def.w, color, jitter, phase });
+      letters.push({
+        g, dark, main, tint, gloss,
+        subDs: def.subs, subs: null,
+        x, base, w: def.w, color,
+        phase: Math.random() * Math.PI * 2,
+      });
       x += def.w + LETTER_GAP;
       ci++;
     }
@@ -209,79 +181,110 @@ function buildSvg() {
   stage.innerHTML = "";
   stage.appendChild(svg);
   heroSvg = svg;
+  sampleAll();
+}
+
+/* sample every balloon tube into points so it can flop, drape, and fill */
+function sampleAll() {
+  for (const L of letters) {
+    L.subs = L.subDs.map((d, j) => {
+      const el = L.dark[j];
+      el.setAttribute("d", d);               // restore original for measuring
+      const len = el.getTotalLength();
+      const N = Math.max(16, Math.min(40, Math.round(len / 7)));
+      const pts = [];
+      let minX = 1e9, maxX = -1e9;
+      for (let i = 0; i < N; i++) {
+        const p = el.getPointAtLength(len * i / (N - 1));
+        pts.push({ x: p.x, y: p.y });
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+      }
+      const closed = /z\s*$/i.test(d);
+      /* where this balloon lies when it's a limp noodle on the ground */
+      const spillLen = Math.min(len * 0.5, L.w * 1.25);
+      let spillX = (minX + maxX) / 2 - spillLen / 2;
+      spillX = Math.max(-4, Math.min(spillX, L.w + 4 - spillLen));
+      return {
+        pts, N, closed, spillLen, spillX,
+        ground: 95 + Math.random() * 3,
+        ampY: 4 + Math.random() * 4,
+        humps: 1.5 + Math.random() * 1.6,
+        ph1: Math.random() * Math.PI * 2,
+        ph2: Math.random() * Math.PI * 2,
+      };
+    });
+  }
 }
 
 function buildPump(svg, NS, base, firstLetter) {
   const px = 62;
   const ground = base + 8;
+  const NSrect = (x, y, w, h, rx, fill) => {
+    const r = document.createElementNS(NS, "rect");
+    r.setAttribute("x", x); r.setAttribute("y", y);
+    r.setAttribute("width", w); r.setAttribute("height", h);
+    r.setAttribute("rx", rx); r.setAttribute("fill", fill);
+    return r;
+  };
 
-  const hy = firstLetter.base;
+  /* rubber hose lying on the ground from the outlet to the first balloon */
+  const ox = px + 28, oy = ground - 12;
+  const ex = firstLetter.x + 8, ey = base - 2;
+  const mid = (ox + ex) / 2;
+  const hoseD = `M${ox} ${oy}
+    C ${ox + 26} ${oy + 20}, ${ox + 52} ${ground + 5}, ${mid} ${ground + 4}
+    S ${ex - 34} ${ground + 2}, ${ex} ${ey}`;
   const hose = document.createElementNS(NS, "path");
-  hose.setAttribute("d",
-    `M${px + 38} ${ground - 6} C ${px + 80} ${ground + 14}, ${firstLetter.x - 40} ${hy + 26}, ${firstLetter.x + 10} ${hy - 2}`);
+  hose.setAttribute("d", hoseD);
   hose.setAttribute("fill", "none");
-  hose.setAttribute("stroke", "#555");
-  hose.setAttribute("stroke-width", "6");
+  hose.setAttribute("stroke", "#33363a");
+  hose.setAttribute("stroke-width", "7");
   hose.setAttribute("stroke-linecap", "round");
   svg.appendChild(hose);
+  const hoseHi = document.createElementNS(NS, "path");
+  hoseHi.setAttribute("d", hoseD);
+  hoseHi.setAttribute("fill", "none");
+  hoseHi.setAttribute("stroke", "#787d82");
+  hoseHi.setAttribute("stroke-width", "1.8");
+  hoseHi.setAttribute("stroke-linecap", "round");
+  hoseHi.setAttribute("opacity", "0.7");
+  hoseHi.setAttribute("transform", "translate(-0.8 -1.8)");
+  svg.appendChild(hoseHi);
+  /* brass nozzle at the balloon end */
+  const noz = NSrect(ex - 3, ey - 4, 11, 8, 2, "#b08d57");
+  noz.setAttribute("transform", `rotate(-35 ${ex} ${ey})`);
+  svg.appendChild(noz);
 
   const pump = document.createElementNS(NS, "g");
 
-  const plate = document.createElementNS(NS, "rect");
-  plate.setAttribute("x", px - 46); plate.setAttribute("y", ground - 10);
-  plate.setAttribute("width", 92); plate.setAttribute("height", 12);
-  plate.setAttribute("rx", 6); plate.setAttribute("fill", "#c0392b");
-  pump.appendChild(plate);
+  /* rubber base feet */
+  pump.appendChild(NSrect(px - 52, ground - 10, 104, 10, 5, "#2e3134"));
+  pump.appendChild(NSrect(px - 58, ground - 4, 30, 6, 3, "#232527"));
+  pump.appendChild(NSrect(px + 28, ground - 4, 30, 6, 3, "#232527"));
 
-  const cyl = document.createElementNS(NS, "rect");
-  cyl.setAttribute("x", px - 20); cyl.setAttribute("y", ground - 90);
-  cyl.setAttribute("width", 40); cyl.setAttribute("height", 82);
-  cyl.setAttribute("rx", 8); cyl.setAttribute("fill", "#e74c3c");
-  pump.appendChild(cyl);
-  const cylHi = document.createElementNS(NS, "rect");
-  cylHi.setAttribute("x", px - 13); cylHi.setAttribute("y", ground - 84);
-  cylHi.setAttribute("width", 7); cylHi.setAttribute("height", 70);
-  cylHi.setAttribute("rx", 3.5); cylHi.setAttribute("fill", "#ff7f6e");
-  pump.appendChild(cylHi);
-  const collar = document.createElementNS(NS, "rect");
-  collar.setAttribute("x", px - 24); collar.setAttribute("y", ground - 96);
-  collar.setAttribute("width", 48); collar.setAttribute("height", 10);
-  collar.setAttribute("rx", 5); collar.setAttribute("fill", "#96281b");
-  pump.appendChild(collar);
+  /* steel barrel */
+  pump.appendChild(NSrect(px - 17, ground - 92, 34, 84, 6, "url(#barrel)"));
+  /* top + bottom collars */
+  pump.appendChild(NSrect(px - 21, ground - 100, 42, 11, 4, "#43474c"));
+  pump.appendChild(NSrect(px - 21, ground - 12, 42, 8, 3, "#43474c"));
+  /* brass outlet fitting the hose plugs into */
+  pump.appendChild(NSrect(px + 14, ground - 18, 16, 9, 2, "#b08d57"));
 
+  /* plunger: polished rod + T-handle with rubber grips */
   const plunger = document.createElementNS(NS, "g");
-  const rod = document.createElementNS(NS, "rect");
-  rod.setAttribute("x", px - 4); rod.setAttribute("y", ground - 138);
-  rod.setAttribute("width", 8); rod.setAttribute("height", 46);
-  rod.setAttribute("fill", "#7f8c8d");
-  plunger.appendChild(rod);
-  const handle = document.createElementNS(NS, "rect");
-  handle.setAttribute("x", px - 42); handle.setAttribute("y", ground - 152);
-  handle.setAttribute("width", 84); handle.setAttribute("height", 16);
-  handle.setAttribute("rx", 8); handle.setAttribute("fill", "#2c3e50");
-  plunger.appendChild(handle);
+  plunger.appendChild(NSrect(px - 3.5, ground - 148, 7, 56, 2, "url(#rod)"));
+  plunger.appendChild(NSrect(px - 14, ground - 158, 28, 12, 3, "#3a3d40"));
+  plunger.appendChild(NSrect(px - 47, ground - 160, 35, 15, 7.5, "#17181a"));
+  plunger.appendChild(NSrect(px + 12, ground - 160, 35, 15, 7.5, "#17181a"));
+  const gripHiL = NSrect(px - 43, ground - 157, 27, 3, 1.5, "#4a4d50");
+  const gripHiR = NSrect(px + 16, ground - 157, 27, 3, 1.5, "#4a4d50");
+  plunger.appendChild(gripHiL); plunger.appendChild(gripHiR);
   pump.appendChild(plunger);
-  pumpPlunger = { el: plunger, travel: 34 };
+  pumpPlunger = { el: plunger, travel: 40 };
 
-  /* bouncing arrow — no words. if they can't figure it out, they're not allowed in. */
-  const arrowWrap = document.createElementNS(NS, "g");
-  arrowWrap.setAttribute("class", "arrowGrp");
-  const arrow = document.createElementNS(NS, "path");
-  const ax = px, ay = ground - 200;
-  arrow.setAttribute("d",
-    `M${ax} ${ay} L${ax} ${ay + 30} M${ax - 13} ${ay + 17} L${ax} ${ay + 32} L${ax + 13} ${ay + 17}`);
-  arrow.setAttribute("stroke", "#e74c3c");
-  arrow.setAttribute("stroke-width", "8");
-  arrow.setAttribute("stroke-linecap", "round");
-  arrow.setAttribute("stroke-linejoin", "round");
-  arrow.setAttribute("fill", "none");
-  arrowWrap.appendChild(arrow);
-  pump.appendChild(arrowWrap);
-
-  const hit = document.createElementNS(NS, "rect");
-  hit.setAttribute("x", px - 60); hit.setAttribute("y", ground - 165);
-  hit.setAttribute("width", 200); hit.setAttribute("height", 180);
-  hit.setAttribute("fill", "transparent");
+  /* invisible hit area — no arrow, no words. figure it out. */
+  const hit = NSrect(px - 62, ground - 170, 190, 185, 0, "transparent");
   hit.setAttribute("class", "pumpHit");
   hit.addEventListener("pointerdown", doPump);
   pump.appendChild(hit);
@@ -304,6 +307,7 @@ window.addEventListener("keydown", (e) => {
 
 /* ================= animation loop ================= */
 const easeOut = t => 1 - Math.pow(1 - t, 3);
+const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
 let prevT = performance.now();
 
 function frame(now) {
@@ -328,42 +332,61 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
+/* air fills each balloon from its mouth toward its tip; whatever
+   isn't inflated yet stays a limp noodle draped on the ground */
 function renderLetters(now) {
   const p = Math.min(1, inf);
   const over = Math.max(0, inf - 1);
   const ep = easeOut(p);
-  const W = 3 + 20 * ep + 13 * over;
+  const f = p * 1.38;                   // fill front sweeps mouth -> tip as you pump
+  const ts = now / 1000;
 
   for (const L of letters) {
-    const sy = 0.09 + 0.91 * ep + over * 0.06;
-    const sx = 1 + 0.14 * (1 - ep) + over * 0.05;
-    const limp = L.jitter * (1 - ep);
-    const wob = over > 0
-      ? Math.sin(now / 60 + L.phase) * over * 9
-      : Math.sin(now / 400 + L.phase) * (1 - ep) * 1.2;
-    const cx = L.x + L.w / 2, by = L.base;
+    if (!L.subs) continue;
+    const wob = over > 0 ? Math.sin(now / 60 + L.phase) * over * 9 : 0;
     L.g.setAttribute("transform",
-      `translate(${cx} ${by}) scale(${sx} ${sy}) rotate(${limp + wob}) translate(${-L.w / 2} -100)`);
+      over > 0
+        ? `translate(${L.x} ${L.base - 100}) translate(${L.w / 2} 50) rotate(${wob}) translate(${-L.w / 2} -50)`
+        : `translate(${L.x} ${L.base - 100})`);
 
-    /* uninflated latex reads darker & matte; inflated latex is bright & glossy */
-    const mainCol = shade(L.color, -0.20 * (1 - ep));
-    for (const el of L.dark) el.setAttribute("stroke-width", W);
-    for (const el of L.main) {
-      el.setAttribute("stroke-width", Math.max(1.5, W * 0.80));
-      el.setAttribute("stroke", mainCol);
+    for (let j = 0; j < L.subs.length; j++) {
+      const S = L.subs[j];
+      let dstr = "", sum = 0;
+      for (let i = 0; i < S.N; i++) {
+        const t = i / (S.N - 1);
+        const li = clamp01((f - t) / 0.33);
+        const sm = li * li * (3 - 2 * li);
+        sum += sm;
+        const P = S.pts[i];
+        const flop = 1 - sm;
+        const xF = S.spillX + t * S.spillLen
+                 + Math.sin(t * 6.3 + S.ph1 + ts * 1.1) * 2.5 * flop;
+        const yF = S.ground
+                 - Math.abs(Math.sin(t * Math.PI * S.humps + S.ph2)) * S.ampY
+                 + Math.sin(ts * 1.4 + S.ph1 + t * 5) * 1.4 * flop;
+        const X = xF + (P.x - xF) * sm;
+        const Y = yF + (P.y - yF) * sm;
+        dstr += (i ? "L" : "M") + X.toFixed(1) + " " + Y.toFixed(1);
+      }
+      if (S.closed) dstr += "Z";
+      const m = sum / S.N;              // how inflated this tube is
+      const Ws = 3 + 20 * m + 13 * over;
+
+      L.dark[j].setAttribute("d", dstr);
+      L.main[j].setAttribute("d", dstr);
+      L.tint[j].setAttribute("d", dstr);
+      L.gloss[j].setAttribute("d", dstr);
+
+      L.dark[j].setAttribute("stroke-width", Ws);
+      L.main[j].setAttribute("stroke-width", Math.max(1.5, Ws * 0.80));
+      L.main[j].setAttribute("stroke", shade(L.color, -0.20 * (1 - m)));
+      L.tint[j].setAttribute("stroke-width", Math.max(1, Ws * 0.42));
+      L.tint[j].setAttribute("opacity", 0.15 + 0.75 * m);
+      L.tint[j].setAttribute("transform", `translate(${-Ws * 0.09} ${-Ws * 0.12})`);
+      L.gloss[j].setAttribute("stroke-width", Math.max(0.8, Ws * 0.15));
+      L.gloss[j].setAttribute("opacity", 0.85 * m);
+      L.gloss[j].setAttribute("transform", `translate(${-Ws * 0.17} ${-Ws * 0.21})`);
     }
-    for (const el of L.tint) {
-      el.setAttribute("stroke-width", Math.max(1, W * 0.42));
-      el.setAttribute("opacity", 0.15 + 0.75 * ep);
-      el.setAttribute("transform", `translate(${-W * 0.09} ${-W * 0.12})`);
-    }
-    for (const el of L.gloss) {
-      el.setAttribute("stroke-width", Math.max(0.8, W * 0.15));
-      el.setAttribute("opacity", 0.85 * ep);
-      el.setAttribute("transform", `translate(${-W * 0.17} ${-W * 0.21})`);
-    }
-    L.knot.setAttribute("r", 1.5 + 3.6 * ep);
-    for (const nub of L.nubs) nub.setAttribute("r", Math.max(0.8, W * 0.17));
   }
 }
 
@@ -418,17 +441,17 @@ function explode() {
                   "#ff4d6d","#06d6a0","#118ab2","#9b5de5","#ff70a6","#ffd60a",
                   "#00bbf9","#f7b32b","#7ef9ff","#ffb3f2"];
   for (let i = 0; i < COUNT; i++) {
-    const sparkle = Math.random() < 0.22;   // 4-point star flashes
+    const sparkle = Math.random() < 0.22;
     parts.push({
       kind: sparkle ? "sparkle" : "glitter",
       x: Math.random() * W,
-      y: H * 0.1 - Math.random() * H * 2.6,  // deep band above the screen
+      y: H * 0.1 - Math.random() * H * 2.6,
       vx: (Math.random() - 0.5) * 50,
       vy: 380 + Math.random() * 340,
       sway: 15 + Math.random() * 45,
       swayF: 2 + Math.random() * 5,
       ph: Math.random() * Math.PI * 2,
-      twF: 6 + Math.random() * 9,            // twinkle speed
+      twF: 6 + Math.random() * 9,
       rot: Math.random() * Math.PI * 2, vr: (Math.random() - 0.5) * 18,
       s: sparkle ? 4 + Math.random() * 8 : 2.5 + Math.random() * 5.5,
       color: GLITTER[(Math.random() * GLITTER.length) | 0],
@@ -465,12 +488,11 @@ function tickParticles(dt) {
     pt.y += pt.vy * dt;
     pt.rot += pt.vr * dt;
     if (pt.y > H + 40) return false;
-    if (pt.y < -60) return true;             // not on screen yet, skip drawing
+    if (pt.y < -60) return true;
     const tw = Math.sin(pt.ph * pt.twF * 0.35 + pt.x * 0.05);
     ctx.save();
     ctx.translate(pt.x, pt.y); ctx.rotate(pt.rot);
     if (pt.kind === "sparkle") {
-      /* hard white-hot 4-point star with color core, flashing */
       const flash = Math.pow(Math.abs(tw), 3);
       ctx.globalAlpha = 0.25 + 0.75 * flash;
       const s = pt.s * (0.7 + 0.6 * flash);
