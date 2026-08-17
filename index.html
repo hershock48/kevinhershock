@@ -46,7 +46,7 @@
    Monoline "balloon" letters. Coordinates: y 0 (top) to 100 (baseline).
    Each letter = one or more subpaths (each subpath is one thin balloon). */
 const LETTERS = {
-  K: { w: 58, subs: ["M10 4 L10 96", "M52 4 L14 50 L52 96"] },
+  K: { w: 58, subs: ["M10 96 L10 4", "M52 4 L14 50 L52 96"] },
   E: { w: 52, subs: ["M48 4 L12 4 L12 96 L48 96", "M12 50 L40 50"] },
   V: { w: 60, subs: ["M8 4 L30 96 L52 4"] },
   I: { w: 20, subs: ["M10 4 L10 96"] },
@@ -85,7 +85,7 @@ let exploded = false;
 let pumpPressT = 0;
 let letters = [];
 let layoutW = 0, layoutH = 0;
-let heroSvg = null, pumpPlunger = null;
+let heroSvg = null, pumpPlunger = null, hoseInfo = null;
 const stage = document.getElementById("stage");
 
 /* ================= layout / svg build ================= */
@@ -182,6 +182,7 @@ function buildSvg() {
   stage.appendChild(svg);
   heroSvg = svg;
   sampleAll();
+  if (hoseInfo) hoseInfo.len = hoseInfo.el.getTotalLength();
 }
 
 /* sample every balloon tube into points so it can flop, drape, and fill */
@@ -228,33 +229,65 @@ function buildPump(svg, NS, base, firstLetter) {
     return r;
   };
 
-  /* rubber hose lying on the ground from the outlet to the first balloon */
+  /* rubber hose: out of the brass fitting, down onto the floor with a
+     little slack, then up to the nozzle the first balloon is tied onto.
+     The balloon's mouth (bottom of the K) sits exactly on the nozzle tip. */
   const ox = px + 28, oy = ground - 12;
-  const ex = firstLetter.x + 8, ey = base - 2;
-  const mid = (ox + ex) / 2;
-  const hoseD = `M${ox} ${oy}
-    C ${ox + 26} ${oy + 20}, ${ox + 52} ${ground + 5}, ${mid} ${ground + 4}
-    S ${ex - 34} ${ground + 2}, ${ex} ${ey}`;
+  const A = { x: firstLetter.x + 10, y: base - 4 };     // nozzle tip = balloon mouth
+  const th = -30 * Math.PI / 180;                        // nozzle angle, up-and-right
+  const B = { x: A.x - Math.cos(th) * 14, y: A.y - Math.sin(th) * 14 };
+  const mid = (ox + B.x) / 2;
+  const hoseD = `M${ox} ${oy}`
+    + ` C ${ox + 24} ${oy + 26}, ${mid - 20} ${ground + 7}, ${mid + 10} ${ground + 6}`
+    + ` S ${B.x - 18} ${ground + 4}, ${B.x} ${B.y}`;
+  const hoseOutline = document.createElementNS(NS, "path");
+  hoseOutline.setAttribute("d", hoseD);
+  hoseOutline.setAttribute("fill", "none");
+  hoseOutline.setAttribute("stroke", "#202225");
+  hoseOutline.setAttribute("stroke-width", "8");
+  hoseOutline.setAttribute("stroke-linecap", "round");
+  svg.appendChild(hoseOutline);
   const hose = document.createElementNS(NS, "path");
   hose.setAttribute("d", hoseD);
   hose.setAttribute("fill", "none");
-  hose.setAttribute("stroke", "#33363a");
-  hose.setAttribute("stroke-width", "7");
+  hose.setAttribute("stroke", "#3a3d40");
+  hose.setAttribute("stroke-width", "6");
   hose.setAttribute("stroke-linecap", "round");
   svg.appendChild(hose);
   const hoseHi = document.createElementNS(NS, "path");
   hoseHi.setAttribute("d", hoseD);
   hoseHi.setAttribute("fill", "none");
-  hoseHi.setAttribute("stroke", "#787d82");
-  hoseHi.setAttribute("stroke-width", "1.8");
+  hoseHi.setAttribute("stroke", "#84898e");
+  hoseHi.setAttribute("stroke-width", "1.6");
   hoseHi.setAttribute("stroke-linecap", "round");
-  hoseHi.setAttribute("opacity", "0.7");
-  hoseHi.setAttribute("transform", "translate(-0.8 -1.8)");
+  hoseHi.setAttribute("opacity", "0.8");
+  hoseHi.setAttribute("transform", "translate(-0.7 -1.6)");
   svg.appendChild(hoseHi);
-  /* brass nozzle at the balloon end */
-  const noz = NSrect(ex - 3, ey - 4, 11, 8, 2, "#b08d57");
-  noz.setAttribute("transform", `rotate(-35 ${ex} ${ey})`);
-  svg.appendChild(noz);
+
+  /* air pulses that travel down the hose on each pump */
+  hoseInfo = { el: hose, len: 0, pulses: [], circles: [] };
+  for (let i = 0; i < 4; i++) {
+    const c = document.createElementNS(NS, "circle");
+    c.setAttribute("r", 4.2);
+    c.setAttribute("fill", "#6e7377");
+    c.setAttribute("opacity", "0");
+    svg.appendChild(c);
+    hoseInfo.circles.push(c);
+  }
+
+  /* nozzle assembly: steel ferrule, tapered brass tip, and the balloon's
+     rolled neck stretched over it */
+  const ng = document.createElementNS(NS, "g");
+  ng.setAttribute("transform", `translate(${A.x} ${A.y}) rotate(-30)`);
+  const ferrule = NSrect(-15, -4, 8, 8, 1.5, "#8d9296");
+  ng.appendChild(ferrule);
+  const cone = document.createElementNS(NS, "polygon");
+  cone.setAttribute("points", "-8,-3.6 0,-1.5 0,1.5 -8,3.6");
+  cone.setAttribute("fill", "#b08d57");
+  ng.appendChild(cone);
+  const neck = NSrect(-2.5, -2.7, 7, 5.4, 2.7, shade(firstLetter.color, -0.30));
+  ng.appendChild(neck);
+  svg.appendChild(ng);
 
   const pump = document.createElementNS(NS, "g");
 
@@ -300,6 +333,7 @@ function doPump(e) {
   vel += 0.55;
   lastPump = performance.now();
   pumpPressT = 1;
+  if (hoseInfo && hoseInfo.len) hoseInfo.pulses.push(0);
 }
 window.addEventListener("keydown", (e) => {
   if (e.code === "Space" || e.code === "Enter") doPump(e);
@@ -359,11 +393,19 @@ function renderLetters(now) {
         sum += sm;
         const P = S.pts[i];
         const flop = 1 - sm;
-        const xF = S.spillX + t * S.spillLen
+        let xF = S.spillX + t * S.spillLen
                  + Math.sin(t * 6.3 + S.ph1 + ts * 1.1) * 2.5 * flop;
-        const yF = S.ground
+        let yF = S.ground
                  - Math.abs(Math.sin(t * Math.PI * S.humps + S.ph2)) * S.ampY
                  + Math.sin(ts * 1.4 + S.ph1 + t * 5) * 1.4 * flop;
+        /* the first balloon's mouth is tied onto the pump nozzle:
+           it stays put even when the rest of it is limp on the floor */
+        if (L === letters[0] && j === 0) {
+          const pin = Math.max(0, 1 - t / 0.22);
+          const P0 = S.pts[0];
+          xF += (P0.x - xF) * pin;
+          yF += (P0.y - yF) * pin;
+        }
         const X = xF + (P.x - xF) * sm;
         const Y = yF + (P.y - yF) * sm;
         dstr += (i ? "L" : "M") + X.toFixed(1) + " " + Y.toFixed(1);
@@ -395,6 +437,21 @@ function renderPump(dt) {
   pumpPressT = Math.max(0, pumpPressT - dt * 5);
   const down = Math.sin(Math.min(1, pumpPressT) * Math.PI) * pumpPlunger.travel;
   pumpPlunger.el.setAttribute("transform", `translate(0 ${down})`);
+
+  /* gulps of air visibly travel down the hose into the balloon */
+  if (hoseInfo && hoseInfo.len) {
+    hoseInfo.pulses = hoseInfo.pulses
+      .map(p => p + dt * hoseInfo.len * 2.8)
+      .filter(p => p < hoseInfo.len);
+    hoseInfo.circles.forEach((c, i) => {
+      const p = hoseInfo.pulses[i];
+      if (p === undefined) { c.setAttribute("opacity", "0"); return; }
+      const pt = hoseInfo.el.getPointAtLength(p);
+      c.setAttribute("cx", pt.x);
+      c.setAttribute("cy", pt.y);
+      c.setAttribute("opacity", "0.55");
+    });
+  }
 }
 
 /* ================= explosion + glitter ================= */
