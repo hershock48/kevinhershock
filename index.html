@@ -86,8 +86,9 @@
     opacity: 0;
     transition: opacity 1.2s ease;
     display: none;
+    pointer-events: none;   /* a faded tap must not be secretly grabbable */
   }
-  #tap.on { opacity: 1; }
+  #tap.on { opacity: 1; pointer-events: auto; }
   #tapWheel { cursor: grab; }
   #tapWheel.grabbing { cursor: grabbing; }
   #chest {
@@ -890,11 +891,11 @@ const glueCanvas = document.getElementById("glue");
 let scraps = [], buckets = [], glitterAlive = 0;
 let glueCtx = null, glueMask = null, glueW = 0, glueH = 0;
 let stuckPts = [], stuckCount = 0, glueActive = false;
-let sweepMode = false, lastSweep = null, swept = [];
+let sweepMode = false, sweepDone = false, lastSweep = null, swept = [];
 const BROOM_CURSOR = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='30' height='30'><line x1='26' y1='3' x2='13' y2='19' stroke='%238a5a2b' stroke-width='3.6' stroke-linecap='round'/><path d='M13 19 L3 27 L9 28.5 L15.5 21.5 Z' fill='%23d9a44a'/><path d='M15.5 21.5 L9 28.5 L17 29 L18 22.5 Z' fill='%23c8923d'/><rect x='11.6' y='17.6' width='7' height='4' rx='1.6' transform='rotate(40 15 19.5)' fill='%23a06a2c'/></svg>") 5 27, auto`;
 
 function enableSweep() {
-  if (sweepMode) return;
+  if (sweepMode || sweepDone) return;
   sweepMode = true;
   glueActive = false;          // done collecting — the stragglers just fall
   document.body.style.cursor = BROOM_CURSOR;
@@ -961,6 +962,7 @@ window.addEventListener("pointermove", (e) => {
       if (!stuckPts.length) {
         document.body.style.cursor = "";        // all clean
         sweepMode = false;                      // put the broom down — and the swish with it
+        sweepDone = true;                       // for good: nothing may hand it back
         setTimeout(showDot, 900);               // ...and then, a dot
       }
       sweepSwish(dist);
@@ -1386,7 +1388,7 @@ wheelEl.addEventListener("pointerdown", (e) => {
   };
 });
 wheelEl.addEventListener("pointermove", (e) => {
-  if (!wheelDrag) return;
+  if (!wheelDrag || screwState !== "none") return;   // the tap retired when the corkscrew took over
   const a = Math.atan2(e.clientY - wheelDrag.cy, e.clientX - wheelDrag.cx);
   let d = a - wheelDrag.last;
   if (d > Math.PI) d -= Math.PI * 2;
@@ -1818,6 +1820,10 @@ function startScrew() {
 }
 
 function updateScrew(dt) {
+  if (screwState === "descending" || screwState === "in") {
+    /* recompute against the live viewport so rotation/resize can't strand it */
+    screwTargetY = window.innerHeight - 241 * UIS;
+  }
   if (screwState === "descending") {
     screwY += 150 * UIS * dt;
     screwSpin += 300 * dt;                   // it screws its way down
@@ -1895,7 +1901,7 @@ function sizeGoo() {
   tearCanvas = document.createElement("canvas");
   tearCanvas.width = gooCanvas.width;
   tearCanvas.height = gooCanvas.height;
-  tearCtx = tearCanvas.getContext("2d");
+  tearCtx = tearCanvas.getContext("2d", { willReadFrequently: true });
 }
 function activateGoo() {
   if (gooActive) return;
