@@ -148,7 +148,7 @@
   #tapWheel.grabbing { cursor: grabbing; }
   #chest {
     position: fixed;
-    bottom: 4px;
+    bottom: calc(4px + env(safe-area-inset-bottom, 0px));
     left: 50%;
     transform: translateX(-50%);
     z-index: 9;
@@ -175,6 +175,22 @@
     z-index: 9;
     display: none;
     cursor: pointer;
+  }
+  #key.held {
+    pointer-events: none;   /* the held key rides along; taps pass through to the chest */
+    z-index: 30;
+  }
+  #broom {
+    position: fixed;
+    z-index: 30;
+    display: none;
+    pointer-events: none;
+    transform: translate(-30%, -80%);
+    animation: broombob 1.6s ease-in-out infinite;
+  }
+  @keyframes broombob {
+    0%, 100% { margin-top: 0; }
+    50% { margin-top: 10px; }
   }
   #cork {
     position: fixed;
@@ -261,6 +277,14 @@
     <rect x="64" y="48" width="22" height="24" rx="4" fill="#e2b84f" stroke="#8a6a1e" stroke-width="2"/>
     <circle cx="75" cy="57" r="3.4" fill="#3a2413"/>
     <rect x="73.4" y="57" width="3.2" height="8" fill="#3a2413"/>
+  </svg>
+</div>
+<div id="broom">
+  <svg width="52" height="52" viewBox="0 0 30 30">
+    <line x1="26" y1="3" x2="13" y2="19" stroke="#8a5a2b" stroke-width="3.6" stroke-linecap="round"/>
+    <path d="M13 19 L3 27 L9 28.5 L15.5 21.5 Z" fill="#d9a44a"/>
+    <path d="M15.5 21.5 L9 28.5 L17 29 L18 22.5 Z" fill="#c8923d"/>
+    <rect x="11.6" y="17.6" width="7" height="4" rx="1.6" transform="rotate(40 15 19.5)" fill="#a06a2c"/>
   </svg>
 </div>
 <div id="key">
@@ -870,7 +894,8 @@ const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
 let prevT = performance.now();
 
 function frame(now) {
-  const dt = Math.min(0.05, (now - prevT) / 1000);
+  /* clamp at ~11fps so weak devices drop frames instead of running slow-motion */
+  const dt = Math.min(0.09, (now - prevT) / 1000);
   prevT = now;
 
   if (!exploded) {
@@ -1039,13 +1064,54 @@ let driftCanvas = null, driftCtx = null, driftCount = 0, driftAlpha = 0;
 let glueCtx = null, glueMask = null, glueW = 0, glueH = 0;
 let stuckPts = [], stuckCount = 0, glueActive = false;
 let sweepMode = false, sweepDone = false, lastSweep = null, swept = [];
+/* touch has no cursor — holdable things become elements that ride the finger */
+const TOUCHY = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+const broomEl = document.getElementById("broom");
+let SAFE_TOP = 0;
+{
+  const probe = document.createElement("div");
+  probe.style.cssText = "position:fixed;top:0;padding-top:env(safe-area-inset-top,0px);visibility:hidden;";
+  document.body.appendChild(probe);
+  SAFE_TOP = parseFloat(getComputedStyle(probe).paddingTop) || 0;
+  probe.remove();
+}
+window.addEventListener("pointermove", (e) => {
+  if (!TOUCHY) return;
+  if (broomEl.style.display === "block") {
+    broomEl.style.left = e.clientX + "px";
+    broomEl.style.top = e.clientY + "px";
+  }
+  if (keyState === "held") {
+    keyEl.style.left = (e.clientX - 18) + "px";
+    keyEl.style.top = (e.clientY - 44) + "px";
+    keyEl.style.transform = "rotate(-24deg)";
+  }
+});
+window.addEventListener("pointerdown", (e) => {
+  if (!TOUCHY) return;
+  if (broomEl.style.display === "block") {
+    broomEl.style.left = e.clientX + "px";
+    broomEl.style.top = e.clientY + "px";
+  }
+  if (keyState === "held") {
+    keyEl.style.left = (e.clientX - 18) + "px";
+    keyEl.style.top = (e.clientY - 44) + "px";
+  }
+});
 const BROOM_CURSOR = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='30' height='30'><line x1='26' y1='3' x2='13' y2='19' stroke='%238a5a2b' stroke-width='3.6' stroke-linecap='round'/><path d='M13 19 L3 27 L9 28.5 L15.5 21.5 Z' fill='%23d9a44a'/><path d='M15.5 21.5 L9 28.5 L17 29 L18 22.5 Z' fill='%23c8923d'/><rect x='11.6' y='17.6' width='7' height='4' rx='1.6' transform='rotate(40 15 19.5)' fill='%23a06a2c'/></svg>") 5 27, auto`;
 
 function enableSweep() {
   if (sweepMode || sweepDone) return;
   sweepMode = true;
   glueActive = false;          // done collecting — the stragglers just fall
-  document.body.style.cursor = BROOM_CURSOR;
+  if (TOUCHY) {
+    /* no cursor on a phone: hand them a visible broom instead */
+    broomEl.style.left = (window.innerWidth / 2) + "px";
+    broomEl.style.top = (window.innerHeight * 0.7) + "px";
+    broomEl.style.display = "block";
+  } else {
+    document.body.style.cursor = BROOM_CURSOR;
+  }
 }
 
 let lastSwish = 0;
@@ -1108,6 +1174,7 @@ window.addEventListener("pointermove", (e) => {
       stuckPts = keep;
       if (!stuckPts.length) {
         document.body.style.cursor = "";        // all clean
+        broomEl.style.display = "none";
         sweepMode = false;                      // put the broom down — and the swish with it
         sweepDone = true;                       // for good: nothing may hand it back
         setTimeout(showDot, 900);               // ...and then, a dot
@@ -1117,7 +1184,9 @@ window.addEventListener("pointermove", (e) => {
   }
   lastSweep = { x, y };
 });
-const STUCK_MAX = 40000;
+/* every stuck flake is also a tracked point, so "swept clean" means
+   what the eye sees — no invisible leftovers, no premature dot */
+const STUCK_MAX = 22000;
 
 /* the message, written in glue, waiting for the glitter to find it */
 const GLUE_TEXT = "fuck you";
@@ -1172,7 +1241,7 @@ function stickFlake(p, bucket) {
     glueCtx.fillRect(p.x - g / 2, p.y - g / 2, g, g);
   }
   glueCtx.globalAlpha = 1;
-  if (stuckPts.length < 6000) stuckPts.push({ x: p.x, y: p.y, c: bucket.glint });
+  stuckPts.push({ x: p.x, y: p.y, c: bucket.glint });
   stuckCount++;
 }
 function sizeCanvas() {
@@ -1266,7 +1335,8 @@ function explode() {
   for (const b of buckets) { acc += b.wt; cum.push(acc); }
 
   const W = window.innerWidth, H = window.innerHeight;
-  const COUNT = Math.min(80000, Math.max(24000, Math.round((W * H) / 10)));
+  /* particle budget scales with screen area — phones get a storm they can run */
+  const COUNT = Math.min(45000, Math.max(6000, Math.round((W * H) / 18)));
   const BURST = Math.min(7000, Math.round(COUNT * 0.09));
   /* settled drift layer: near flakes pile at the screen bottom and stay
      until the water later washes them away */
@@ -1347,13 +1417,13 @@ function tickParticles(dt) {
   }
   scraps.length = k;
 
-  const slow = dt > 0.045;
+  const slow = dt > 0.034;   // shed glitter early and gently, never chug
   let alive = 0;
 
   /* pass 1: the dark bodies of tumbling flakes (foreshortened as they turn) */
   for (const bucket of buckets) {
     const arr = bucket.arr;
-    if (slow && arr.length > 400) arr.length = (arr.length * 0.85) | 0;
+    if (slow && arr.length > 400) arr.length = (arr.length * 0.93) | 0;
     ctx.fillStyle = bucket.dim;
     bucket.glints.length = 0;
     let j = 0;
@@ -1502,9 +1572,8 @@ function showDot() {
 }
 
 let dotHue = 348;
-dotEl.addEventListener("pointerdown", (e) => {
-  e.preventDefault();
-  if (dotDone) return;
+function dotTap() {
+  if (dotDone || !dotShown) return;
   dotN++;
   dotSize *= 1.55;
   dotHue = (dotHue + 47) % 360;
@@ -1531,6 +1600,15 @@ dotEl.addEventListener("pointerdown", (e) => {
     dotEl.style.cursor = "default";
     setTimeout(showTap, 1400);      // and now, the tap
   }
+}
+dotEl.addEventListener("pointerdown", (e) => { e.preventDefault(); dotTap(); });
+/* a 14px dot is no tap target: anything near the center counts while it's small */
+window.addEventListener("pointerdown", (e) => {
+  if (!dotShown || dotDone || tapShown || e.target === dotEl) return;
+  const dx = e.clientX - window.innerWidth / 2;
+  const dy = e.clientY - window.innerHeight / 2;
+  const r = Math.max(dotSize / 2 + 16, 30);
+  if (dx * dx + dy * dy <= r * r) dotTap();
 });
 
 /* ================= the tap =================
@@ -1741,7 +1819,7 @@ function waterStep(dt) {
       nu.t += dt * nu.rate * (1 + wFlow * 1.4);
       if (nu.t > 0.35) {
         nu.t = 0;
-        if (wBub.length < 160) wBub.push({ x: nu.x + (Math.random() - 0.5) * 6, y: H + Math.random() * 6,
+        if (wBub.length < Math.min(200, (window.innerWidth * H) / 2600)) wBub.push({ x: nu.x + (Math.random() - 0.5) * 6, y: H + Math.random() * 6,
           r: 0.5 + Math.random(), v: 16 + Math.random() * 18, ph: Math.random() * 6.3, w: 0.3 + Math.random() * 0.8 });
       }
     }
@@ -1781,8 +1859,8 @@ function waterStep(dt) {
   /* the whole soundscape sinks underwater as the room floods */
   setUnderwater(vol);
   updateSwell(vol);
-  /* the rising water washes the settled glitter drift away */
-  if (driftAlpha > 0) driftAlpha = Math.max(0, 1 - vol * 9);
+  /* the rising water washes the settled glitter drift away — for good */
+  if (driftAlpha > 0) driftAlpha = Math.min(driftAlpha, Math.max(0, 1 - vol * 9));
 
   /* running-water sound follows the flow, muffling as the room floods */
   ensureWaterSound();
@@ -1879,7 +1957,8 @@ function waterDraw() {
     /* caustic light playing over everything submerged */
     if (vol > 0.15 && H - level > 90) {
       ctx.globalCompositeOperation = "lighter";
-      for (let i = 0; i < 10; i++) {
+      const nCaustics = W < 700 ? 6 : 10;
+      for (let i = 0; i < nCaustics; i++) {
         const cx2 = ((i * 0.104 + 0.05) * W) + Math.sin(wT * 0.7 + i * 2.4) * 70;
         const cy2 = level + 50 + ((i * 173) % Math.max(1, H - level - 80));
         ctx.globalAlpha = 0.035 + 0.03 * Math.abs(Math.sin(wT * 1.3 + i * 1.7));
@@ -1977,7 +2056,7 @@ function updateKey(dt) {
     keyY -= 30 * dt;                        // buoyant — it rises
     if (keyY <= 22) keyState = "atTop";
   } else if (keyState === "atTop") {
-    keyY = 16 + Math.sin(wT * 1.6) * 6;     // bobbing at the surface
+    keyY = 18 + SAFE_TOP + Math.sin(wT * 1.6) * 6;   // bobbing at the surface, clear of the notch
   } else return;
   const kx = keyBaseX + Math.sin(wT * 1.25) * 42 * UIS;
   keyEl.style.left = (kx - 29 * UIS) + "px";
@@ -1997,8 +2076,15 @@ keyEl.addEventListener("pointerdown", (e) => {
   e.preventDefault();
   if (keyState !== "floating" && keyState !== "atTop") return;
   keyState = "held";
-  keyEl.style.display = "none";
-  setGlobalCursor(KEY_CURSOR);
+  if (TOUCHY) {
+    /* on touch the key stays visible and rides the finger */
+    keyEl.classList.add("held");
+    keyEl.style.left = (e.clientX - 18) + "px";
+    keyEl.style.top = (e.clientY - 44) + "px";
+  } else {
+    keyEl.style.display = "none";
+    setGlobalCursor(KEY_CURSOR);
+  }
 });
 
 function thunkSound() {
@@ -2036,6 +2122,8 @@ chestEl.addEventListener("pointerdown", () => {
   }
   /* the key fits */
   keyState = "used";
+  keyEl.style.display = "none";
+  keyEl.classList.remove("held");
   setGlobalCursor("");
   chestOpen = true;
   tapSqueak();                              // old hinges
@@ -2146,11 +2234,18 @@ const gtx = gooCanvas.getContext("2d");
 let gooActive = false, gooBlobs = [], gooGush = [], gooSpecks = [], lastSquelch = 0;
 let tearCanvas = null, tearCtx = null, gooFringes = [], gooStrands = [], gooScraps = [], gooSmears = [], gooFinished = false, dotWhitened = false;
 
+let gooLow = null, gooLowCtx = null;
 function sizeGoo() {
   gooCanvas.width = window.innerWidth;
   gooCanvas.height = window.innerHeight;
   gooCanvas.style.width = window.innerWidth + "px";
   gooCanvas.style.height = window.innerHeight + "px";
+  /* the soft layers render at half resolution — goo is blur, blur upscales free */
+  gooLow = document.createElement("canvas");
+  gooLow.width = Math.max(2, window.innerWidth >> 1);
+  gooLow.height = Math.max(2, window.innerHeight >> 1);
+  gooLowCtx = gooLow.getContext("2d");
+  gooLowCtx.setTransform(0.5, 0, 0, 0.5, 0, 0);
   tearCanvas = document.createElement("canvas");
   tearCanvas.width = gooCanvas.width;
   tearCanvas.height = gooCanvas.height;
@@ -2161,7 +2256,7 @@ function activateGoo() {
   const W = window.innerWidth, H = window.innerHeight;
   sizeGoo();
   gooBlobs = [];
-  const N = 26;
+  const N = Math.max(12, Math.min(26, Math.round((W * H) / 38000)));
   for (let i = 0; i < N; i++) {
     gooBlobs.push({
       bx: Math.random() * W, by: Math.random() * H,
@@ -2335,18 +2430,19 @@ function squelchSound(v) {
 function gooFrame(dt) {
   if (!gooActive) return;
   const W = window.innerWidth, H = window.innerHeight;
+  const lg = gooLowCtx;   /* soft layers render at half res */
 
   /* base: a slow-cycling rainbow wash */
   const ang = wT * 0.12;
   const gx = Math.cos(ang), gy = Math.sin(ang);
-  const grad = gtx.createLinearGradient(
+  const grad = lg.createLinearGradient(
     W / 2 - gx * W * 0.6, H / 2 - gy * H * 0.6,
     W / 2 + gx * W * 0.6, H / 2 + gy * H * 0.6);
   for (let k = 0; k <= 6; k++) {
     grad.addColorStop(k / 6, `hsl(${((wT * 7) + k * 60) % 360},72%,58%)`);
   }
-  gtx.fillStyle = grad;
-  gtx.fillRect(0, 0, W, H);
+  lg.fillStyle = grad;
+  lg.fillRect(0, 0, W, H);
 
   /* the blobs ooze around their drifting homes, shoved aside by presses */
   for (const b of gooBlobs) {
@@ -2358,35 +2454,39 @@ function gooFrame(dt) {
     const damp = Math.exp(-1.7 * dt);
     b.vx *= damp; b.vy *= damp;
     b.x += b.vx * dt; b.y += b.vy * dt;
-    const rg = gtx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r);
+    const rg = lg.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r);
     rg.addColorStop(0, `hsla(${(b.hue + wT * 5) % 360},85%,62%,0.72)`);
     rg.addColorStop(1, "hsla(0,0%,100%,0)");
-    gtx.fillStyle = rg;
-    gtx.fillRect(b.x - b.r, b.y - b.r, b.r * 2, b.r * 2);
+    lg.fillStyle = rg;
+    lg.fillRect(b.x - b.r, b.y - b.r, b.r * 2, b.r * 2);
   }
 
   /* trapped-air specks + a plastic-sheen streak, so it reads as goo under film */
-  gtx.fillStyle = "rgba(255,255,255,0.13)";
+  lg.fillStyle = "rgba(255,255,255,0.13)";
   for (const sp of gooSpecks) {
-    gtx.beginPath();
-    gtx.arc(sp.x, sp.y, sp.r, 0, Math.PI * 2);
-    gtx.fill();
+    lg.beginPath();
+    lg.arc(sp.x, sp.y, sp.r, 0, Math.PI * 2);
+    lg.fill();
   }
   /* oil-slick iridescence: two rainbow washes sliding against the drift */
-  gtx.globalCompositeOperation = "overlay";
-  for (let k = 0; k < 2; k++) {
+  lg.globalCompositeOperation = "overlay";
+  const passes = W < 700 ? 1 : 2;
+  for (let k = 0; k < passes; k++) {
     const a2 = (k ? -1 : 1) * (wT * (0.09 + k * 0.05)) + k * 2.2;
     const dx2 = Math.cos(a2), dy2 = Math.sin(a2);
-    const og = gtx.createLinearGradient(
+    const og = lg.createLinearGradient(
       W / 2 - dx2 * W * 0.55, H / 2 - dy2 * H * 0.55,
       W / 2 + dx2 * W * 0.55, H / 2 + dy2 * H * 0.55);
     for (let st = 0; st <= 4; st++) {
       og.addColorStop(st / 4, `hsla(${((wT * 16 * (k + 1)) + st * 90) % 360},95%,60%,0.16)`);
     }
-    gtx.fillStyle = og;
-    gtx.fillRect(0, 0, W, H);
+    lg.fillStyle = og;
+    lg.fillRect(0, 0, W, H);
   }
-  gtx.globalCompositeOperation = "source-over";
+  lg.globalCompositeOperation = "source-over";
+
+  /* composite the soft stack up to full res in one blit */
+  gtx.drawImage(gooLow, 0, 0, W, H);
 
   /* pressed spots stay smudged for a while, then heal */
   for (let i = gooSmears.length - 1; i >= 0; i--) {
@@ -2481,7 +2581,8 @@ function startGurgle() {
 /* every prop (tap, chest, key, cork, corkscrew) scales with the screen,
    so a TV gets TV-sized props and a phone gets phone-sized ones */
 function uiScaleValue() {
-  return Math.max(0.55, Math.min(2.2,
+  /* floor of 0.8 keeps every prop at or above the 44px touch minimum */
+  return Math.max(0.8, Math.min(2.2,
     Math.min(window.innerWidth, window.innerHeight * 1.45) / 1160));
 }
 function applyUIScale() {
