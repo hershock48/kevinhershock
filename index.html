@@ -148,16 +148,21 @@
   .noselect { user-select: none; -webkit-user-select: none; }
   #tap {
     position: fixed;
-    top: 0;
+    top: env(safe-area-inset-top, 0px);   /* never hide under a notch */
     left: 50%;
-    transform: translateX(-50%);
     z-index: 9;
     opacity: 0;
-    transition: opacity 1.2s ease;
     display: none;
     pointer-events: none;   /* a faded tap must not be secretly grabbable */
+    transform: translateX(-50%) translateY(-115%);
+    transition: opacity 0.5s ease, transform 1.1s cubic-bezier(.22,1.4,.36,1);
+    filter: drop-shadow(0 6px 14px rgba(0,0,0,0.32));
   }
-  #tap.on { opacity: 1; pointer-events: auto; }
+  #tap.on {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(-50%) translateY(0);
+  }
   #tapWheel { cursor: grab; }
   #tapWheel.grabbing { cursor: grabbing; }
   #chest {
@@ -1654,7 +1659,9 @@ function dotTap() {
   if (dotSize > diag * 1.02) {
     dotDone = true;                 // it is the screen now
     dotEl.style.cursor = "default";
-    setTimeout(showTap, 1400);      // and now, the tap
+    /* wait for the colour to finish filling, THEN drop the tap in, so the
+       two moments don't step on each other */
+    setTimeout(showTap, dur * 1000 + 250);
   }
 }
 dotEl.addEventListener("pointerdown", (e) => { e.preventDefault(); dotTap(); });
@@ -1674,14 +1681,23 @@ window.addEventListener("pointerdown", (e) => {
    froth at the impact point, bubbles from fixed nucleation points. */
 const tapEl = document.getElementById("tap");
 const wheelEl = document.getElementById("tapWheel");
-let tapShown = false, tapRot = 0, valveFlow = 0, lastSqueakRot = 0;
+let tapShown = false, tapRot = 0, valveFlow = 0, lastSqueakRot = 0, dripT = 1.2;
 let wT = 0, wFlow = 0, frontY = null, frontV = 0, wLanded = false;
 let breakY = null, breakV = 0, wasFlowing = false;
 let vol = 0, slosh = 0, sloshV = 0;
 let wDrops = [], wFoam = [], wBub = [], wNucl = [];
 let waterSnd = null, splashed = false;
 
+/* the spout's real position on screen, read from the tap itself — survives
+   the bigger tap, the entrance animation, notches and rotation */
 const MOUTH_Y = 92;
+const TAP_VB_H = 120, TAP_SPOUT_VB = 91;
+let spoutYv = MOUTH_Y;
+function measureSpout() {
+  const r = tapEl.getBoundingClientRect();
+  spoutYv = r.height ? r.top + r.height * (TAP_SPOUT_VB / TAP_VB_H) : spoutYv;
+  return spoutYv;
+}
 function mouthX() { return window.innerWidth / 2; }
 function levelOf() { return window.innerHeight * (1 - Math.min(1, vol)); }
 let drainDip = 0;
@@ -1694,11 +1710,44 @@ function surfaceY(x, level, agit) {
     + drainDip * 74 * Math.exp(-Math.pow((x - window.innerWidth / 2) / 120, 2));
 }
 
+function clankSound() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  [520, 780, 1180].forEach((f, i) => {
+    const o = ac.createOscillator(); o.type = "triangle";
+    o.frequency.setValueAtTime(f, t0);
+    o.frequency.exponentialRampToValueAtTime(f * 0.86, t0 + 0.4);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.16 / (i + 1), t0 + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.5);
+    o.connect(g); g.connect(BUS);
+    o.start(t0); o.stop(t0 + 0.52);
+  });
+}
+function plinkSound() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const o = ac.createOscillator(); o.type = "sine";
+  o.frequency.setValueAtTime(1500 + Math.random() * 500, t0);
+  o.frequency.exponentialRampToValueAtTime(620, t0 + 0.09);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(0.09, t0 + 0.006);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+  o.connect(g); g.connect(BUS);
+  o.start(t0); o.stop(t0 + 0.18);
+}
+
 function showTap() {
   if (tapShown) return;
   tapShown = true;
   tapEl.style.display = "block";
-  requestAnimationFrame(() => tapEl.classList.add("on"));
+  requestAnimationFrame(() => {
+    tapEl.classList.add("on");
+    measureSpout();
+  });
+  setTimeout(clankSound, 600);          // it lands with a pipe clank
   const W = window.innerWidth;
   wNucl = [];
   for (let i = 0; i < Math.round(W / 44); i++) {
@@ -1793,14 +1842,34 @@ function ensureWaterSound() {
 
 function waterStep(dt) {
   wT += dt;
+  measureSpout();
   const H = window.innerHeight;
   wFlow += (valveFlow - wFlow) * (1 - Math.exp(-5 * dt));
   const mx = mouthX();
 
+  /* An unopened tap drips. It is the only hint this site gives: motion at
+     the top of the screen, and a falling drop that says there's water in
+     here. The wheel rocks a little too, the way the corkscrew idles. */
+  if (valveFlow < 0.02 && screwState === "none" && !drainOpen) {
+    dripT -= dt;
+    if (dripT <= 0) {
+      dripT = 1.9 + Math.random() * 1.3;
+      wDrops.push({ x: mx, y: spoutYv + 4, vx: 0, vy: 25,
+                    r: 4.6 * UIS, life: 4 });
+      const floor = (vol > 0.01 ? levelOf() : H) - spoutYv;
+      const tFall = Math.sqrt(Math.max(0, 2 * floor) / 1450);
+      setTimeout(plinkSound, Math.min(3000, tFall * 1000));
+    }
+    if (!wheelDrag) {
+      const rock = Math.sin(wT * 1.7) * 6;
+      wheelEl.setAttribute("transform", `translate(70 40) rotate(${tapRot + rock})`);
+    }
+  }
+
   /* a barely-cracked valve sputters air and spit before it runs clean */
   if (wFlow > 0.02 && wFlow < 0.22 && Math.random() < 10 * dt) {
     for (let i = 0; i < 2; i++) {
-      wDrops.push({ x: mx + (Math.random() - 0.5) * 10, y: MOUTH_Y * UIS + 6,
+      wDrops.push({ x: mx + (Math.random() - 0.5) * 10, y: spoutYv + 6,
         vx: (Math.random() - 0.5) * 90, vy: 90 + Math.random() * 200,
         r: 0.8 + Math.random() * 1.4, life: 0.5 + Math.random() * 0.5 });
     }
@@ -1809,7 +1878,7 @@ function waterStep(dt) {
 
   /* causal fall: the first water must physically arrive before any pool */
   if (wFlow > 0.03) {
-    if (frontY === null) { frontY = MOUTH_Y * UIS; frontV = 60; wLanded = false; splashed = false; }
+    if (frontY === null) { frontY = spoutYv; frontV = 60; wLanded = false; splashed = false; }
     if (!wLanded) {
       frontV += 1500 * dt; frontY += frontV * dt;
       if (frontY >= levelOf() - 1) {
@@ -1827,7 +1896,7 @@ function waterStep(dt) {
     }
     wasFlowing = true; breakY = null;
   } else if (wasFlowing && breakY === null) {
-    breakY = MOUTH_Y * UIS; breakV = 110;
+    breakY = spoutYv; breakV = 110;
     wasFlowing = false;
   }
   if (breakY !== null) { breakV += 1500 * dt; breakY += breakV * dt; if (breakY > H + 40) breakY = null; }
@@ -1912,6 +1981,9 @@ function waterStep(dt) {
     d.life -= dt;
     if (d.life <= 0) { wDrops.splice(i, 1); continue; }
     d.vy += 1450 * dt; d.x += d.vx * dt; d.y += d.vy * dt;
+    /* a drop stops at the floor, or at the water it falls into */
+    const stop = vol > 0.01 ? surfaceY(d.x, level, agit) : H + 14;
+    if (d.y > stop) wDrops.splice(i, 1);
   }
 
   /* the whole soundscape sinks underwater as the room floods */
@@ -1935,15 +2007,20 @@ function waterStep(dt) {
 function waterDraw() {
   const W = window.innerWidth, H = window.innerHeight;
   const level = levelOf(), agit = Math.min(1, wFlow * 1.2);
-  if (vol <= 0.0008 && wFlow <= 0.02 && breakY === null && frontY === null) return;
+  /* NB: don't bail before the drips — an unopened tap still has a bead
+     swelling and drops falling, and that is the only cue the site gives */
+  const beadLive = tapShown && valveFlow < 0.02 && screwState === "none"
+                   && !drainOpen && dripT < 0.95;
+  if (vol <= 0.0008 && wFlow <= 0.02 && breakY === null && frontY === null
+      && !wDrops.length && !beadLive) return;
 
   /* ---------- stream: translucent, necking, with a specular core ---------- */
   const mx = mouthX();
-  const sTop = breakY !== null ? breakY : MOUTH_Y * UIS;
+  const sTop = breakY !== null ? breakY : spoutYv;
   const sBot = (frontY !== null && !wLanded) ? Math.min(frontY, level - 1) : level - 1;
   if ((wFlow > 0.02 || breakY !== null) && sBot > sTop + 2) {
     const span = sBot - sTop;
-    let w0 = 9.5 * UIS * (0.45 + wFlow * 0.7);
+    let w0 = 13.5 * UIS * (0.45 + wFlow * 0.7);
     if (breakY !== null) w0 *= 0.4;
     /* a sputtering stream flickers before it runs solid */
     if (wFlow > 0.02 && wFlow < 0.22 && breakY === null) {
@@ -2082,11 +2159,34 @@ function waterDraw() {
     }
     ctx.globalAlpha = 1;
   }
-  /* droplets */
-  ctx.fillStyle = "rgba(190,225,250,0.85)";
+  /* a bead swells at the spout before it lets go — motion exactly where
+     the eye needs to land */
+  if (tapShown && valveFlow < 0.02 && screwState === "none" && !drainOpen && dripT < 0.95) {
+    const t = (0.95 - dripT) / 0.95;
+    const br = 4.6 * UIS * t;
+    if (br > 0.5) {
+      ctx.beginPath();
+      ctx.arc(mx, spoutYv + br * 0.5, br, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(150,205,245,0.9)";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.85)";
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+    }
+  }
+
+  /* droplets — bright core, dark rim, so they read on any colour */
   for (const d of wDrops) {
     ctx.beginPath();
-    ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+    ctx.ellipse(d.x, d.y, d.r * 0.86, d.r * 1.25, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(175,220,250,0.92)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(20,60,100,0.35)";
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(d.x - d.r * 0.28, d.y - d.r * 0.35, Math.max(0.6, d.r * 0.3), 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
     ctx.fill();
   }
 }
@@ -2654,7 +2754,9 @@ function uiScaleValue() {
 }
 function applyUIScale() {
   UIS = uiScaleValue();
-  const sizes = [[tapEl, 140, 120], [chestEl, 200, 200], [keyEl, 58, 28], [corkEl, 34, 42], [screwEl, 160, 160]];
+  /* the tap runs bigger than the other props — it has to be spotted at the
+     very edge of a screen full of colour, and gripped with a thumb */
+  const sizes = [[tapEl, 238, 204], [chestEl, 200, 200], [keyEl, 58, 28], [corkEl, 34, 42], [screwEl, 160, 160]];
   for (const [el, w, h] of sizes) {
     const svg = el.querySelector("svg");
     svg.setAttribute("width", Math.round(w * UIS));
