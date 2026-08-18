@@ -1227,20 +1227,26 @@ function buildGlue() {
   mc.width = W; mc.height = H;
   const m = mc.getContext("2d");
   const fam = `"Segoe Script","Bradley Hand","Brush Script MT","Comic Sans MS",cursive`;
-  let size = Math.round(Math.min(H * 0.30, W * 0.28));
+  /* narrow screens stack the words so each one is HUGE and readable */
+  const lines = W < 700 ? GLUE_TEXT.split(" ") : [GLUE_TEXT];
+  let size = Math.round(Math.min(H * 0.34 / lines.length, W * (lines.length > 1 ? 0.5 : 0.30)));
   m.textAlign = "center"; m.textBaseline = "middle";
   while (size > 40) {
-    m.font = `600 ${size}px ${fam}`;
-    if (m.measureText(GLUE_TEXT).width <= W * 0.78) break;
+    m.font = `700 ${size}px ${fam}`;
+    if (Math.max(...lines.map(t => m.measureText(t).width)) <= W * 0.86) break;
     size -= 8;
   }
   const cx = W / 2, cy = H * 0.46;
+  const lh = size * 1.2;
   m.lineJoin = m.lineCap = "round";
-  m.filter = "blur(2px)";                 // squeezed-from-the-bottle edges
-  m.strokeStyle = "#fff"; m.lineWidth = size * 0.10;
-  m.strokeText(GLUE_TEXT, cx, cy);
+  m.filter = "blur(1.5px)";               // squeezed-from-the-bottle edges
+  m.strokeStyle = "#fff"; m.lineWidth = size * 0.07;
   m.fillStyle = "#fff";
-  m.fillText(GLUE_TEXT, cx, cy);
+  lines.forEach((t, i) => {
+    const ly = cy - ((lines.length - 1) * lh) / 2 + i * lh;
+    m.strokeText(t, cx, ly);
+    m.fillText(t, cx, ly);
+  });
   m.filter = "none";
   const img = m.getImageData(0, 0, W, H).data;
   glueMask = new Uint8Array(W * H);
@@ -1249,19 +1255,24 @@ function buildGlue() {
   /* no sheen, no hint — the glue is invisible until the glitter finds it */
 }
 
-/* a flake lands in the glue and becomes part of the art */
+/* a flake lands in the glue and becomes part of the art —
+   drawn bold: bigger, full-strength, with a dark under-shadow so the
+   crust reads loud on the white page, not pastel */
 function stickFlake(p, bucket) {
-  const s = p.s;
-  glueCtx.globalAlpha = 0.9;
+  const s = p.s * 1.35;
+  glueCtx.globalAlpha = 0.3;
+  glueCtx.fillStyle = "#3a2d16";
+  glueCtx.fillRect(p.x - s / 2 + 1, p.y - s / 2 + 1.4, s * 0.95, s * 0.8);
+  glueCtx.globalAlpha = 1;
   glueCtx.fillStyle = bucket.dim;
-  glueCtx.fillRect(p.x - s / 2, p.y - s / 2, s * 0.9, s * 0.75);
-  if (Math.random() < 0.45) {
+  glueCtx.fillRect(p.x - s / 2, p.y - s / 2, s * 0.95, s * 0.8);
+  if (Math.random() < 0.6) {
+    glueCtx.globalAlpha = 0.9;
     glueCtx.fillStyle = bucket.glint;
-    glueCtx.globalAlpha = 0.85;
     const g = s * 0.5;
     glueCtx.fillRect(p.x - g / 2, p.y - g / 2, g, g);
+    glueCtx.globalAlpha = 1;
   }
-  glueCtx.globalAlpha = 1;
   stuckPts.push({ x: p.x, y: p.y, c: bucket.glint });
   stuckCount++;
 }
@@ -1462,11 +1473,17 @@ function tickParticles(dt) {
       p.vx *= 1 - Math.min(1, 1.6 * dt);
       if (p.life <= 0) continue;
       if (p.y > H - 5) {
-        /* near flakes land in the drift at the bottom and stay */
+        /* near flakes land in the drift at the bottom and stay.
+           Draw in the drift canvas's OWN coordinates — mobile toolbars
+           change innerHeight mid-storm and a mixed-space Y painted a
+           glitter stripe across the middle of the screen */
         if (p.zz && driftCtx && driftCount < 5200) {
           driftCtx.globalAlpha = 0.85;
           driftCtx.fillStyle = bucket.dim;
-          driftCtx.fillRect(p.x - p.s / 2, H - 3 - Math.random() * 5, p.s, p.s * 0.6);
+          driftCtx.fillRect(
+            (p.x / W) * driftCanvas.width - p.s / 2,
+            driftCanvas.height - 3 - Math.random() * 5,
+            p.s, p.s * 0.6);
           driftCount++;
         }
         continue;
@@ -1476,7 +1493,7 @@ function tickParticles(dt) {
       if (glueActive && glueMask && stuckCount < STUCK_MAX
           && p.x > 0 && p.x < glueW && p.y > 0 && p.y < glueH
           && glueMask[(p.y | 0) * glueW + (p.x | 0)]
-          && Math.random() < 0.06) {   /* low per-frame odds = even coat top to bottom */
+          && Math.random() < 0.10) {   /* low per-frame odds = even coat, denser now */
         stickFlake(p, bucket);
         continue;
       }
@@ -1617,8 +1634,10 @@ function dotTap() {
   document.body.appendChild(ring);
   setTimeout(() => ring.remove(), 760);
   bloopSound(dotN);
+  /* done the moment it visually covers the screen — never demand an
+     extra tap after the thing already looks finished */
   const diag = Math.hypot(window.innerWidth, window.innerHeight);
-  if (dotSize > diag * 1.25) {
+  if (dotSize > diag * 1.02) {
     dotDone = true;                 // it is the screen now
     dotEl.style.cursor = "default";
     setTimeout(showTap, 1400);      // and now, the tap
