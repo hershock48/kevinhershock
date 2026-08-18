@@ -99,6 +99,14 @@
     pointer-events: none;
     z-index: 20;
   }
+  #finale {
+    position: fixed;
+    inset: 0;
+    z-index: 12;
+    pointer-events: none;
+    display: none;
+    background: #fdfdfb;   /* the paper, so the canvas only clears */
+  }
   #vignette {
     position: fixed;
     inset: 0;
@@ -336,6 +344,7 @@
           fill="none" stroke="#8a6a1e" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" transform="translate(1 1.5)" opacity="0.6"/>
   </svg>
 </div>
+<canvas id="finale"></canvas>
 <div id="flash"></div>
 <div id="vignette"></div>
 <div id="grain"></div>
@@ -948,6 +957,7 @@ function frame(now) {
 
   tickParticles(dt * timeScale);
   if (tapShown) { waterStep(dt); waterDraw(); updateScrew(dt); updateLid(dt); gooFrame(dt); }
+  finaleFrame(dt);
   requestAnimationFrame(frame);
 }
 
@@ -2399,7 +2409,7 @@ screwEl.addEventListener("pointercancel", endScrewDrag);
 const gooCanvas = document.getElementById("goo");
 const gtx = gooCanvas.getContext("2d");
 let gooActive = false, gooBlobs = [], gooGush = [], gooSpecks = [], lastSquelch = 0;
-let tearCanvas = null, tearCtx = null, gooFringes = [], gooStrands = [], gooScraps = [], gooSmears = [], gooFinished = false, dotWhitened = false;
+let tearCanvas = null, tearCtx = null, gooFringes = [], gooStrands = [], gooScraps = [], gooSmears = [], gooFinished = false, dotWhitened = false, ripCount = 0;
 
 let gooLow = null, gooLowCtx = null;
 function sizeGoo() {
@@ -2473,7 +2483,9 @@ window.addEventListener("pointermove", (e) => { if (gooActive && !gooFinished &&
 function makeRip(x, y) {
   if (!dotWhitened) { dotWhitened = true; dotEl.style.background = "#fdfdfb"; }
   const N = 16;
-  const base = 55 + Math.random() * 55;
+  /* every tear weakens the sheet — later ones open wider */
+  ripCount++;
+  const base = (58 + Math.random() * 58) * (1 + ripCount * 0.09);
   const pts = [];
   for (let i = 0; i < N; i++) {
     const a = (i / N) * Math.PI * 2;
@@ -2522,7 +2534,9 @@ function makeRip(x, y) {
       if (d[(yy * tearCanvas.width + xx) * 4 + 3] > 10) hit++;
     }
   }
-  if (hit / tot > 0.8) finishGoo();
+  /* don't make it a chore: once it's mostly gone, or you've torn enough
+     holes in it, the rest of the sheet lets go on its own */
+  if (hit / tot > 0.55 || ripCount >= 13) finishGoo();
 }
 
 function finishGoo() {
@@ -2552,6 +2566,7 @@ function finishGoo() {
   }
   gooCanvas.style.display = "none";
   gooActive = false;
+  setTimeout(startFinale, 2300);   // once the shreds have fallen
 }
 
 function ripSound() {
@@ -2744,6 +2759,424 @@ function startGurgle() {
   gurgle = { src, bp, g };
 }
 
+/* ================= the finale =================
+   ink drop -> splatter -> hypnotic spiral -> strobe -> lasers ->
+   a baby dancing at the bottom while hearts rain. 1996 forever. */
+const finCanvas = document.getElementById("finale");
+const fctx = finCanvas.getContext("2d");
+const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const BPM = 112;
+let finActive = false, fT = 0, inv = 0, invT = 0;
+let inkY = 0, inkV = 0, splatT = -1, splatBlobs = [], splatDots = [], splatArms = [];
+let lasers = [], hearts = [], nextNote = 0, beatStep = 0;
+
+function sizeFinale() {
+  /* the finale is huge soft shapes and a spiral — it is entirely
+     fill-rate bound, so it renders at 1x and lets the browser upscale.
+     Costs 2.25x less than 1.5x and the difference is invisible in motion. */
+  const dpr = 1;
+  finCanvas.width = window.innerWidth * dpr;
+  finCanvas.height = window.innerHeight * dpr;
+  finCanvas.style.width = window.innerWidth + "px";
+  finCanvas.style.height = window.innerHeight + "px";
+  fctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  buildSpiralSprite();
+}
+
+/* The spiral is tessellated ONCE into a sprite and then just rotated and
+   scaled each frame. An Archimedean spiral scaled by f is the same spiral
+   with pitch f*k, so growth is a scale — no re-tessellation, and it costs
+   one drawImage instead of 1400 path segments a frame. */
+let spiralSprite = null, spiralR = 0;
+const SPIRAL_K = 116;
+function buildSpiralSprite() {
+  /* only as big as it actually needs to be: the farthest screen corner
+     from the spiral's centre */
+  const W = window.innerWidth, H = window.innerHeight;
+  const cx = W / 2, cy = H * 0.46;
+  const R = Math.max(
+    Math.hypot(cx, cy), Math.hypot(W - cx, cy),
+    Math.hypot(cx, H - cy), Math.hypot(W - cx, H - cy)) * 1.03;
+  const q = 1;
+  const c = document.createElement("canvas");
+  c.width = c.height = Math.ceil(R * 2 * q);
+  const g = c.getContext("2d");
+  g.setTransform(q, 0, 0, q, 0, 0);
+  const k = SPIRAL_K, turns = R / (2 * k) + 1.3;
+  g.fillStyle = "#0b0b0d";
+  for (let arm = 0; arm < 2; arm++) {
+    const off = arm * Math.PI, N = 620, thMax = turns * 2 * Math.PI;
+    g.beginPath();
+    for (let i = 0; i <= N; i++) {
+      const th = thMax * i / N, r = k * th / Math.PI;
+      g.lineTo(R + Math.cos(th + off) * r, R + Math.sin(th + off) * r);
+    }
+    for (let i = N; i >= 0; i--) {
+      const th = thMax * i / N, r = Math.max(0, k * (th - Math.PI/2) / Math.PI);
+      g.lineTo(R + Math.cos(th + off) * r, R + Math.sin(th + off) * r);
+    }
+    g.closePath(); g.fill();
+  }
+  spiralSprite = c; spiralR = R;
+}
+
+/* hearts are sprites too — 90 bezier fills a frame is not free */
+let heartSprites = [];
+function buildHeartSprites() {
+  heartSprites = [];
+  for (let i = 0; i < 6; i++) {
+    const S = 72, c = document.createElement("canvas");
+    c.width = c.height = S;
+    const g = c.getContext("2d");
+    g.translate(S/2, S/2); g.scale(S*0.44, S*0.44);
+    g.fillStyle = `hsl(${338 + i*7},80%,${56 + i*2}%)`;
+    g.beginPath();
+    g.moveTo(0, 0.32);
+    g.bezierCurveTo(-0.62, -0.18, -0.38, -0.78, 0, -0.42);
+    g.bezierCurveTo(0.38, -0.78, 0.62, -0.18, 0, 0.32);
+    g.closePath(); g.fill();
+    heartSprites.push(c);
+  }
+}
+
+function startFinale() {
+  if (finActive) return;
+  sizeFinale();
+  finActive = true;
+  fT = 0; inkY = 0; inkV = 0; splatT = -1;
+  finCanvas.style.display = "block";
+
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  splatBlobs = []; splatDots = []; splatArms = [];
+  for (let i = 0; i < 15; i++) {
+    const a = rnd(0, Math.PI * 2), d = rnd(0, 46);
+    splatBlobs.push({ a, d, r: rnd(16, 54), sq: rnd(0.6, 1.3), rot: rnd(0, 6.3) });
+  }
+  for (let i = 0; i < 34; i++) {
+    const a = rnd(0, Math.PI * 2);
+    splatDots.push({ a, d: rnd(55, 235), r: rnd(1.6, 9) });
+  }
+  for (let i = 0; i < 9; i++) {
+    const a = rnd(0, Math.PI * 2);
+    splatArms.push({ a, len: rnd(60, 190), w: rnd(4, 14), curl: rnd(-0.5, 0.5) });
+  }
+
+  buildHeartSprites();
+  lasers = [];
+  const NL = window.innerWidth < 620 ? 7 : 11;
+  for (let i = 0; i < NL; i++) {
+    lasers.push({ x: (i + 0.5) / NL, hue: (i * 360 / NL) % 360,
+                  sw: 0.5 + Math.random() * 1.1, ph: Math.random() * 6.3,
+                  spread: 0.10 + Math.random() * 0.22 });
+  }
+  hearts = [];
+}
+
+/* --- a groove for the baby to dance to --- */
+function drumHit(kind, t) {
+  const ac = audio(); if (!ac) return;
+  if (kind === "kick") {
+    const o = ac.createOscillator(); o.type = "sine";
+    o.frequency.setValueAtTime(115, t);
+    o.frequency.exponentialRampToValueAtTime(42, t + 0.11);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.42, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+    o.connect(g); g.connect(BUS); o.start(t); o.stop(t + 0.22);
+  } else if (kind === "hat") {
+    const s = ac.createBufferSource(); s.buffer = noise(ac);
+    const hp = ac.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 7000;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.06, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    s.connect(hp); hp.connect(g); g.connect(BUS); s.start(t); s.stop(t + 0.06);
+  } else if (kind === "clap") {
+    const s = ac.createBufferSource(); s.buffer = noise(ac);
+    const bp = ac.createBiquadFilter(); bp.type = "bandpass";
+    bp.frequency.value = 1600; bp.Q.value = 1.1;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.22, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+    s.connect(bp); bp.connect(g); g.connect(BUS); s.start(t); s.stop(t + 0.18);
+  } else {                      // bass note
+    const o = ac.createOscillator(); o.type = "square";
+    const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 700;
+    o.frequency.setValueAtTime(kind, t);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.13, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+    o.connect(lp); lp.connect(g); g.connect(BUS); o.start(t); o.stop(t + 0.24);
+  }
+}
+const BASS = [55, 0, 0, 55, 0, 73.4, 0, 0, 65.4, 0, 0, 65.4, 0, 49, 0, 0];
+function scheduleBeats() {
+  if (!AC) return;
+  const spb = 60 / BPM / 4;                       // sixteenth
+  if (nextNote < AC.currentTime) nextNote = AC.currentTime + 0.05;
+  while (nextNote < AC.currentTime + 0.25) {
+    const s = beatStep % 16;
+    if (s % 4 === 0) drumHit("kick", nextNote);
+    if (s === 4 || s === 12) drumHit("clap", nextNote);
+    if (s % 2 === 0) drumHit("hat", nextNote);
+    if (BASS[s]) drumHit(BASS[s], nextNote);
+    nextNote += spb; beatStep++;
+  }
+}
+
+/* --- pieces --- */
+function capsule(x1, y1, x2, y2, w, col) {
+  fctx.strokeStyle = col; fctx.lineWidth = w; fctx.lineCap = "round";
+  fctx.beginPath(); fctx.moveTo(x1, y1); fctx.lineTo(x2, y2); fctx.stroke();
+}
+
+function drawBaby(cx, cy, s, beat, skin, diaper) {
+  const sway = Math.sin(beat * Math.PI);
+  const bob = Math.abs(Math.sin(beat * Math.PI)) * 0.10 * s;
+  const twist = sway * 0.16;
+  fctx.save();
+  fctx.translate(cx + sway * 0.22 * s, cy - bob);
+  fctx.rotate(twist * 0.35);
+  const hipY = -0.42 * s, shY = -1.02 * s;
+  // legs — alternating step
+  const l1 = Math.sin(beat * Math.PI), l2 = -l1;
+  capsule(-0.16*s, hipY, -0.22*s - l1*0.16*s, hipY + 0.42*s, 0.20*s, skin);
+  capsule(-0.22*s - l1*0.16*s, hipY + 0.42*s, -0.26*s - l1*0.26*s, hipY + 0.78*s, 0.17*s, skin);
+  capsule( 0.16*s, hipY,  0.22*s - l2*0.16*s, hipY + 0.42*s, 0.20*s, skin);
+  capsule( 0.22*s - l2*0.16*s, hipY + 0.42*s, 0.26*s - l2*0.26*s, hipY + 0.78*s, 0.17*s, skin);
+  // body
+  fctx.fillStyle = skin;
+  fctx.beginPath(); fctx.ellipse(0, -0.72*s, 0.40*s, 0.44*s, 0, 0, 6.3); fctx.fill();
+  // diaper
+  fctx.fillStyle = diaper;
+  fctx.beginPath(); fctx.ellipse(0, -0.40*s, 0.36*s, 0.26*s, 0, 0, 6.3); fctx.fill();
+  // arms — the cha-cha
+  const a1 = Math.sin(beat * Math.PI + 0.6), a2 = Math.sin(beat * Math.PI + Math.PI + 0.6);
+  capsule(-0.34*s, shY, -0.62*s, shY - a1*0.30*s, 0.17*s, skin);
+  capsule(-0.62*s, shY - a1*0.30*s, -0.80*s, shY - a1*0.58*s - 0.08*s, 0.15*s, skin);
+  capsule( 0.34*s, shY,  0.62*s, shY - a2*0.30*s, 0.17*s, skin);
+  capsule( 0.62*s, shY - a2*0.30*s,  0.80*s, shY - a2*0.58*s - 0.08*s, 0.15*s, skin);
+  // head
+  fctx.fillStyle = skin;
+  fctx.beginPath(); fctx.ellipse(0, -1.52*s, 0.46*s, 0.43*s, sway*0.1, 0, 6.3); fctx.fill();
+  fctx.beginPath(); fctx.ellipse(-0.45*s, -1.50*s, 0.09*s, 0.11*s, 0, 0, 6.3); fctx.fill();
+  fctx.beginPath(); fctx.ellipse( 0.45*s, -1.50*s, 0.09*s, 0.11*s, 0, 0, 6.3); fctx.fill();
+  // face
+  const dark = "#3a2a1c";
+  fctx.fillStyle = dark;
+  fctx.beginPath(); fctx.ellipse(-0.15*s, -1.56*s, 0.045*s, 0.055*s, 0, 0, 6.3); fctx.fill();
+  fctx.beginPath(); fctx.ellipse( 0.15*s, -1.56*s, 0.045*s, 0.055*s, 0, 0, 6.3); fctx.fill();
+  fctx.strokeStyle = dark; fctx.lineWidth = 0.035*s; fctx.lineCap = "round";
+  fctx.beginPath(); fctx.arc(0, -1.44*s, 0.13*s, 0.25, Math.PI - 0.25); fctx.stroke();
+  // one curl of hair
+  fctx.beginPath();
+  fctx.arc(0, -1.92*s, 0.10*s, Math.PI*0.9, Math.PI*2.3);
+  fctx.stroke();
+  fctx.restore();
+}
+
+function heartPath(x, y, s, rot) {
+  fctx.save(); fctx.translate(x, y); fctx.rotate(rot); fctx.scale(s, s);
+  fctx.beginPath();
+  fctx.moveTo(0, 0.32);
+  fctx.bezierCurveTo(-0.62, -0.18, -0.38, -0.78, 0, -0.42);
+  fctx.bezierCurveTo(0.38, -0.78, 0.62, -0.18, 0, 0.32);
+  fctx.closePath(); fctx.fill();
+  fctx.restore();
+}
+
+const sstep = (a, b, t) => { const x = Math.max(0, Math.min(1, (t-a)/(b-a))); return x*x*(3-2*x); };
+
+function finaleFrame(dt) {
+  if (!finActive) return;
+  fT += dt;
+  const W = window.innerWidth, H = window.innerHeight;
+  const cx = W / 2, cy = H * 0.46;
+
+  /* strobe / inversion — rate capped for photosensitivity, off entirely
+     when the visitor asked for reduced motion */
+  const strobe = sstep(8.0, 11.0, fT);
+  if (!REDUCED && strobe > 0) {
+    invT += dt;
+    const period = 0.62 - 0.28 * strobe;          // ~1.6Hz -> ~2.9Hz max
+    if (invT > period) {
+      invT = 0; inv ^= 1;
+      /* the whole scene flips via a GPU filter — far cheaper than
+         re-blending the spiral, and it strobes everything at once */
+      finCanvas.style.filter = inv ? "invert(1)" : "none";
+    }
+  } else if (inv) { inv = 0; finCanvas.style.filter = "none"; }
+
+  const ink = "#0b0b0d";
+  fctx.clearRect(0, 0, W, H);
+
+  /* ---- 1. the ink drop ---- */
+  if (splatT < 0) {
+    const swell = Math.min(1, fT / 1.0);
+    if (fT < 1.0) {
+      fctx.fillStyle = ink;
+      const r = 6 + swell * 15;
+      fctx.beginPath();
+      fctx.ellipse(cx, r * 0.7, r * 0.8, r * (0.9 + swell * 0.35), 0, 0, 6.3);
+      fctx.fill();
+    } else {
+      inkV += 2400 * dt; inkY += inkV * dt;
+      const y = 18 + inkY;
+      fctx.fillStyle = ink;
+      const st = Math.min(1, inkV / 900);
+      fctx.beginPath();
+      fctx.ellipse(cx, y, 17 - st * 6, 20 + st * 30, 0, 0, 6.3);
+      fctx.fill();
+      fctx.globalAlpha = 0.5;
+      capsule(cx, y - 30 - st * 60, cx, y, 6 - st * 3, ink);
+      fctx.globalAlpha = 1;
+      if (y >= cy) { splatT = fT; splatSound(); }
+    }
+  }
+
+  /* ---- 2. the splatter ---- */
+  if (splatT >= 0) {
+    const age = fT - splatT;
+    const g = 1 - Math.pow(1 - Math.min(1, age / 0.45), 3);
+    fctx.fillStyle = ink;
+    for (const b of splatBlobs) {
+      fctx.save(); fctx.translate(cx + Math.cos(b.a)*b.d*g, cy + Math.sin(b.a)*b.d*g);
+      fctx.rotate(b.rot);
+      fctx.beginPath(); fctx.ellipse(0, 0, b.r*g, b.r*b.sq*g, 0, 0, 6.3); fctx.fill();
+      fctx.restore();
+    }
+    for (const a of splatArms) {
+      const ex = cx + Math.cos(a.a + a.curl) * a.len * g;
+      const ey = cy + Math.sin(a.a + a.curl) * a.len * g;
+      capsule(cx + Math.cos(a.a)*20*g, cy + Math.sin(a.a)*20*g, ex, ey, a.w*g, ink);
+      fctx.beginPath(); fctx.arc(ex, ey, a.w*0.7*g, 0, 6.3); fctx.fill();
+    }
+    for (const d of splatDots) {
+      fctx.beginPath();
+      fctx.arc(cx + Math.cos(d.a)*d.d*g, cy + Math.sin(d.a)*d.d*g, d.r*g, 0, 6.3);
+      fctx.fill();
+    }
+  }
+
+  /* ---- 3. the spiral ---- */
+  const sp = sstep(2.6, 8.5, fT);
+  if (sp > 0 && spiralSprite) {
+    const spin = Math.pow(sp, 1.6) * 22 + fT * (REDUCED ? 0.25 : 0.85);
+    const scale = (0.16 + sp * 0.84);
+    fctx.save();
+    fctx.globalAlpha = sp;
+    fctx.translate(cx, cy);
+    fctx.rotate(spin);
+    fctx.scale(scale, scale);
+    fctx.drawImage(spiralSprite, -spiralR, -spiralR, spiralR * 2, spiralR * 2);
+    fctx.restore();
+  }
+
+  /* ---- 4. lasers from the floor ---- */
+  const lz = sstep(9.6, 11.4, fT);
+  if (lz > 0) {
+    fctx.save();
+    const beams = lasers.map(L => {
+      const bx = L.x * W;
+      const ang = -Math.PI/2 + Math.sin(fT * L.sw + L.ph) * L.spread * 3.0;
+      const len = H * 1.3;
+      return { bx, ex: bx + Math.cos(ang)*len, ey: H + Math.sin(ang)*len,
+               hue: (L.hue + fT * 40) % 360,
+               wdt: 12 + Math.sin(fT * 3 + L.ph) * 6 };
+    });
+    /* beam bodies painted normally so they still read over the white
+       bands of the spiral — additive alone vanishes on white */
+    for (const b of beams) {
+      const grd = fctx.createLinearGradient(b.bx, H, b.ex, b.ey);
+      grd.addColorStop(0, `hsla(${b.hue},95%,55%,${0.62*lz})`);
+      grd.addColorStop(0.55, `hsla(${b.hue},95%,58%,${0.34*lz})`);
+      grd.addColorStop(1, `hsla(${b.hue},95%,60%,0)`);
+      fctx.fillStyle = grd;
+      fctx.beginPath();
+      fctx.moveTo(b.bx - 6, H);
+      fctx.lineTo(b.ex - b.wdt, b.ey); fctx.lineTo(b.ex + b.wdt, b.ey);
+      fctx.lineTo(b.bx + 6, H);
+      fctx.closePath(); fctx.fill();
+    }
+    /* hot cores glow on top */
+    fctx.globalCompositeOperation = "lighter";
+    for (const b of beams) {
+      fctx.strokeStyle = `hsla(${b.hue},100%,80%,${0.8*lz})`;
+      fctx.lineWidth = 3;
+      fctx.beginPath(); fctx.moveTo(b.bx, H); fctx.lineTo(b.ex, b.ey); fctx.stroke();
+    }
+    fctx.globalCompositeOperation = "source-over";
+    const hz = fctx.createLinearGradient(0, H, 0, H - 110);
+    hz.addColorStop(0, `hsla(${(fT*50)%360},90%,60%,${0.30*lz})`);
+    hz.addColorStop(1, "hsla(0,0%,100%,0)");
+    fctx.fillStyle = hz; fctx.fillRect(0, H - 110, W, 110);
+    fctx.restore();
+  }
+
+  /* ---- 5. the baby ---- */
+  const bb = sstep(10.8, 11.9, fT);
+  if (bb > 0) {
+    if (AC) scheduleBeats();
+    const beat = fT * (BPM / 60);
+    const s = Math.min(W, H) * 0.105 * (0.7 + 0.3 * bb);
+    const feet = H - 14;
+    fctx.save();
+    fctx.globalAlpha = bb;
+    fctx.fillStyle = "rgba(0,0,0,0.20)";
+    fctx.beginPath();
+    fctx.ellipse(W/2, feet + 2, s*0.8, s*0.15, 0, 0, 6.3); fctx.fill();
+    /* anchor so the FEET land on the floor, not the hips */
+    drawBaby(W/2, feet - s * 0.36, s, beat, "#f0c39a", "#fdfdfd");
+    fctx.restore();
+  }
+
+  /* ---- 6. hearts from the ceiling ---- */
+  const ht = sstep(11.4, 12.6, fT);
+  if (ht > 0) {
+    const HMAX = W < 620 ? 44 : 78;
+    if (hearts.length < HMAX && Math.random() < 22 * dt) {
+      hearts.push({ x: Math.random() * W, y: -40,
+                    vy: 55 + Math.random() * 130, sway: 12 + Math.random() * 34,
+                    ph: Math.random() * 6.3, s: 12 + Math.random() * 30,
+                    rot: Math.random() * 6.3, vr: (Math.random() - 0.5) * 1.7,
+                    sprite: (Math.random() * 6) | 0 });
+    }
+    for (let i = hearts.length - 1; i >= 0; i--) {
+      const h = hearts[i];
+      h.ph += dt * 1.6; h.y += h.vy * dt;
+      h.x += Math.sin(h.ph) * h.sway * dt; h.rot += h.vr * dt;
+      if (h.y > H + 60) { hearts.splice(i, 1); continue; }
+      const spr = heartSprites[h.sprite];
+      fctx.save();
+      fctx.translate(h.x, h.y);
+      fctx.rotate(h.rot + Math.sin(h.ph) * 0.25);
+      fctx.drawImage(spr, -h.s, -h.s, h.s * 2, h.s * 2);
+      fctx.restore();
+    }
+  }
+}
+
+function splatSound() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass";
+  lp.frequency.setValueAtTime(2200, t0);
+  lp.frequency.exponentialRampToValueAtTime(180, t0 + 0.3);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.5, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.34);
+  s.connect(lp); lp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 0.36);
+  const o = ac.createOscillator(); o.type = "sine";
+  o.frequency.setValueAtTime(160, t0);
+  o.frequency.exponentialRampToValueAtTime(48, t0 + 0.22);
+  const g2 = ac.createGain();
+  g2.gain.setValueAtTime(0.36, t0);
+  g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.26);
+  o.connect(g2); g2.connect(BUS); o.start(t0); o.stop(t0 + 0.28);
+}
+
 /* ================= boot ================= */
 /* every prop (tap, chest, key, cork, corkscrew) scales with the screen,
    so a TV gets TV-sized props and a phone gets phone-sized ones */
@@ -2784,6 +3217,7 @@ let lastLines = "";
 window.addEventListener("resize", () => {
   applyUIScale();
   sizeCanvas();
+  if (finActive) sizeFinale();
   if (exploded) return;
   const l = currentLines().join("|");
   if (l !== lastLines) { lastLines = l; buildSvg(); }
