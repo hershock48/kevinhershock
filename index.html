@@ -41,6 +41,11 @@
     pointer-events: none;
   }
   #goo.on { opacity: 1; }
+  #goo.falling {
+    transition: transform 1.3s ease-in, opacity 1.1s ease;
+    transform: translateY(90px);
+    opacity: 0;
+  }
   #glue {
     position: fixed;
     inset: 0;
@@ -271,6 +276,7 @@ let pumpPressT = 0;
 let letters = [];
 let layoutW = 0, layoutH = 0;
 let heroSvg = null, pumpPlunger = null, hoseInfo = null;
+let UIS = 1;   // global prop scale: 1.0 at ~laptop size, bigger on TVs, smaller on phones
 const stage = document.getElementById("stage");
 const flashEl = document.getElementById("flash");
 const veilEl = document.getElementById("veil");
@@ -1426,7 +1432,7 @@ function waterStep(dt) {
 
   /* causal fall: the first water must physically arrive before any pool */
   if (wFlow > 0.03) {
-    if (frontY === null) { frontY = MOUTH_Y; frontV = 60; wLanded = false; splashed = false; }
+    if (frontY === null) { frontY = MOUTH_Y * UIS; frontV = 60; wLanded = false; splashed = false; }
     if (!wLanded) {
       frontV += 1500 * dt; frontY += frontV * dt;
       if (frontY >= levelOf() - 1) {
@@ -1444,7 +1450,7 @@ function waterStep(dt) {
     }
     wasFlowing = true; breakY = null;
   } else if (wasFlowing && breakY === null) {
-    breakY = MOUTH_Y; breakV = 110;
+    breakY = MOUTH_Y * UIS; breakV = 110;
     wasFlowing = false;
   }
   if (breakY !== null) { breakV += 1500 * dt; breakY += breakV * dt; if (breakY > H + 40) breakY = null; }
@@ -1550,11 +1556,11 @@ function waterDraw() {
 
   /* ---------- stream: translucent, necking, with a specular core ---------- */
   const mx = mouthX();
-  const sTop = breakY !== null ? breakY : MOUTH_Y;
+  const sTop = breakY !== null ? breakY : MOUTH_Y * UIS;
   const sBot = (frontY !== null && !wLanded) ? Math.min(frontY, level - 1) : level - 1;
   if ((wFlow > 0.02 || breakY !== null) && sBot > sTop + 2) {
     const span = sBot - sTop;
-    let w0 = 9.5 * (0.45 + wFlow * 0.7);
+    let w0 = 9.5 * UIS * (0.45 + wFlow * 0.7);
     if (breakY !== null) w0 *= 0.4;
     ctx.beginPath();
     const Ls = [], Rs = [];
@@ -1622,7 +1628,7 @@ function waterDraw() {
     if (drainDip > 0.03 && vol > 0.01) {
       const cxx = W / 2;
       const sy = surfaceY(cxx, level, agit) + 4;
-      const mouthY = H - 78;
+      const mouthY = H - 78 * UIS;
       if (mouthY > sy + 24) {
         ctx.beginPath();
         ctx.moveTo(cxx - 54, sy - 4);
@@ -1693,8 +1699,8 @@ function showChest() {
   chestEl.style.display = "block";
   requestAnimationFrame(() => chestEl.classList.add("on"));
   keyState = "floating";
-  keyBaseX = window.innerWidth / 2 + 130;
-  keyY = window.innerHeight - 150;
+  keyBaseX = window.innerWidth / 2 + 130 * UIS;
+  keyY = window.innerHeight - 150 * UIS;
   keyEl.style.display = "block";
 }
 
@@ -1705,8 +1711,8 @@ function updateKey(dt) {
   } else if (keyState === "atTop") {
     keyY = 16 + Math.sin(wT * 1.6) * 6;     // bobbing at the surface
   } else return;
-  const kx = keyBaseX + Math.sin(wT * 1.25) * 42;
-  keyEl.style.left = (kx - 29) + "px";
+  const kx = keyBaseX + Math.sin(wT * 1.25) * 42 * UIS;
+  keyEl.style.left = (kx - 29 * UIS) + "px";
   keyEl.style.top = keyY + "px";
   keyEl.style.transform = `rotate(${Math.sin(wT * 1.7) * 14}deg)`;
 }
@@ -1770,8 +1776,8 @@ chestEl.addEventListener("pointerdown", () => {
     corkOut = true;
     /* the cork is the plug: seated snug in the chest, clogging it up */
     const r = chestEl.getBoundingClientRect();
-    corkEl.style.left = (r.left + r.width / 2 - 17) + "px";
-    corkEl.style.top = (r.top + 16) + "px";           // down IN the chest, plugging it
+    corkEl.style.left = (r.left + r.width / 2 - 17 * UIS) + "px";
+    corkEl.style.top = (r.top + 16 * UIS) + "px";     // down IN the chest, plugging it
     corkEl.style.transform = "translateY(0px)";       // body hidden behind the front wall
     corkEl.style.display = "block";
     setTimeout(startScrew, 2000);
@@ -1791,16 +1797,16 @@ function startScrew() {
   tapEl.classList.remove("on");              // and fades away
   corkEl.style.transition = "none";
   corkEl.style.transform = "translateY(0px)";
-  screwTargetY = window.innerHeight - 241;
-  screwY = -180;
-  screwEl.style.left = (window.innerWidth / 2 - 80) + "px";
+  screwTargetY = window.innerHeight - 241 * UIS;
+  screwY = -180 * UIS;
+  screwEl.style.left = (window.innerWidth / 2 - 80 * UIS) + "px";
   screwEl.style.top = screwY + "px";
   screwEl.style.display = "block";
 }
 
 function updateScrew(dt) {
   if (screwState === "descending") {
-    screwY += 150 * dt;
+    screwY += 150 * UIS * dt;
     screwSpin += 300 * dt;                   // it screws its way down
     if (screwY >= screwTargetY) {
       screwY = screwTargetY;
@@ -1812,8 +1818,8 @@ function updateScrew(dt) {
   } else if (screwState === "in") {
     if (!screwDrag) screwSpin += 46 * dt;    // idles in circles — an invitation
     const ext = Math.min(1, extractDeg / 720);
-    screwEl.style.top = (screwTargetY - ext * 70) + "px";
-    corkEl.style.transform = `translateY(${-ext * 70}px)`;
+    screwEl.style.top = (screwTargetY - ext * 70 * UIS) + "px";
+    corkEl.style.transform = `translateY(${-ext * 70 * UIS}px)`;
     screwWheelEl.setAttribute("transform", `rotate(${screwSpin + extractDeg} 80 22)`);
     if (ext >= 1) {
       screwState = "done";
@@ -1823,10 +1829,10 @@ function updateScrew(dt) {
       activateGoo();
       /* unplugged — the corkscrew rises up and away with its prize */
       screwEl.style.transition = "top 1.4s ease-in, opacity 0.6s ease 1.3s";
-      screwEl.style.top = (screwTargetY - 70 - 320) + "px";
+      screwEl.style.top = (screwTargetY - 390 * UIS) + "px";
       screwEl.style.opacity = "0";
       corkEl.style.transition = "transform 1.4s ease-in, opacity 0.6s ease 1.3s";
-      corkEl.style.transform = "translateY(-390px) rotate(14deg)";
+      corkEl.style.transform = `translateY(${-390 * UIS}px) rotate(14deg)`;
       corkEl.style.opacity = "0";
       setTimeout(() => { screwEl.style.display = "none"; corkEl.style.display = "none"; }, 2100);
     }
@@ -1866,10 +1872,15 @@ screwWheelEl.addEventListener("pointercancel", endScrewDrag);
 const gooCanvas = document.getElementById("goo");
 const gtx = gooCanvas.getContext("2d");
 let gooActive = false, gooBlobs = [], gooGush = [], gooSpecks = [], lastSquelch = 0;
+let tearCanvas = null, tearCtx = null, gooFringes = [], gooScraps = [], gooFinished = false, dotWhitened = false;
 
 function sizeGoo() {
   gooCanvas.width = window.innerWidth;
   gooCanvas.height = window.innerHeight;
+  tearCanvas = document.createElement("canvas");
+  tearCanvas.width = gooCanvas.width;
+  tearCanvas.height = gooCanvas.height;
+  tearCtx = tearCanvas.getContext("2d");
 }
 function activateGoo() {
   if (gooActive) return;
@@ -1910,8 +1921,87 @@ function gooPress(x, y, str) {
   const nw = performance.now();
   if (nw - lastSquelch > 160) { lastSquelch = nw; squelchSound(str); }
 }
-window.addEventListener("pointerdown", (e) => { if (gooActive) gooPress(e.clientX, e.clientY, 1); });
-window.addEventListener("pointermove", (e) => { if (gooActive && e.buttons) gooPress(e.clientX, e.clientY, 0.35); });
+window.addEventListener("pointerdown", (e) => {
+  if (!gooActive || gooFinished) return;
+  if (vol <= 0.02) {
+    makeRip(e.clientX, e.clientY);   // once it's dry, the gel tears like tissue paper
+    gooPress(e.clientX, e.clientY, 0.8);
+  } else {
+    gooPress(e.clientX, e.clientY, 1);
+  }
+});
+window.addEventListener("pointermove", (e) => { if (gooActive && !gooFinished && e.buttons) gooPress(e.clientX, e.clientY, 0.35); });
+
+/* rip a jagged tissue-paper hole through to the white underneath */
+function makeRip(x, y) {
+  if (!dotWhitened) { dotWhitened = true; dotEl.style.background = "#fdfdfb"; }
+  const N = 16;
+  const base = 55 + Math.random() * 55;
+  const pts = [];
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    let rad = base * (0.55 + Math.random() * 0.6);
+    if (Math.random() < 0.22) rad *= 1.4;          // deeper snags
+    pts.push([x + Math.cos(a) * rad, y + Math.sin(a) * rad]);
+  }
+  const path = new Path2D();
+  path.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < N; i++) path.lineTo(pts[i][0], pts[i][1]);
+  path.closePath();
+  tearCtx.fillStyle = "#fff";
+  tearCtx.fill(path);
+  if (gooFringes.length < 120) gooFringes.push(path);
+  /* shreds flutter off the tear */
+  for (let i = 0; i < 7; i++) {
+    if (gooScraps.length > 90) break;
+    gooScraps.push({
+      x: x + (Math.random() - 0.5) * base, y: y + (Math.random() - 0.5) * base,
+      vx: (Math.random() - 0.5) * 240, vy: -60 - Math.random() * 100,
+      rot: Math.random() * Math.PI * 2, vr: (Math.random() - 0.5) * 10,
+      w: 10 + Math.random() * 16, h: 7 + Math.random() * 9,
+      hue: Math.random() * 360, life: 1.5 + Math.random() * 0.7,
+    });
+  }
+  ripSound();
+  /* torn enough? the rest gives way */
+  const d = tearCtx.getImageData(0, 0, tearCanvas.width, tearCanvas.height).data;
+  let hit = 0, tot = 0;
+  for (let yy = 0; yy < tearCanvas.height; yy += 40) {
+    for (let xx = 0; xx < tearCanvas.width; xx += 40) {
+      tot++;
+      if (d[(yy * tearCanvas.width + xx) * 4 + 3] > 10) hit++;
+    }
+  }
+  if (hit / tot > 0.8) finishGoo();
+}
+
+function finishGoo() {
+  if (gooFinished) return;
+  gooFinished = true;
+  ripSound(); ripSound();                        // the whole sheet lets go
+  gooCanvas.classList.add("falling");
+  setTimeout(() => {
+    gooCanvas.style.display = "none";
+    gooActive = false;
+  }, 1400);
+}
+
+function ripSound() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  for (let k = 0; k < 2; k++) {
+    const s = ac.createBufferSource(); s.buffer = noise(ac);
+    const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 0.7;
+    bp.frequency.setValueAtTime(3400 - k * 900, t0 + k * 0.03);
+    bp.frequency.exponentialRampToValueAtTime(1200 - k * 300, t0 + 0.2 + k * 0.03);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t0 + k * 0.03);
+    g.gain.exponentialRampToValueAtTime(0.3, t0 + 0.015 + k * 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22 + k * 0.03);
+    s.connect(bp); bp.connect(g); g.connect(ac.destination);
+    s.start(t0 + k * 0.03); s.stop(t0 + 0.26 + k * 0.03);
+  }
+}
 
 function squelchSound(v) {
   const ac = audio(); if (!ac) return;
@@ -1987,6 +2077,35 @@ function gooFrame(dt) {
   gtx.fillRect(-W, -60, W * 2, 120);
   gtx.restore();
 
+  /* the tears: punch through to the white, leave frayed edges */
+  if (gooFringes.length) {
+    gtx.globalCompositeOperation = "destination-out";
+    gtx.drawImage(tearCanvas, 0, 0);
+    gtx.globalCompositeOperation = "source-over";
+    gtx.strokeStyle = "rgba(255,255,255,0.85)";
+    gtx.lineWidth = 4;
+    for (const f of gooFringes) gtx.stroke(f);
+  }
+
+  /* shreds fluttering off fresh rips */
+  for (let i = gooScraps.length - 1; i >= 0; i--) {
+    const sc = gooScraps[i];
+    sc.life -= dt;
+    if (sc.life <= 0) { gooScraps.splice(i, 1); continue; }
+    sc.vy += 420 * dt;
+    sc.x += sc.vx * dt; sc.y += sc.vy * dt;
+    sc.vx *= 1 - Math.min(1, 1.5 * dt);
+    sc.rot += sc.vr * dt;
+    gtx.save();
+    gtx.translate(sc.x, sc.y);
+    gtx.rotate(sc.rot);
+    gtx.globalAlpha = Math.min(1, sc.life);
+    gtx.fillStyle = `hsl(${sc.hue},80%,62%)`;
+    gtx.fillRect(-sc.w / 2, -sc.h / 2, sc.w, sc.h);
+    gtx.restore();
+  }
+  gtx.globalAlpha = 1;
+
   /* gushes: the squish rippling out from under your press */
   for (let i = gooGush.length - 1; i >= 0; i--) {
     const gsh = gooGush[i];
@@ -2017,12 +2136,29 @@ function startGurgle() {
 }
 
 /* ================= boot ================= */
+/* every prop (tap, chest, key, cork, corkscrew) scales with the screen,
+   so a TV gets TV-sized props and a phone gets phone-sized ones */
+function uiScaleValue() {
+  return Math.max(0.55, Math.min(2.2,
+    Math.min(window.innerWidth, window.innerHeight * 1.45) / 1160));
+}
+function applyUIScale() {
+  UIS = uiScaleValue();
+  const sizes = [[tapEl, 140, 120], [chestEl, 150, 112], [keyEl, 58, 28], [corkEl, 34, 42], [screwEl, 160, 160]];
+  for (const [el, w, h] of sizes) {
+    const svg = el.querySelector("svg");
+    svg.setAttribute("width", Math.round(w * UIS));
+    svg.setAttribute("height", Math.round(h * UIS));
+  }
+}
 function boot() {
+  applyUIScale();
   sizeCanvas();
   buildSvg();
 }
 let lastLines = "";
 window.addEventListener("resize", () => {
+  applyUIScale();
   sizeCanvas();
   if (exploded) return;
   const l = currentLines().join("|");
