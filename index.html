@@ -978,6 +978,8 @@ function buildGlue() {
   const dpr = Math.min(1.5, window.devicePixelRatio || 1);
   glueCanvas.width = W * dpr;
   glueCanvas.height = H * dpr;
+  glueCanvas.style.width = W + "px";     // same dpr>1 sizing fix as the glitter canvas
+  glueCanvas.style.height = H + "px";
   glueCtx = glueCanvas.getContext("2d");
   glueCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
@@ -1028,6 +1030,11 @@ function sizeCanvas() {
   const dpr = Math.min(1.5, window.devicePixelRatio || 1);
   canvas.width = window.innerWidth * dpr;
   canvas.height = window.innerHeight * dpr;
+  /* CRITICAL: a canvas with inset:0 and no CSS size falls back to its
+     intrinsic (bitmap) size — on any dpr>1 screen that made every effect
+     render 1.5x too big and off-center. Pin the CSS size explicitly. */
+  canvas.style.width = window.innerWidth + "px";
+  canvas.style.height = window.innerHeight + "px";
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
@@ -1883,6 +1890,8 @@ let tearCanvas = null, tearCtx = null, gooFringes = [], gooScraps = [], gooFinis
 function sizeGoo() {
   gooCanvas.width = window.innerWidth;
   gooCanvas.height = window.innerHeight;
+  gooCanvas.style.width = window.innerWidth + "px";
+  gooCanvas.style.height = window.innerHeight + "px";
   tearCanvas = document.createElement("canvas");
   tearCanvas.width = gooCanvas.width;
   tearCanvas.height = gooCanvas.height;
