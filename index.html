@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Kevin Hershock</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎈</text></svg>">
 <style>
@@ -13,6 +13,12 @@
     background: #fdfdfb;
     overflow: hidden;
     -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    touch-action: manipulation;   /* no double-tap zoom while pumping */
+    overscroll-behavior: none;
+  }
+  .pumpHit, #tapWheel, #screwWheel, #key, #chest, #dot {
+    touch-action: none;           /* circular drags belong to us, not the browser */
   }
   #stage {
     position: fixed;
