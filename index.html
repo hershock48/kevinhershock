@@ -1284,6 +1284,43 @@ function buildGlue() {
   /* no sheen, no hint — the glue is invisible until the glitter finds it */
 }
 
+/* The viewport can change under us at any moment (iOS toolbar, rotation).
+   These canvases are built once, so rescale them and their contents rather
+   than leaving a stale, never-cleared rectangle on screen. */
+function resizeGlue() {
+  if (!glueCtx) return;
+  const W = window.innerWidth, H = window.innerHeight;
+  const oldW = parseFloat(glueCanvas.style.width) || W;
+  const oldH = parseFloat(glueCanvas.style.height) || H;
+  if (Math.abs(oldW - W) < 1 && Math.abs(oldH - H) < 1) return;
+  const dpr = Math.min(1.5, window.devicePixelRatio || 1);
+  const tmp = document.createElement("canvas");
+  tmp.width = glueCanvas.width; tmp.height = glueCanvas.height;
+  tmp.getContext("2d").drawImage(glueCanvas, 0, 0);
+  glueCanvas.width = W * dpr; glueCanvas.height = H * dpr;
+  glueCanvas.style.width = W + "px"; glueCanvas.style.height = H + "px";
+  glueCtx = glueCanvas.getContext("2d");
+  glueCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  glueCtx.drawImage(tmp, 0, 0, W, H);
+  const sx = W / oldW, sy = H / oldH;
+  for (const q of stuckPts) { q.x *= sx; q.y *= sy; }
+}
+
+function resizeGoo() {
+  if (!gooActive || !tearCanvas) return;
+  const W = window.innerWidth, H = window.innerHeight;
+  const oldW = gooCanvas.width, oldH = gooCanvas.height;
+  if (oldW === W && oldH === H) return;
+  const t = document.createElement("canvas");
+  t.width = oldW; t.height = oldH;
+  t.getContext("2d").drawImage(tearCanvas, 0, 0);
+  sizeGoo();
+  tearCtx.drawImage(t, 0, 0, W, H);
+  const sx = W / oldW, sy = H / oldH;
+  for (const b of gooBlobs) { b.bx *= sx; b.by *= sy; b.x *= sx; b.y *= sy; }
+  for (const s of gooSpecks) { s.x *= sx; s.y *= sy; }
+}
+
 /* a flake lands in the glue and becomes part of the art —
    drawn bold: bigger, full-strength, with a dark under-shadow so the
    crust reads loud on the white page, not pastel */
@@ -1305,6 +1342,17 @@ function stickFlake(p, bucket) {
   stuckPts.push({ x: p.x, y: p.y, c: bucket.glint });
   stuckCount++;
 }
+/* Clear a canvas by its OWN bitmap, ignoring the current transform.
+   Clearing with window.innerWidth/Height leaves a stale strip whenever the
+   viewport and the bitmap disagree — which is exactly what an iOS toolbar
+   or a rotation does mid-animation. */
+function hardClear(c, x) {
+  x.save();
+  x.setTransform(1, 0, 0, 1, 0, 0);
+  x.clearRect(0, 0, c.width, c.height);
+  x.restore();
+}
+
 function sizeCanvas() {
   const dpr = Math.min(1.5, window.devicePixelRatio || 1);
   canvas.width = window.innerWidth * dpr;
@@ -1451,8 +1499,8 @@ function tickParticles(dt) {
   /* the broom stage cleans the floor too — no gritty band left behind */
   if ((sweepMode || sweepDone) && driftAlpha > 0) driftAlpha = Math.max(0, driftAlpha - dt * 0.5);
   const driftLive = driftCanvas && driftAlpha > 0.01;
-  if (!scraps.length && !glitterAlive && !stuckPts.length && !swept.length && !driftLive) { ctx.clearRect(0, 0, W, H); return; }
-  ctx.clearRect(0, 0, W, H);
+  if (!scraps.length && !glitterAlive && !stuckPts.length && !swept.length && !driftLive) { hardClear(canvas, ctx); return; }
+  hardClear(canvas, ctx);
   if (driftLive) {
     ctx.globalAlpha = driftAlpha;
     ctx.drawImage(driftCanvas, 0, 0, W, H);
@@ -1519,9 +1567,12 @@ function tickParticles(dt) {
       }
       /* glue check: flakes crossing the wet writing get caught in it —
          but only once the storm has been falling a while */
+      /* sample the mask proportionally, so it stays aligned even if the
+         viewport resized after the mask was built */
+      const mx = (p.x / W * glueW) | 0, my = (p.y / H * glueH) | 0;
       if (glueActive && glueMask && stuckCount < STUCK_MAX
-          && p.x > 0 && p.x < glueW && p.y > 0 && p.y < glueH
-          && glueMask[(p.y | 0) * glueW + (p.x | 0)]
+          && mx > 0 && mx < glueW && my > 0 && my < glueH
+          && glueMask[my * glueW + mx]
           && Math.random() < 0.10) {   /* low per-frame odds = even coat, denser now */
         stickFlake(p, bucket);
         continue;
@@ -3008,7 +3059,7 @@ function finaleFrame(dt) {
   } else if (inv) { inv = 0; finCanvas.style.filter = "none"; }
 
   const ink = "#0b0b0d";
-  fctx.clearRect(0, 0, W, H);
+  hardClear(finCanvas, fctx);
 
   /* ---- 1. the ink drop ---- */
   if (splatT < 0) {
@@ -3217,6 +3268,8 @@ let lastLines = "";
 window.addEventListener("resize", () => {
   applyUIScale();
   sizeCanvas();
+  resizeGlue();
+  resizeGoo();
   if (finActive) sizeFinale();
   if (exploded) return;
   const l = currentLines().join("|");
