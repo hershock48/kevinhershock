@@ -252,6 +252,16 @@
     z-index: 8;
     display: none;
   }
+  /* a 14px dot is not a thumb target — this pad keeps it tappable
+     while it is still small, without changing what you see */
+  #dot::before {
+    content: "";
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    width: 54px; height: 54px;
+    border-radius: 50%;
+  }
 </style>
 </head>
 <body>
@@ -1107,7 +1117,7 @@ let scraps = [], buckets = [], glitterAlive = 0;
 let driftCanvas = null, driftCtx = null, driftCount = 0, driftAlpha = 0;
 let glueCtx = null, glueMask = null, glueW = 0, glueH = 0;
 let stuckPts = [], stuckCount = 0, glueActive = false;
-let sweepMode = false, sweepDone = false, lastSweep = null, swept = [];
+let sweepMode = false, sweepDone = false, lastSweep = null, swept = [], sweepDist = 0;
 /* touch has no cursor — holdable things become elements that ride the finger */
 const TOUCHY = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
 const broomEl = document.getElementById("broom");
@@ -1184,14 +1194,16 @@ window.addEventListener("pointermove", (e) => {
     const dx = x - lastSweep.x, dy = y - lastSweep.y;
     const dist = Math.hypot(dx, dy);
     if (dist > 0.5) {
+      sweepDist += dist;
       glueCtx.globalCompositeOperation = "destination-out";
       glueCtx.fillStyle = "#000";
-      const steps = Math.max(1, Math.min(12, (dist / 8) | 0));
+      const BR = 30 * UIS;              // a finger is not a precision instrument
+      const steps = Math.max(1, Math.min(14, (dist / 8) | 0));
       for (let i = 0; i <= steps; i++) {
         const px = lastSweep.x + dx * i / steps;
         const py = lastSweep.y + dy * i / steps;
         glueCtx.beginPath();
-        glueCtx.arc(px, py, 20, 0, Math.PI * 2);
+        glueCtx.arc(px, py, BR, 0, Math.PI * 2);
         glueCtx.fill();
       }
       glueCtx.globalCompositeOperation = "source-over";
@@ -1200,9 +1212,10 @@ window.addEventListener("pointermove", (e) => {
       let flung = 0;
       const fvx = Math.max(-600, Math.min(600, dx * 15));
       const fvy = Math.max(-600, Math.min(600, dy * 15));
+      const PR = (40 * UIS) * (40 * UIS);
       for (const q of stuckPts) {
         const ddx = q.x - x, ddy = q.y - y;
-        if (ddx * ddx + ddy * ddy < 900) {
+        if (ddx * ddx + ddy * ddy < PR) {
           if (flung < 26 && swept.length < 900) {
             swept.push({
               x: q.x, y: q.y,
@@ -1218,8 +1231,11 @@ window.addEventListener("pointermove", (e) => {
       stuckPts = keep;
       /* the last few crumbs aren't a scavenger hunt — past ~98.5% swept,
          the remainder gives up and dissolves */
-      const crumbs = Math.max(60, stuckCount * 0.015);
-      if (stuckPts.length <= crumbs) {
+      /* Nobody sweeps a screen perfectly, and hunting the last few specks
+         is not the game. Once most of it is gone — or you've simply put in
+         the work — the rest lets go on its own. */
+      const crumbs = Math.max(40, stuckCount * 0.18);
+      if (stuckPts.length <= crumbs || sweepDist > 4200) {
         stuckPts = [];
         glueCanvas.style.transition = "opacity 0.8s ease";
         glueCanvas.style.opacity = "0";
@@ -1445,7 +1461,10 @@ function explode() {
 
   const W = window.innerWidth, H = window.innerHeight;
   /* particle budget scales with screen area — phones get a storm they can run */
-  const COUNT = Math.min(45000, Math.max(6000, Math.round((W * H) / 18)));
+  /* a small screen can't resolve desktop flake density anyway — spend the
+     frame budget on smoothness instead */
+  const density = W < 620 ? 26 : 18;
+  const COUNT = Math.min(45000, Math.max(6000, Math.round((W * H) / density)));
   const BURST = Math.min(7000, Math.round(COUNT * 0.09));
   /* settled drift layer: near flakes pile at the screen bottom and stay
      until the water later washes them away */
@@ -1685,7 +1704,7 @@ function showDot() {
   dotEl.style.display = "block";
   dotEl.style.transition = "width 0.5s ease, height 0.5s ease, background 0.5s ease";
   requestAnimationFrame(() => {
-    dotSize = 14;
+    dotSize = 24;
     dotEl.style.width = dotSize + "px";
     dotEl.style.height = dotSize + "px";
   });
@@ -3026,16 +3045,6 @@ function drawBaby(cx, cy, s, beat, skin, diaper) {
   fctx.restore();
 }
 
-function heartPath(x, y, s, rot) {
-  fctx.save(); fctx.translate(x, y); fctx.rotate(rot); fctx.scale(s, s);
-  fctx.beginPath();
-  fctx.moveTo(0, 0.32);
-  fctx.bezierCurveTo(-0.62, -0.18, -0.38, -0.78, 0, -0.42);
-  fctx.bezierCurveTo(0.38, -0.78, 0.62, -0.18, 0, 0.32);
-  fctx.closePath(); fctx.fill();
-  fctx.restore();
-}
-
 const sstep = (a, b, t) => { const x = Math.max(0, Math.min(1, (t-a)/(b-a))); return x*x*(3-2*x); };
 
 function finaleFrame(dt) {
@@ -3227,6 +3236,19 @@ function splatSound() {
   g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.26);
   o.connect(g2); g2.connect(BUS); o.start(t0); o.stop(t0 + 0.28);
 }
+
+/* Don't keep synthesising a drum machine into a tab nobody is looking at,
+   and don't come back from the background with a huge time step. */
+let audioWasRunning = false;
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    audioWasRunning = !!(AC && AC.state === "running");
+    if (audioWasRunning) AC.suspend();
+  } else {
+    prevT = performance.now();
+    if (audioWasRunning && AC) { AC.resume(); nextNote = 0; }
+  }
+});
 
 /* ================= boot ================= */
 /* every prop (tap, chest, key, cork, corkscrew) scales with the screen,
