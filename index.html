@@ -20,6 +20,16 @@
   .pumpHit, #tapWheel, #screwWheel, #key, #chest, #dot {
     touch-action: none;           /* circular drags belong to us, not the browser */
   }
+  body.shake { animation: bodyshake 0.4s ease-out; }
+  @keyframes bodyshake {
+    0% { transform: translate(0, 0); }
+    15% { transform: translate(7px, -5px); }
+    30% { transform: translate(-6px, 4px); }
+    45% { transform: translate(5px, 3px); }
+    60% { transform: translate(-4px, -3px); }
+    78% { transform: translate(3px, 2px); }
+    100% { transform: translate(0, 0); }
+  }
   #stage {
     position: fixed;
     inset: 0;
@@ -74,6 +84,51 @@
     opacity: 0;
     pointer-events: none;
     z-index: 20;
+  }
+  #vignette {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 40;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 58%, rgba(0,0,0,0.11) 100%);
+  }
+  #grain {
+    position: fixed;
+    inset: -80px;
+    pointer-events: none;
+    z-index: 41;
+    opacity: 0.55;
+    animation: graindance 0.7s steps(8) infinite;
+  }
+  @keyframes graindance {
+    0% { transform: translate(0, 0); }
+    25% { transform: translate(-28px, 16px); }
+    50% { transform: translate(14px, -32px); }
+    75% { transform: translate(-10px, -12px); }
+    100% { transform: translate(22px, 24px); }
+  }
+  .dotring {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    border: 3px solid;
+    pointer-events: none;
+    z-index: 8;
+    animation: ringout 0.7s ease-out forwards;
+  }
+  @keyframes ringout {
+    from { opacity: 0.7; transform: translate(-50%, -50%) scale(1); }
+    to { opacity: 0; transform: translate(-50%, -50%) scale(1.55); }
+  }
+  #dot.jelly { animation: dotjelly 0.55s cubic-bezier(.36,.07,.19,.97); }
+  @keyframes dotjelly {
+    0% { transform: translate(-50%, -50%) scale(1, 1); }
+    30% { transform: translate(-50%, -50%) scale(1.1, 0.9); }
+    55% { transform: translate(-50%, -50%) scale(0.95, 1.05); }
+    78% { transform: translate(-50%, -50%) scale(1.03, 0.98); }
+    100% { transform: translate(-50%, -50%) scale(1, 1); }
   }
   .pumpHit { cursor: pointer; }
   .noselect { user-select: none; -webkit-user-select: none; }
@@ -235,6 +290,8 @@
   </svg>
 </div>
 <div id="flash"></div>
+<div id="vignette"></div>
+<div id="grain"></div>
 
 <script>
 "use strict";
@@ -384,10 +441,19 @@ function buildSvg() {
       shadow.setAttribute("fill", "#1a1a18");
       shadow.setAttribute("opacity", "0.05");
       shadowGroup.appendChild(shadow);
+      /* glossy latex throws a wash of its own color onto the floor */
+      const refl = document.createElementNS(NS, "ellipse");
+      refl.setAttribute("cx", x + def.w / 2);
+      refl.setAttribute("cy", base + 6);
+      refl.setAttribute("rx", def.w * 0.5);
+      refl.setAttribute("ry", 3);
+      refl.setAttribute("fill", color);
+      refl.setAttribute("opacity", "0");
+      shadowGroup.appendChild(refl);
 
       svg.appendChild(g);
       letters.push({
-        g, dark, main, tint, gloss, gloss2, tail, shadow,
+        g, dark, main, tint, gloss, gloss2, tail, shadow, refl,
         subDs: def.subs, subs: null,
         x, base, w: def.w, color,
         phase: Math.random() * Math.PI * 2,
@@ -539,14 +605,85 @@ function buildPump(svg, NS, base, firstLetter, shadowGroup) {
   svg.appendChild(pump);
 }
 
-/* ================= sound (synthesized, no assets) ================= */
-let AC = null, noiseBuf = null;
+/* ================= sound (synthesized, no assets) =================
+   Every sound routes through one master bus: BUS -> global lowpass
+   (underwater muffling) -> compressor -> speakers, with a parallel
+   small-room reverb so everything shares the same space. */
+let AC = null, noiseBuf = null, BUS = null, GLP = null, REVG = null;
+let hissNode = null, swellNode = null;
 function audio() {
   try {
     if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)();
     if (AC.state === "suspended") AC.resume();
+    if (!BUS) {
+      const comp = AC.createDynamicsCompressor();
+      comp.threshold.value = -14; comp.ratio.value = 4;
+      comp.attack.value = 0.003; comp.release.value = 0.25;
+      comp.connect(AC.destination);   // master chain terminus — NOT the bus
+      GLP = AC.createBiquadFilter();
+      GLP.type = "lowpass"; GLP.frequency.value = 19000;
+      GLP.connect(comp);
+      BUS = AC.createGain();
+      BUS.gain.value = 0.9;
+      BUS.connect(GLP);
+      /* small room */
+      const rev = AC.createConvolver();
+      const len = (AC.sampleRate * 0.9) | 0;
+      const ir = AC.createBuffer(2, len, AC.sampleRate);
+      for (let c = 0; c < 2; c++) {
+        const d = ir.getChannelData(c);
+        for (let i = 0; i < len; i++) {
+          d[i] = (Math.random() * 2 - 1) * Math.exp(-6 * i / len);
+        }
+      }
+      rev.buffer = ir;
+      REVG = AC.createGain(); REVG.gain.value = 0.14;
+      BUS.connect(rev); rev.connect(REVG); REVG.connect(GLP);
+    }
     return AC;
   } catch (e) { return null; }
+}
+/* the deeper the water, the more the world muffles */
+function setUnderwater(v) {
+  if (!AC || !GLP) return;
+  const t = AC.currentTime;
+  const k = Math.max(0, Math.min(1, (v - 0.15) / 0.55));
+  GLP.frequency.setTargetAtTime(19000 - (19000 - 680) * k, t, 0.25);
+  REVG.gain.setTargetAtTime(0.14 + k * 0.12, t, 0.3);
+}
+/* faint air-room hiss while the balloons are alive */
+function startHiss() {
+  const ac = audio(); if (!ac || hissNode) return;
+  const src = ac.createBufferSource(); src.buffer = noise(ac); src.loop = true;
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 240;
+  const g = ac.createGain(); g.gain.value = 0.012;
+  src.connect(lp); lp.connect(g); g.connect(BUS);
+  src.start();
+  hissNode = { src, g };
+}
+function stopHiss() {
+  if (!hissNode || !AC) return;
+  hissNode.g.gain.setTargetAtTime(0, AC.currentTime, 0.2);
+  const h = hissNode; hissNode = null;
+  setTimeout(() => { try { h.src.stop(); } catch (e) {} }, 800);
+}
+/* slow sub swells once the room is deep */
+function updateSwell(v) {
+  if (!AC) return;
+  if (v > 0.5 && !swellNode) {
+    const osc = AC.createOscillator(); osc.type = "sine"; osc.frequency.value = 42;
+    const g = AC.createGain(); g.gain.value = 0.016;
+    const lfo = AC.createOscillator(); lfo.frequency.value = 0.11;
+    const lg = AC.createGain(); lg.gain.value = 0.012;
+    lfo.connect(lg); lg.connect(g.gain);
+    osc.connect(g); g.connect(BUS);
+    osc.start(); lfo.start();
+    swellNode = { osc, lfo, g };
+  } else if (v < 0.3 && swellNode) {
+    swellNode.g.gain.setTargetAtTime(0, AC.currentTime, 0.4);
+    const s = swellNode; swellNode = null;
+    setTimeout(() => { try { s.osc.stop(); s.lfo.stop(); } catch (e) {} }, 1600);
+  }
 }
 function noise(ac) {
   if (noiseBuf) return noiseBuf;
@@ -570,10 +707,14 @@ function pumpSound() {
   gn.gain.setValueAtTime(0.0001, t0);
   gn.gain.exponentialRampToValueAtTime(0.34 + 0.16 * level, t0 + 0.035);
   gn.gain.exponentialRampToValueAtTime(0.001, t0 + 0.18);
-  src.connect(bp); bp.connect(gn); gn.connect(ac.destination);
+  src.connect(bp); bp.connect(gn); gn.connect(BUS);
   src.start(t0); src.stop(t0 + 0.2);
-  /* a soft note under the whoosh, walking up an octave ladder */
-  const f = 175 * Math.pow(2, level * 2.5);
+  /* a soft note under the whoosh, walking up a pentatonic ladder —
+     the last steps before the limit go a half-step sour (dread) */
+  const PENT = [0, 3, 5, 7, 10, 12, 15, 17, 19, 22, 24, 27];
+  let semis = PENT[Math.min(PENT.length - 1, Math.floor(level * PENT.length))];
+  if (level > 0.86) semis += 1;
+  const f = 165 * Math.pow(2, semis / 12);
   const osc = ac.createOscillator(); osc.type = "triangle";
   osc.frequency.setValueAtTime(f, t0);
   osc.frequency.exponentialRampToValueAtTime(f * 1.08, t0 + 0.09);
@@ -581,7 +722,7 @@ function pumpSound() {
   g2.gain.setValueAtTime(0.0001, t0);
   g2.gain.exponentialRampToValueAtTime(0.22, t0 + 0.02);
   g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.19);
-  osc.connect(g2); g2.connect(ac.destination);
+  osc.connect(g2); g2.connect(BUS);
   osc.start(t0); osc.stop(t0 + 0.2);
   /* a quieter octave above for shine */
   const osc2 = ac.createOscillator(); osc2.type = "sine";
@@ -591,7 +732,7 @@ function pumpSound() {
   g3.gain.setValueAtTime(0.0001, t0);
   g3.gain.exponentialRampToValueAtTime(0.09, t0 + 0.02);
   g3.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
-  osc2.connect(g3); g3.connect(ac.destination);
+  osc2.connect(g3); g3.connect(BUS);
   osc2.start(t0); osc2.stop(t0 + 0.17);
 }
 /* past working size: a rising tension drone that tightens toward the pop */
@@ -604,7 +745,7 @@ function updateDrone(over) {
       const osc = AC.createOscillator(); osc.type = "sawtooth";
       const lp = AC.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 700;
       const g = AC.createGain(); g.gain.value = 0;
-      osc.connect(lp); lp.connect(g); g.connect(AC.destination);
+      osc.connect(lp); lp.connect(g); g.connect(BUS);
       osc.start();
       drone = { osc, lp, g };
     }
@@ -629,7 +770,7 @@ function squeakSound() {
   gn.gain.setValueAtTime(0.0001, t0);
   gn.gain.exponentialRampToValueAtTime(0.05, t0 + 0.03);
   gn.gain.exponentialRampToValueAtTime(0.001, t0 + 0.16);
-  osc.connect(lp); lp.connect(gn); gn.connect(ac.destination);
+  osc.connect(lp); lp.connect(gn); gn.connect(BUS);
   osc.start(t0); osc.stop(t0 + 0.18);
 }
 function popSound() {
@@ -639,7 +780,7 @@ function popSound() {
   const comp = ac.createDynamicsCompressor();
   comp.threshold.value = -18; comp.ratio.value = 8;
   comp.attack.value = 0.001; comp.release.value = 0.2;
-  comp.connect(ac.destination);
+  comp.connect(BUS);
   /* crack — the latex letting go */
   const s1 = ac.createBufferSource(); s1.buffer = noise(ac);
   const hp = ac.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 1500;
@@ -701,7 +842,7 @@ function popSound() {
     g.gain.setValueAtTime(0.0001, at);
     g.gain.exponentialRampToValueAtTime(0.035, at + 0.01);
     g.gain.exponentialRampToValueAtTime(0.0001, at + 0.28);
-    o.connect(g); g.connect(ac.destination);
+    o.connect(g); g.connect(BUS);
     o.start(at); o.stop(at + 0.3);
   }
 }
@@ -715,6 +856,7 @@ function doPump(e) {
   lastPump = performance.now();
   pumpPressT = 1;
   if (hoseInfo && hoseInfo.len) hoseInfo.pulses.push(0);
+  startHiss();
   pumpSound();
   if (inf > 1) squeakSound();     // latex creaks past its working size
 }
@@ -745,7 +887,7 @@ function frame(now) {
     else { renderLetters(now); renderPump(dt); updateDrone(Math.max(0, inf - 1)); }
   }
 
-  tickParticles(dt);
+  tickParticles(dt * timeScale);
   if (tapShown) { waterStep(dt); waterDraw(); updateScrew(dt); gooFrame(dt); }
   requestAnimationFrame(frame);
 }
@@ -822,6 +964,8 @@ function renderLetters(now) {
         L.tint[j].setAttribute("opacity", "0.85");
         L.tint[j].setAttribute("stroke-width", Ws * 0.45);
         L.tint[j].setAttribute("transform", `translate(${-Ws * 0.09} ${-Ws * 0.12})`);
+        /* stretch striations surface as the latex thins */
+        L.tint[j].setAttribute("stroke-dasharray", overN > 0.12 ? "7 6" : "none");
         L.gloss[j].setAttribute("opacity", "0.95");
         L.gloss[j].setAttribute("stroke-width", Ws * 0.18 * (1 + 0.3 * overN));
         L.gloss[j].setAttribute("transform", `translate(${-Ws * 0.16} ${-Ws * 0.20})`);
@@ -857,6 +1001,8 @@ function renderLetters(now) {
     /* ground shadow tracks how much balloon is standing over it */
     L.shadow.setAttribute("opacity", (0.04 + 0.10 * mAvg).toFixed(3));
     L.shadow.setAttribute("rx", (L.w * (0.72 - 0.17 * mAvg) * G).toFixed(1));
+    L.refl.setAttribute("opacity", (0.10 * mAvg).toFixed(3));
+    L.refl.setAttribute("rx", (L.w * 0.5 * G).toFixed(1));
   }
 }
 
@@ -889,6 +1035,7 @@ const canvas = document.getElementById("glitter");
 const ctx = canvas.getContext("2d");
 const glueCanvas = document.getElementById("glue");
 let scraps = [], buckets = [], glitterAlive = 0;
+let driftCanvas = null, driftCtx = null, driftCount = 0, driftAlpha = 0;
 let glueCtx = null, glueMask = null, glueW = 0, glueH = 0;
 let stuckPts = [], stuckCount = 0, glueActive = false;
 let sweepMode = false, sweepDone = false, lastSweep = null, swept = [];
@@ -915,7 +1062,7 @@ function sweepSwish(dist) {
   g.gain.setValueAtTime(0.0001, t0);
   g.gain.exponentialRampToValueAtTime(0.06, t0 + 0.02);
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.14);
-  s.connect(bp); bp.connect(g); g.connect(AC.destination);
+  s.connect(bp); bp.connect(g); g.connect(BUS);
   s.start(t0); s.stop(t0 + 0.15);
 }
 
@@ -1046,13 +1193,22 @@ function svgToScreen(x, y) {
   return { x: r.left + x * s, y: r.top + y * s };
 }
 
+let timeScale = 1;
 function explode() {
   exploded = true;
-  if (drone && AC) {           // the tension snaps
+  /* the oldest trick: dead silence right before the bang */
+  if (drone && AC) {
     drone.g.gain.cancelScheduledValues(AC.currentTime);
-    drone.g.gain.setTargetAtTime(0, AC.currentTime, 0.015);
+    drone.g.gain.setValueAtTime(0, AC.currentTime);
   }
-  popSound();
+  stopHiss();
+  timeScale = 0.16;                                  // hang in the air...
+  setTimeout(() => { timeScale = 1; }, 300);          // ...then everything at once
+  setTimeout(() => {
+    popSound();
+    document.body.classList.add("shake");
+    setTimeout(() => document.body.classList.remove("shake"), 500);
+  }, 90);
   buildGlue();
   glueActive = false;
   setTimeout(() => { glueActive = true; }, 2300);   // let the glitter fall a while first
@@ -1092,6 +1248,7 @@ function explode() {
     }
     L.g.style.display = "none";
     L.shadow.setAttribute("opacity", "0");
+    L.refl.setAttribute("opacity", "0");
   }
 
   /* glitter materials: gold, silver, rose gold, and holographic hues */
@@ -1111,11 +1268,20 @@ function explode() {
   const W = window.innerWidth, H = window.innerHeight;
   const COUNT = Math.min(80000, Math.max(24000, Math.round((W * H) / 10)));
   const BURST = Math.min(7000, Math.round(COUNT * 0.09));
+  /* settled drift layer: near flakes pile at the screen bottom and stay
+     until the water later washes them away */
+  driftCanvas = document.createElement("canvas");
+  driftCanvas.width = W; driftCanvas.height = H;
+  driftCtx = driftCanvas.getContext("2d");
+  driftCount = 0; driftAlpha = 1;
+
   for (let i = 0; i < COUNT; i++) {
     const r = Math.random() * acc;
     let bi = 0;
     while (cum[bi] < r) bi++;
-    const s = Math.random() < 0.06 ? 3.6 + Math.random() * 1.6 : 1.5 + Math.random() * 2.1;
+    /* depth: far flakes are small, slow, dim; near ones big, fast, bright */
+    const z = 0.4 + Math.pow(Math.random(), 1.5) * 1.3;
+    const s = (Math.random() < 0.06 ? 3.6 + Math.random() * 1.6 : 1.5 + Math.random() * 2.1) * z;
     const pt = {
       x: 0, y: 0, vx: 0, vy: 0,
       phi: Math.random() * Math.PI * 2,
@@ -1124,6 +1290,8 @@ function explode() {
       swayF: 1.5 + Math.random() * 4,
       ph: Math.random() * Math.PI * 2,
       s, life: 16,
+      za: Math.min(1, 0.45 + 0.55 * z),
+      zz: z >= 0.8,                       // near enough to land and stay
     };
     if (i < BURST) {
       /* the first wave erupts from the letters themselves */
@@ -1138,7 +1306,7 @@ function explode() {
       pt.x = Math.random() * W;
       pt.y = H * 0.1 - Math.random() * H * 3.2;
       pt.vx = (Math.random() - 0.5) * 40;
-      pt.vy = 200 + s * 70 + Math.random() * 160;   // small flakes drift slower
+      pt.vy = (200 + s * 50 + Math.random() * 160) * z;
     }
     buckets[bi].arr.push(pt);
   }
@@ -1149,8 +1317,14 @@ function explode() {
 
 function tickParticles(dt) {
   const W = window.innerWidth, H = window.innerHeight;
-  if (!scraps.length && !glitterAlive && !stuckPts.length && !swept.length) { ctx.clearRect(0, 0, W, H); return; }
+  const driftLive = driftCanvas && driftAlpha > 0.01;
+  if (!scraps.length && !glitterAlive && !stuckPts.length && !swept.length && !driftLive) { ctx.clearRect(0, 0, W, H); return; }
   ctx.clearRect(0, 0, W, H);
+  if (driftLive) {
+    ctx.globalAlpha = driftAlpha;
+    ctx.drawImage(driftCanvas, 0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
 
   /* latex scraps */
   let k = 0;
@@ -1193,7 +1367,17 @@ function tickParticles(dt) {
       /* burst flakes decelerate into a gentle fall */
       if (p.vy < 160) p.vy += 500 * dt;
       p.vx *= 1 - Math.min(1, 1.6 * dt);
-      if (p.life <= 0 || p.y > H + 30) continue;
+      if (p.life <= 0) continue;
+      if (p.y > H - 5) {
+        /* near flakes land in the drift at the bottom and stay */
+        if (p.zz && driftCtx && driftCount < 5200) {
+          driftCtx.globalAlpha = 0.85;
+          driftCtx.fillStyle = bucket.dim;
+          driftCtx.fillRect(p.x - p.s / 2, H - 3 - Math.random() * 5, p.s, p.s * 0.6);
+          driftCount++;
+        }
+        continue;
+      }
       /* glue check: flakes crossing the wet writing get caught in it —
          but only once the storm has been falling a while */
       if (glueActive && glueMask && stuckCount < STUCK_MAX
@@ -1209,10 +1393,10 @@ function tickParticles(dt) {
       const c2 = c * c, c4 = c2 * c2;
       const b8 = c4 * c4;                       // sharp specular lobe
       const fore = Math.abs(Math.sin(p.phi));   // face turns away -> sliver
-      ctx.globalAlpha = 0.2 + 0.55 * fore;
+      ctx.globalAlpha = (0.2 + 0.55 * fore) * (p.za || 1);
       const w = p.s * (0.25 + 0.75 * fore);
       ctx.fillRect(p.x - w / 2, p.y - p.s * 0.4, w, p.s * 0.8);
-      if (b8 > 0.72) bucket.glints.push(p.x, p.y, p.s, b8);
+      if (b8 > 0.72) bucket.glints.push(p.x, p.y, p.s, b8 * (p.za || 1));
     }
     arr.length = j;
     alive += j;
@@ -1301,7 +1485,7 @@ function bloopSound(n) {
   g.gain.setValueAtTime(0.0001, t0);
   g.gain.exponentialRampToValueAtTime(0.18, t0 + 0.02);
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
-  osc.connect(g); g.connect(ac.destination);
+  osc.connect(g); g.connect(BUS);
   osc.start(t0); osc.stop(t0 + 0.24);
 }
 
@@ -1317,16 +1501,29 @@ function showDot() {
   });
 }
 
+let dotHue = 348;
 dotEl.addEventListener("pointerdown", (e) => {
   e.preventDefault();
   if (dotDone) return;
   dotN++;
   dotSize *= 1.55;
+  dotHue = (dotHue + 47) % 360;
+  const color = `hsl(${dotHue},80%,58%)`;
   const dur = Math.min(2.8, 0.4 + dotN * 0.16);
   dotEl.style.transition = `width ${dur}s ease, height ${dur}s ease, background ${dur * 0.7}s ease`;
   dotEl.style.width = dotSize + "px";
   dotEl.style.height = dotSize + "px";
-  dotEl.style.background = DOT_COLORS[dotN % DOT_COLORS.length];
+  dotEl.style.background = color;
+  /* jelly wobble + a ripple ring */
+  dotEl.classList.remove("jelly");
+  void dotEl.offsetWidth;
+  dotEl.classList.add("jelly");
+  const ring = document.createElement("div");
+  ring.className = "dotring";
+  ring.style.width = ring.style.height = dotSize + "px";
+  ring.style.borderColor = color;
+  document.body.appendChild(ring);
+  setTimeout(() => ring.remove(), 760);
   bloopSound(dotN);
   const diag = Math.hypot(window.innerWidth, window.innerHeight);
   if (dotSize > diag * 1.25) {
@@ -1415,26 +1612,45 @@ function tapSqueak() {
   g.gain.setValueAtTime(0.0001, t0);
   g.gain.exponentialRampToValueAtTime(0.045, t0 + 0.02);
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.11);
-  osc.connect(lp); lp.connect(g); g.connect(ac.destination);
+  osc.connect(lp); lp.connect(g); g.connect(BUS);
   osc.start(t0); osc.stop(t0 + 0.12);
 }
-function splashSound() {
+function splashSound(depth) {
   const ac = audio(); if (!ac) return;
   const t0 = ac.currentTime;
   const s = ac.createBufferSource(); s.buffer = noise(ac);
-  const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 900;
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass";
+  /* shallow water splatters bright; deep water lands low and round */
+  lp.frequency.value = 1500 - (depth || 0) * 1100;
   const g = ac.createGain();
-  g.gain.setValueAtTime(0.4, t0);
+  g.gain.setValueAtTime(0.4 + (1 - (depth || 0)) * 0.1, t0);
   g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.45);
-  s.connect(lp); lp.connect(g); g.connect(ac.destination);
+  s.connect(lp); lp.connect(g); g.connect(BUS);
   s.start(t0); s.stop(t0 + 0.5);
+}
+let lastSputter = 0;
+function sputterSound() {
+  const ac = audio(); if (!ac) return;
+  const nw = performance.now();
+  if (nw - lastSputter < 240) return;
+  lastSputter = nw;
+  const t0 = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass";
+  bp.frequency.value = 900 + Math.random() * 500; bp.Q.value = 1.1;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(0.13, t0 + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.09);
+  s.connect(bp); bp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 0.1);
 }
 function ensureWaterSound() {
   if (waterSnd || !AC) return;
   const src = AC.createBufferSource(); src.buffer = noise(AC); src.loop = true;
   const bp = AC.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 750; bp.Q.value = 0.7;
   const g = AC.createGain(); g.gain.value = 0;
-  src.connect(bp); bp.connect(g); g.connect(AC.destination);
+  src.connect(bp); bp.connect(g); g.connect(BUS);
   src.start();
   waterSnd = { src, bp, g };
 }
@@ -1445,6 +1661,16 @@ function waterStep(dt) {
   wFlow += (valveFlow - wFlow) * (1 - Math.exp(-5 * dt));
   const mx = mouthX();
 
+  /* a barely-cracked valve sputters air and spit before it runs clean */
+  if (wFlow > 0.02 && wFlow < 0.22 && Math.random() < 10 * dt) {
+    for (let i = 0; i < 2; i++) {
+      wDrops.push({ x: mx + (Math.random() - 0.5) * 10, y: MOUTH_Y * UIS + 6,
+        vx: (Math.random() - 0.5) * 90, vy: 90 + Math.random() * 200,
+        r: 0.8 + Math.random() * 1.4, life: 0.5 + Math.random() * 0.5 });
+    }
+    sputterSound();
+  }
+
   /* causal fall: the first water must physically arrive before any pool */
   if (wFlow > 0.03) {
     if (frontY === null) { frontY = MOUTH_Y * UIS; frontV = 60; wLanded = false; splashed = false; }
@@ -1454,7 +1680,7 @@ function waterStep(dt) {
         wLanded = true;
         if (!splashed) {
           splashed = true;
-          splashSound();
+          splashSound(vol);
           for (let q = 0; q < 10; q++) {
             wDrops.push({ x: mx + (Math.random() - 0.5) * 16, y: levelOf(),
               vx: (Math.random() - 0.5) * 300, vy: -60 - Math.random() * 130,
@@ -1552,13 +1778,19 @@ function waterStep(dt) {
     d.vy += 1450 * dt; d.x += d.vx * dt; d.y += d.vy * dt;
   }
 
+  /* the whole soundscape sinks underwater as the room floods */
+  setUnderwater(vol);
+  updateSwell(vol);
+  /* the rising water washes the settled glitter drift away */
+  if (driftAlpha > 0) driftAlpha = Math.max(0, 1 - vol * 9);
+
   /* running-water sound follows the flow, muffling as the room floods */
   ensureWaterSound();
   if (waterSnd) {
     const t = AC.currentTime;
     const full = vol >= 1;
     waterSnd.bp.frequency.setTargetAtTime(
-      (full ? 300 : 650) + Math.sin(wT * 3) * 120 + wFlow * 320, t, 0.12);
+      (650 - vol * 380) + Math.sin(wT * 3) * 120 + wFlow * 320, t, 0.12);
     waterSnd.g.gain.setTargetAtTime(
       Math.min(0.32, wFlow * (wLanded ? 0.3 : 0.2)) * (full ? 0.45 : 1), t, 0.15);
   }
@@ -1577,6 +1809,10 @@ function waterDraw() {
     const span = sBot - sTop;
     let w0 = 9.5 * UIS * (0.45 + wFlow * 0.7);
     if (breakY !== null) w0 *= 0.4;
+    /* a sputtering stream flickers before it runs solid */
+    if (wFlow > 0.02 && wFlow < 0.22 && breakY === null) {
+      ctx.globalAlpha = 0.35 + 0.65 * Math.abs(Math.sin(wT * 35));
+    }
     ctx.beginPath();
     const Ls = [], Rs = [];
     for (let y = 0; y <= span; y += 4) {
@@ -1598,6 +1834,7 @@ function waterDraw() {
     ctx.moveTo(mx, sTop);
     ctx.lineTo(mx, sTop + span);
     ctx.stroke();
+    ctx.globalAlpha = 1;
   }
 
   /* ---------- pool ---------- */
@@ -1637,6 +1874,22 @@ function waterDraw() {
       ctx.beginPath();
       ctx.arc(b.x + Math.sin(b.ph) * b.w * 3, b.y, b.r, 0, Math.PI * 2);
       ctx.stroke();
+    }
+
+    /* caustic light playing over everything submerged */
+    if (vol > 0.15 && H - level > 90) {
+      ctx.globalCompositeOperation = "lighter";
+      for (let i = 0; i < 10; i++) {
+        const cx2 = ((i * 0.104 + 0.05) * W) + Math.sin(wT * 0.7 + i * 2.4) * 70;
+        const cy2 = level + 50 + ((i * 173) % Math.max(1, H - level - 80));
+        ctx.globalAlpha = 0.035 + 0.03 * Math.abs(Math.sin(wT * 1.3 + i * 1.7));
+        ctx.fillStyle = "#bfe4ff";
+        ctx.beginPath();
+        ctx.ellipse(cx2, cy2, 58, 13, Math.sin(wT * 0.4 + i) * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalCompositeOperation = "source-over";
+      ctx.globalAlpha = 1;
     }
 
     /* the whirlpool: water funnels down into the open chest and out its bottom */
@@ -1756,7 +2009,7 @@ function thunkSound() {
   const g = ac.createGain();
   g.gain.setValueAtTime(0.35, t0);
   g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.14);
-  s.connect(lp); lp.connect(g); g.connect(ac.destination);
+  s.connect(lp); lp.connect(g); g.connect(BUS);
   s.start(t0); s.stop(t0 + 0.15);
 }
 function corkPopSound() {
@@ -1768,7 +2021,7 @@ function corkPopSound() {
   const g = ac.createGain();
   g.gain.setValueAtTime(0.4, t0);
   g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.12);
-  osc.connect(g); g.connect(ac.destination);
+  osc.connect(g); g.connect(BUS);
   osc.start(t0); osc.stop(t0 + 0.13);
 }
 
@@ -1891,7 +2144,7 @@ screwWheelEl.addEventListener("pointercancel", endScrewDrag);
 const gooCanvas = document.getElementById("goo");
 const gtx = gooCanvas.getContext("2d");
 let gooActive = false, gooBlobs = [], gooGush = [], gooSpecks = [], lastSquelch = 0;
-let tearCanvas = null, tearCtx = null, gooFringes = [], gooScraps = [], gooFinished = false, dotWhitened = false;
+let tearCanvas = null, tearCtx = null, gooFringes = [], gooStrands = [], gooScraps = [], gooSmears = [], gooFinished = false, dotWhitened = false;
 
 function sizeGoo() {
   gooCanvas.width = window.innerWidth;
@@ -1939,6 +2192,7 @@ function gooPress(x, y, str) {
     }
   }
   if (gooGush.length < 24) gooGush.push({ x, y, r: 8, vr: 260 * (0.6 + str * 0.6), life: 1 });
+  if (str > 0.5 && gooSmears.length < 40) gooSmears.push({ x, y, r: 34 + Math.random() * 26, life: 5 });
   const nw = performance.now();
   if (nw - lastSquelch > 160) { lastSquelch = nw; squelchSound(str); }
 }
@@ -1972,6 +2226,19 @@ function makeRip(x, y) {
   tearCtx.fillStyle = "#fff";
   tearCtx.fill(path);
   if (gooFringes.length < 120) gooFringes.push(path);
+  /* fibrous strands sticking out of the tear like real torn tissue */
+  const strands = new Path2D();
+  for (let k = 0; k < 7; k++) {
+    const p = pts[(Math.random() * N) | 0];
+    let dx = p[0] - x, dy = p[1] - y;
+    const dl = Math.hypot(dx, dy) || 1;
+    dx /= dl; dy /= dl;
+    const ln = 4 + Math.random() * 9;
+    strands.moveTo(p[0], p[1]);
+    strands.lineTo(p[0] + dx * ln + (Math.random() - 0.5) * 3,
+                   p[1] + dy * ln + (Math.random() - 0.5) * 3);
+  }
+  if (gooStrands.length < 120) gooStrands.push(strands);
   /* shreds flutter off the tear */
   for (let i = 0; i < 7; i++) {
     if (gooScraps.length > 90) break;
@@ -2000,11 +2267,29 @@ function finishGoo() {
   if (gooFinished) return;
   gooFinished = true;
   ripSound(); ripSound();                        // the whole sheet lets go
-  gooCanvas.classList.add("falling");
-  setTimeout(() => {
-    gooCanvas.style.display = "none";
-    gooActive = false;
-  }, 1400);
+  /* it doesn't slide off — it tears into pieces and tumbles */
+  const W = window.innerWidth, H = window.innerHeight;
+  const cuts = [0, 0.22 + Math.random() * 0.15, 0.5 + Math.random() * 0.12, 0.78 + Math.random() * 0.1, 1];
+  for (let k = 0; k < 4; k++) {
+    const x0 = Math.round(cuts[k] * W), x1 = Math.round(cuts[k + 1] * W);
+    const pw = x1 - x0;
+    if (pw < 4) continue;
+    const pc = document.createElement("canvas");
+    pc.width = pw; pc.height = H;
+    pc.getContext("2d").drawImage(gooCanvas, x0, 0, pw, H, 0, 0, pw, H);
+    pc.style.cssText = `position:fixed;left:${x0}px;top:0;width:${pw}px;height:${H}px;`
+      + `z-index:8;pointer-events:none;`
+      + `transition:transform ${1.0 + k * 0.18}s cubic-bezier(.45,0,.9,.6) ${k * 0.09}s,`
+      + `opacity 0.5s ease ${0.7 + k * 0.2}s;`;
+    document.body.appendChild(pc);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      pc.style.transform = `translateY(${H * 1.3}px) rotate(${Math.random() * 36 - 18}deg)`;
+      pc.style.opacity = "0";
+    }));
+    setTimeout(() => pc.remove(), 2800);
+  }
+  gooCanvas.style.display = "none";
+  gooActive = false;
 }
 
 function ripSound() {
@@ -2019,7 +2304,7 @@ function ripSound() {
     g.gain.setValueAtTime(0.0001, t0 + k * 0.03);
     g.gain.exponentialRampToValueAtTime(0.3, t0 + 0.015 + k * 0.03);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22 + k * 0.03);
-    s.connect(bp); bp.connect(g); g.connect(ac.destination);
+    s.connect(bp); bp.connect(g); g.connect(BUS);
     s.start(t0 + k * 0.03); s.stop(t0 + 0.26 + k * 0.03);
   }
 }
@@ -2035,7 +2320,7 @@ function squelchSound(v) {
   g.gain.setValueAtTime(0.0001, t0);
   g.gain.exponentialRampToValueAtTime(0.22 * v, t0 + 0.02);
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.26);
-  s.connect(lp); lp.connect(g); g.connect(ac.destination);
+  s.connect(lp); lp.connect(g); g.connect(BUS);
   s.start(t0); s.stop(t0 + 0.28);
   const o = ac.createOscillator(); o.type = "sine";
   o.frequency.setValueAtTime(130, t0);
@@ -2043,7 +2328,7 @@ function squelchSound(v) {
   const g2 = ac.createGain();
   g2.gain.setValueAtTime(0.12 * v, t0);
   g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.18);
-  o.connect(g2); g2.connect(ac.destination);
+  o.connect(g2); g2.connect(BUS);
   o.start(t0); o.stop(t0 + 0.2);
 }
 
@@ -2087,6 +2372,34 @@ function gooFrame(dt) {
     gtx.arc(sp.x, sp.y, sp.r, 0, Math.PI * 2);
     gtx.fill();
   }
+  /* oil-slick iridescence: two rainbow washes sliding against the drift */
+  gtx.globalCompositeOperation = "overlay";
+  for (let k = 0; k < 2; k++) {
+    const a2 = (k ? -1 : 1) * (wT * (0.09 + k * 0.05)) + k * 2.2;
+    const dx2 = Math.cos(a2), dy2 = Math.sin(a2);
+    const og = gtx.createLinearGradient(
+      W / 2 - dx2 * W * 0.55, H / 2 - dy2 * H * 0.55,
+      W / 2 + dx2 * W * 0.55, H / 2 + dy2 * H * 0.55);
+    for (let st = 0; st <= 4; st++) {
+      og.addColorStop(st / 4, `hsla(${((wT * 16 * (k + 1)) + st * 90) % 360},95%,60%,0.16)`);
+    }
+    gtx.fillStyle = og;
+    gtx.fillRect(0, 0, W, H);
+  }
+  gtx.globalCompositeOperation = "source-over";
+
+  /* pressed spots stay smudged for a while, then heal */
+  for (let i = gooSmears.length - 1; i >= 0; i--) {
+    const sm = gooSmears[i];
+    sm.life -= dt;
+    if (sm.life <= 0) { gooSmears.splice(i, 1); continue; }
+    const sg = gtx.createRadialGradient(sm.x, sm.y, 0, sm.x, sm.y, sm.r);
+    sg.addColorStop(0, `rgba(30,20,40,${0.10 * Math.min(1, sm.life / 4)})`);
+    sg.addColorStop(1, "rgba(30,20,40,0)");
+    gtx.fillStyle = sg;
+    gtx.fillRect(sm.x - sm.r, sm.y - sm.r, sm.r * 2, sm.r * 2);
+  }
+
   gtx.save();
   gtx.translate(W * 0.5, H * 0.4);
   gtx.rotate(-0.5 + Math.sin(wT * 0.3) * 0.06);
@@ -2106,6 +2419,9 @@ function gooFrame(dt) {
     gtx.strokeStyle = "rgba(255,255,255,0.85)";
     gtx.lineWidth = 4;
     for (const f of gooFringes) gtx.stroke(f);
+    gtx.strokeStyle = "rgba(255,255,255,0.7)";
+    gtx.lineWidth = 1.3;
+    for (const sPath of gooStrands) gtx.stroke(sPath);
   }
 
   /* shreds fluttering off fresh rips */
@@ -2133,6 +2449,11 @@ function gooFrame(dt) {
     gsh.life -= dt * 1.5;
     if (gsh.life <= 0) { gooGush.splice(i, 1); continue; }
     gsh.r += gsh.vr * dt;
+    /* the bulge: goo squeezed bright at the center, compressed dark at the rim */
+    gtx.beginPath();
+    gtx.arc(gsh.x, gsh.y, Math.max(1, gsh.r * 0.45), 0, Math.PI * 2);
+    gtx.fillStyle = `rgba(255,255,255,${0.28 * gsh.life})`;
+    gtx.fill();
     gtx.beginPath();
     gtx.arc(gsh.x, gsh.y, gsh.r, 0, Math.PI * 2);
     gtx.strokeStyle = `rgba(255,255,255,${0.45 * gsh.life})`;
@@ -2151,7 +2472,7 @@ function startGurgle() {
   const src = ac.createBufferSource(); src.buffer = noise(ac); src.loop = true;
   const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 1.6;
   const g = ac.createGain(); g.gain.value = 0.16;
-  src.connect(bp); bp.connect(g); g.connect(ac.destination);
+  src.connect(bp); bp.connect(g); g.connect(BUS);
   src.start();
   gurgle = { src, bp, g };
 }
@@ -2176,6 +2497,18 @@ function boot() {
   applyUIScale();
   sizeCanvas();
   buildSvg();
+  /* film grain tile — kills the CG flatness on every stage */
+  const gc = document.createElement("canvas");
+  gc.width = gc.height = 128;
+  const gg = gc.getContext("2d");
+  const gd = gg.createImageData(128, 128);
+  for (let i = 0; i < gd.data.length; i += 4) {
+    const v = 120 + Math.random() * 135;
+    gd.data[i] = gd.data[i + 1] = gd.data[i + 2] = v;
+    gd.data[i + 3] = 11;
+  }
+  gg.putImageData(gd, 0, 0);
+  document.getElementById("grain").style.backgroundImage = `url(${gc.toDataURL()})`;
 }
 let lastLines = "";
 window.addEventListener("resize", () => {
