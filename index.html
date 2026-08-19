@@ -797,44 +797,98 @@ function audio() {
     if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)();
     if (AC.state === "suspended") AC.resume();
     if (!BUS) {
+      /* Gentle on the master. A fast compressor pumps and that is the
+         opposite of what this should feel like — long attack, long
+         release, low ratio, so nothing ever grabs at you. */
       const comp = AC.createDynamicsCompressor();
-      comp.threshold.value = -14; comp.ratio.value = 4;
-      comp.attack.value = 0.003; comp.release.value = 0.25;
+      comp.threshold.value = -20; comp.ratio.value = 2.4;
+      comp.attack.value = 0.030; comp.release.value = 0.55;
+      const air = AC.createBiquadFilter();          // a little top, close-mic'd
+      air.type = "highshelf"; air.frequency.value = 6500; air.gain.value = 2.5;
+      air.connect(comp);
       comp.connect(AC.destination);   // master chain terminus — NOT the bus
       GLP = AC.createBiquadFilter();
       GLP.type = "lowpass"; GLP.frequency.value = 19000;
-      GLP.connect(comp);
+      GLP.connect(air);
       BUS = AC.createGain();
       BUS.gain.value = 0.9;
       BUS.connect(GLP);
       /* small room */
       const rev = AC.createConvolver();
-      const len = (AC.sampleRate * 0.9) | 0;
+      const len = (AC.sampleRate * 1.8) | 0;
       const ir = AC.createBuffer(2, len, AC.sampleRate);
       for (let c = 0; c < 2; c++) {
         const d = ir.getChannelData(c);
         for (let i = 0; i < len; i++) {
-          d[i] = (Math.random() * 2 - 1) * Math.exp(-6 * i / len);
+          d[i] = (Math.random() * 2 - 1) * Math.exp(-4.2 * i / len);
         }
       }
       rev.buffer = ir;
-      REVG = AC.createGain(); REVG.gain.value = 0.14;
+      REVG = AC.createGain(); REVG.gain.value = 0.20;
       BUS.connect(rev); rev.connect(REVG); REVG.connect(GLP);
     }
     return AC;
   } catch (e) { return null; }
 }
+/* Where a sound happens on the screen is where it should happen in your
+   ears. Everything with a position on it goes through here, which is most
+   of what makes this feel close rather than flat. */
+function at(x, wet) {
+  const ac = audio(); if (!ac) return null;
+  const g = ac.createGain();
+  if (ac.createStereoPanner) {
+    const p = ac.createStereoPanner();
+    p.pan.value = Math.max(-0.85, Math.min(0.85,
+      ((x === undefined ? window.innerWidth / 2 : x) / window.innerWidth - 0.5) * 1.7));
+    g.connect(p); p.connect(BUS);
+  } else g.connect(BUS);
+  return g;
+}
+
+/* a bed of room tone under every scene, crossfaded, so the quiet is never
+   dead air — the thing that makes headphones worth wearing */
+let bedSrc = null, bedG = null, bedLP = null, bedHP = null, bedKind = "";
+const BEDS = {
+  paper:  { lp: 380,   hp: 20,   g: 0.020 },
+  glitter:{ lp: 2600,  hp: 400,  g: 0.026 },
+  water:  { lp: 520,   hp: 30,   g: 0.034 },
+  goo:    { lp: 260,   hp: 20,   g: 0.030 },
+  night:  { lp: 300,   hp: 40,   g: 0.022 },
+  sea:    { lp: 900,   hp: 90,   g: 0.030 },
+  sand:   { lp: 1600,  hp: 200,  g: 0.026 },
+  glass:  { lp: 3200,  hp: 700,  g: 0.024 },
+  deep:   { lp: 220,   hp: 20,   g: 0.038 },
+};
+function bed(kind) {
+  const ac = audio(); if (!ac || kind === bedKind) return;
+  bedKind = kind;
+  const B = BEDS[kind] || BEDS.paper;
+  if (!bedSrc) {
+    bedSrc = ac.createBufferSource(); bedSrc.buffer = noise(ac); bedSrc.loop = true;
+    bedHP = ac.createBiquadFilter(); bedHP.type = "highpass";
+    bedLP = ac.createBiquadFilter(); bedLP.type = "lowpass";
+    bedG = ac.createGain(); bedG.gain.value = 0.0001;
+    bedSrc.connect(bedHP); bedHP.connect(bedLP); bedLP.connect(bedG); bedG.connect(BUS);
+    bedSrc.start();
+  }
+  const t = ac.currentTime;
+  bedHP.frequency.setTargetAtTime(B.hp, t, 1.4);
+  bedLP.frequency.setTargetAtTime(B.lp, t, 1.4);
+  bedG.gain.setTargetAtTime(B.g, t, 1.8);
+}
+
 /* the deeper the water, the more the world muffles */
 function setUnderwater(v) {
   if (!AC || !GLP) return;
   const t = AC.currentTime;
   const k = Math.max(0, Math.min(1, (v - 0.15) / 0.55));
   GLP.frequency.setTargetAtTime(19000 - (19000 - 680) * k, t, 0.25);
-  REVG.gain.setTargetAtTime(0.14 + k * 0.12, t, 0.3);
+  REVG.gain.setTargetAtTime(0.20 + k * 0.14, t, 0.3);
 }
 /* faint air-room hiss while the balloons are alive */
 function startHiss() {
   const ac = audio(); if (!ac || hissNode) return;
+  bed('paper');
   const src = ac.createBufferSource(); src.buffer = noise(ac); src.loop = true;
   const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 240;
   const g = ac.createGain(); g.gain.value = 0.012;
@@ -1944,6 +1998,7 @@ function startPool() {
   sizePool();
   buildPool();
   poolOn = true; poolT = 0; poolFlood = 0; poolDone = false;
+  bed('water');
   poolCanvas.style.display = "block";
   requestAnimationFrame(() => poolCanvas.style.opacity = "1");
 }
@@ -2045,6 +2100,28 @@ function poolFrame(dt) {
   if (poolCanvas.width !== Math.round(W * Math.min(2, devicePixelRatio || 1))) sizePool();
   hardClear(poolCanvas, pctx);
 
+  /* somewhere for them to be: a dark bath with light moving across the
+     bottom of it, so the drops read as lit objects rather than stickers */
+  const bgh = (RUN.hueShift + 190) % 360;
+  const bg = pctx.createRadialGradient(W * 0.5, H * 0.42, 0, W * 0.5, H * 0.5, Math.max(W, H) * 0.8);
+  bg.addColorStop(0, `hsl(${bgh},34%,17%)`);
+  bg.addColorStop(0.55, `hsl(${bgh},40%,11%)`);
+  bg.addColorStop(1, `hsl(${(bgh + 20) % 360},46%,6%)`);
+  pctx.fillStyle = bg; pctx.fillRect(0, 0, W, H);
+  pctx.save();
+  pctx.globalCompositeOperation = "lighter";
+  for (let i = 0; i < 5; i++) {
+    const cx2 = W * (0.5 + 0.42 * Math.sin(poolT * (0.13 + i * 0.05) + i * 1.9));
+    const cy2 = H * (0.5 + 0.34 * Math.cos(poolT * (0.11 + i * 0.043) + i * 2.4));
+    const rr2 = Math.max(W, H) * (0.22 + 0.10 * Math.sin(poolT * 0.2 + i));
+    const cg2 = pctx.createRadialGradient(cx2, cy2, 0, cx2, cy2, rr2);
+    cg2.addColorStop(0, `hsla(${(bgh + i * 26) % 360},70%,52%,0.055)`);
+    cg2.addColorStop(1, "hsla(0,0%,0%,0)");
+    pctx.fillStyle = cg2;
+    pctx.fillRect(cx2 - rr2, cy2 - rr2, rr2 * 2, rr2 * 2);
+  }
+  pctx.restore();
+
   /* ---- the flood at the end ---- */
   if (poolDone) {
     poolFlood = Math.min(1, poolFlood + dt * 0.5);
@@ -2099,7 +2176,7 @@ function poolFrame(dt) {
     you.r = Math.sqrt(a1 + a2);
     you.w1 = 0.16; you.w2 = 0.10;
     pool.splice(i, 1);
-    mergeSound(you.r / (Math.min(W, H) * 0.03));
+    mergeSound(you.r / (Math.min(W, H) * 0.03), d.x);
     if (pool.length <= 1) { poolDone = true; swellSound(); }
   }
 
@@ -2158,7 +2235,7 @@ window.addEventListener("pointermove", (e) => {
 window.addEventListener("pointerup", () => { poolGrab = null; });
 
 /* --- sound --- */
-function mergeSound(scale) {
+function mergeSound(scale, px) {
   const ac = audio(); if (!ac) return;
   const t0 = ac.currentTime;
   const f = 190 + Math.min(9, scale) * 62;
@@ -2169,7 +2246,8 @@ function mergeSound(scale) {
   g.gain.setValueAtTime(0.0001, t0);
   g.gain.exponentialRampToValueAtTime(0.085, t0 + 0.03);
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.5);
-  o.connect(g); g.connect(BUS);
+  const dest = at(px) || BUS;
+  o.connect(g); g.connect(dest);
   o.start(t0); o.stop(t0 + 0.55);
   /* a little wet click on top */
   const s = ac.createBufferSource(); s.buffer = noise(ac);
@@ -2177,7 +2255,7 @@ function mergeSound(scale) {
   const g2 = ac.createGain();
   g2.gain.setValueAtTime(0.05, t0);
   g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.10);
-  s.connect(lp); lp.connect(g2); g2.connect(BUS);
+  s.connect(lp); lp.connect(g2); g2.connect(dest);
   s.start(t0); s.stop(t0 + 0.12);
 }
 let lastReject = 0;
@@ -2278,6 +2356,7 @@ function plinkSound() {
 function showTap() {
   if (tapShown) return;
   tapShown = true;
+  bed('water');
   tapEl.style.display = "block";
   requestAnimationFrame(() => {
     tapEl.classList.add("on");
@@ -3031,6 +3110,7 @@ function activateGoo() {
   gooCanvas.style.display = "block";
   requestAnimationFrame(() => gooCanvas.classList.add("on"));
   gooActive = true;
+  bed('goo');
 }
 
 function gooPress(x, y, str) {
@@ -3604,7 +3684,7 @@ function stopStorm() {
   }, 2200);
 }
 
-function thunder(power, dist) {
+function thunder(power, dist, px) {
   const ac = audio(); if (!ac) return;
   /* sound is slow: the further off the strike, the later and duller it lands */
   const t0 = ac.currentTime + 0.12 + dist * 3.4;
@@ -3618,7 +3698,8 @@ function thunder(power, dist) {
   g.gain.setValueAtTime(0.0001, t0);
   g.gain.exponentialRampToValueAtTime(peak, t0 + 0.05 + dist * 0.7);
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-  s.connect(lp); lp.connect(g); g.connect(BUS);
+  const dst = at(px) || BUS;
+  s.connect(lp); lp.connect(g); g.connect(dst);
   s.start(t0); s.stop(t0 + dur + 0.4);
   /* close strikes crack before they rumble */
   if (dist < 0.36) {
@@ -3627,7 +3708,7 @@ function thunder(power, dist) {
     const cg = ac.createGain();
     cg.gain.setValueAtTime(0.30 * (1 - dist / 0.36), t0);
     cg.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.26);
-    c.connect(hp); hp.connect(cg); cg.connect(BUS);
+    c.connect(hp); hp.connect(cg); cg.connect(dst);
     c.start(t0); c.stop(t0 + 0.3);
   }
 }
@@ -3895,7 +3976,7 @@ function finaleFrame(dt) {
         const dist = Math.pow(Math.random(), 1.6);        // near strikes are rarer
         bolt = makeBolt(W, H, dist);
         boltT = 0;
-        thunder(bolt.power, dist);
+        thunder(bolt.power, dist, bolt.main[0].x);
         if (dist < 0.34 && !REDUCED) shake = Math.max(shake, 0.55 + (0.34 - dist) * 1.6);
         /* strikes get closer together as it builds, but never fast enough
            to read as a strobe */
@@ -4138,7 +4219,7 @@ function startNightPad() {
   });
   nightPad = { oscs, g };
 }
-function chime(n) {
+function chime(n, px) {
   const ac = audio(); if (!ac) return;
   const t0 = ac.currentTime;
   const SC = [523.3, 587.3, 659.3, 784, 880, 1046.5];
@@ -4148,7 +4229,7 @@ function chime(n) {
   g.gain.setValueAtTime(0.0001, t0);
   g.gain.exponentialRampToValueAtTime(0.055, t0 + 0.02);
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.6);
-  o.connect(g); g.connect(BUS);
+  o.connect(g); g.connect(at(px) || BUS);
   o.start(t0); o.stop(t0 + 1.7);
 }
 
@@ -4156,6 +4237,7 @@ function lightsOut() {
   if (nightPhase) return;
   nightPhase = 1; nightT = 0;
   stopStorm();
+  bed('night');
   finCanvas.style.filter = "none";
   finCanvas.style.background = "#05060a";
   switchClick();
@@ -4180,9 +4262,10 @@ let lastSeg = -1;
 function drawNight(dt) {
   const W = window.innerWidth, H = window.innerHeight;
   nightT += dt;
-  if (jellyOn) { jellyFrame(dt); return; }
+  if (jellyOn) { jellyFrame(dt); travelFrame(dt); return; }
   if (winOn) {
     windowFrame(dt);
+    travelFrame(dt);
     /* the flood off the chest fades back through the glass */
     if (whiteOut < 2.4) {
       whiteOut = Math.min(2.4, whiteOut + dt * 0.42);
@@ -4194,7 +4277,7 @@ function drawNight(dt) {
     }
     return;
   }
-  if (digPhase) { drawDig(dt); return; }   /* the chart said here */
+  if (digPhase) { drawDig(dt); travelFrame(dt); return; }   /* the chart said here */
   if (chartT >= 0) drawChart(dt);
   if (dawnPhase) dawnIdle += dt;
   hardClear(finCanvas, fctx);
@@ -4223,7 +4306,7 @@ function drawNight(dt) {
   const E = ORION.edges;
   const rev = Math.max(0, Math.min(E.length, (nightT - 2.4) / 6.0 * E.length));
   const done = Math.floor(rev);
-  if (done > lastSeg && done > 0 && done <= E.length) { lastSeg = done; chime(done - 1); }
+  if (done > lastSeg && done > 0 && done <= E.length) { lastSeg = done; chime(done - 1, P(E[done - 1][1])[0]); }
 
   const orionA = Math.max(0, 1 - wash * 1.35);
   fctx.strokeStyle = `rgba(150,190,255,${(0.5 * orionA).toFixed(3)})`;
@@ -4275,7 +4358,7 @@ function drawNight(dt) {
   fctx.globalAlpha = 1;
 
   /* Orion finished — the sun is waiting just under the horizon */
-  if (!dawnPhase && done >= E.length && nightT > 11.5) { dawnPhase = 1; dawnIdle = 0; }
+  if (!dawnPhase && done >= E.length && nightT > 11.5) { dawnPhase = 1; dawnIdle = 0; bed('sea'); }
   if (dawnPhase) drawDawn(dt);
 
   /* the very occasional shooting star */
@@ -4297,6 +4380,8 @@ function drawNight(dt) {
     fctx.lineTo(sh.x - sh.vx * 0.16, sh.y - sh.vy * 0.16);
     fctx.stroke();
   }
+
+  travelFrame(dt);
 }
 
 /* ================= dawn: the last scene =================
@@ -5064,7 +5149,10 @@ function chartClick(e) {
   const py = (e.clientY - r.top) / r.height * g.H;
   if (Math.hypot(px - g.X.x, py - g.X.y) > g.W * 0.09) return;
   e.stopPropagation();
-  startDig();
+  const el = botEl(), sc = document.getElementById("scrim");
+  if (el) el.classList.remove("on");
+  if (sc) sc.classList.remove("on");
+  passThrough(() => startDig(), { dur: 1.6 });
 }
 
 /* ================= the dig =================
@@ -5141,6 +5229,7 @@ function lidTopAt(x) {
 function startDig() {
   if (digPhase) return;
   digPhase = 1; digT = 0; lidSeen = 0; lidClear = 0;
+  bed('sand');
   buildSand();
   const el = botEl(), sc = document.getElementById("scrim");
   if (el) { el.classList.remove("on"); setTimeout(() => { el.style.display = "none"; }, 900); }
@@ -5204,7 +5293,7 @@ function digAt(x, y, dx, dt) {
                       vy: -120 - Math.random() * 190, life: 1,
                       s: 0.9 + Math.random() * 1.8 });
     }
-    scrape(Math.min(1, moved / 10));
+    scrape(Math.min(1, moved / 10), x);
   }
   if (clank > 0.35) thud();
 }
@@ -5506,7 +5595,7 @@ window.addEventListener("pointerup", () => {
 });
 
 /* --- sound --- */
-function scrape(v) {
+function scrape(v, px) {
   const ac = audio(); if (!ac) return;
   const t0 = ac.currentTime;
   if (t0 - lastScrape < 0.055) return;
@@ -5519,7 +5608,7 @@ function scrape(v) {
   g.gain.setValueAtTime(0.0001, t0);
   g.gain.exponentialRampToValueAtTime(0.035 * (0.4 + v), t0 + 0.015);
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.14);
-  s.connect(bp); bp.connect(g); g.connect(BUS);
+  s.connect(bp); bp.connect(g); g.connect(at(px) || BUS);
   s.start(t0); s.stop(t0 + 0.16);
 }
 
@@ -5799,6 +5888,88 @@ function creak(v) {
   o.start(t0); o.stop(t0 + 0.45);
 }
 
+
+/* ================= going through =================
+   A cut between two scenes is a cut. This is the other thing: the scene
+   you are leaving is grabbed as it stands, then pushed past you — scaled
+   up out of the frame in a stack of copies so it smears radially, the way
+   things do when you move through them — while the next one comes up
+   underneath. Used at every hard change, so travel has a grammar and the
+   whole thing feels like it is going somewhere rather than jumping. */
+let travC = null, travX = null, travT = -1, travDur = 1.5, travDone = null;
+
+function passThrough(after, opts) {
+  const W = window.innerWidth, H = window.innerHeight;
+  if (!travC) { travC = document.createElement("canvas"); travX = travC.getContext("2d"); }
+  travC.width = W; travC.height = H;
+  travX.setTransform(1, 0, 0, 1, 0, 0);
+  travX.clearRect(0, 0, W, H);
+  try { travX.drawImage(finCanvas, 0, 0, W, H); } catch (e) {}
+  travT = 0;
+  travDur = (opts && opts.dur) || 1.5;
+  travDone = after || null;
+  whoosh((opts && opts.up) ? 1 : -1);
+}
+
+function travelFrame(dt) {
+  if (travT < 0) return false;
+  travT += dt;
+  const W = window.innerWidth, H = window.innerHeight;
+  const u = Math.min(1, travT / travDur);
+  const e = u * u * (3 - 2 * u);
+  /* dim what is underneath first, or the smear washes out against a bright
+     scene and reads as a streak instead of as motion */
+  fctx.fillStyle = `rgba(6,7,12,${(Math.sin(u * Math.PI) * 0.88).toFixed(3)})`;
+  fctx.fillRect(0, 0, W, H);
+  fctx.save();
+  fctx.globalCompositeOperation = "lighter";
+  /* eight copies, each a little larger and dimmer: a radial smear for the
+     price of eight drawImage calls */
+  const N = 8;
+  for (let i = 0; i < N; i++) {
+    const f = i / (N - 1);
+    const s = 1 + e * (1.9 + f * 2.6);
+    const a = Math.sin(u * Math.PI) * (0.21 - f * 0.022);
+    if (a <= 0.002) continue;
+    fctx.globalAlpha = a;
+    fctx.drawImage(travC, W / 2 - W * s / 2, H / 2 - H * s / 2, W * s, H * s);
+  }
+  fctx.restore();
+  fctx.globalAlpha = 1;
+  if (u >= 1) {
+    travT = -1;
+    if (travDone) { const f = travDone; travDone = null; f(); }
+    return false;
+  }
+  return true;
+}
+
+function whoosh(dir) {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noise(ac); s.loop = true;
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 0.85;
+  const a = dir > 0 ? 240 : 2400, b = dir > 0 ? 2600 : 200;
+  bp.frequency.setValueAtTime(a, t0);
+  bp.frequency.exponentialRampToValueAtTime(b, t0 + 1.5);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(0.075, t0 + 0.45);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.0);
+  s.connect(bp); bp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 2.1);
+  /* a low body under it so it has weight */
+  const o = ac.createOscillator(); o.type = "sine";
+  o.frequency.setValueAtTime(dir > 0 ? 48 : 128, t0);
+  o.frequency.exponentialRampToValueAtTime(dir > 0 ? 132 : 42, t0 + 1.4);
+  const g2 = ac.createGain();
+  g2.gain.setValueAtTime(0.0001, t0);
+  g2.gain.linearRampToValueAtTime(0.055, t0 + 0.4);
+  g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.8);
+  o.connect(g2); g2.connect(BUS);
+  o.start(t0); o.stop(t0 + 1.9);
+}
+
 /* ================= the window =================
    The light out of the chest resolves into a pane of glass with rain on
    the far side of it and your breath on this one. There is nothing to
@@ -5855,6 +6026,7 @@ function startWindow() {
   }
   rainDrops = [];
   finCanvas.style.cursor = "";
+  bed('glass');
   rainOnGlass();
 }
 
@@ -6002,7 +6174,7 @@ window.addEventListener("pointerdown", (e) => {
   if (!winOn || winGone) return;
   winWipe = { x: e.clientX, y: e.clientY };
   wipeAt(e.clientX, e.clientY, winBrush());
-  squeak(0.4);
+  squeak(0.4, e.clientX);
   if (e.cancelable) e.preventDefault();
 }, { passive: false });
 window.addEventListener("pointermove", (e) => {
@@ -6016,7 +6188,7 @@ window.addEventListener("pointermove", (e) => {
   for (let i = 1; i <= n; i++)
     wipeAt(winWipe.x + dx * i / n, winWipe.y + dy * i / n, winBrush());
   winWipe = { x: e.clientX, y: e.clientY };
-  squeak(Math.min(1, D / 90));
+  squeak(Math.min(1, D / 90), e.clientX);
   if (e.cancelable) e.preventDefault();
 }, { passive: false });
 window.addEventListener("pointerup", () => { winWipe = null; });
@@ -6045,14 +6217,14 @@ function rainOnGlass() {
     const gg = ac2.createGain();
     gg.gain.setValueAtTime(0.020, t0);
     gg.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.09);
-    o.connect(gg); gg.connect(BUS);
+    o.connect(gg); gg.connect(at(Math.random() * window.innerWidth) || BUS);
     o.start(t0); o.stop(t0 + 0.1);
     setTimeout(tick, 300 + Math.random() * 1600);
   };
   setTimeout(tick, 800);
 }
 let lastSq = 0;
-function squeak(v) {
+function squeak(v, px) {
   const ac = audio(); if (!ac || v < 0.05) return;
   const t0 = ac.currentTime;
   if (t0 - lastSq < 0.07) return;
@@ -6066,7 +6238,7 @@ function squeak(v) {
   g.gain.setValueAtTime(0.0001, t0);
   g.gain.exponentialRampToValueAtTime(0.016 * (0.3 + v), t0 + 0.02);
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
-  o.connect(bp); bp.connect(g); g.connect(BUS);
+  o.connect(bp); bp.connect(g); g.connect(at(px) || BUS);
   o.start(t0); o.stop(t0 + 0.18);
 }
 function clearSigh() {
@@ -6118,7 +6290,7 @@ function startJelly(hue) {
   for (let i = 0; i < (W < 620 ? 60 : 120); i++)
     motes.push({ x: rnd() * W, y: rnd() * H, r: 0.4 + rnd() * 1.5,
                  v: 4 + rnd() * 14, ph: rnd() * 6.3 });
-  jellySwell();
+  bed('deep');
 }
 
 function drawJelly(j, t) {
@@ -6269,8 +6441,8 @@ function jellyTouch(x, y) {
   }
   if (!best || bd > 1.25) return;
   best.flash = 1;
-  if (best.lit < 0.02) { best.lit = 0.02; jellyPing(best.hue); }
-  else jellyPing(best.hue, true);
+  if (best.lit < 0.02) { best.lit = 0.02; jellyPing(best.hue, false, best.x); }
+  else jellyPing(best.hue, true, best.x);
 }
 window.addEventListener("pointerdown", (e) => {
   if (!jellyOn) return;
@@ -6281,7 +6453,7 @@ window.addEventListener("pointermove", (e) => {
   finCanvas.style.cursor = "pointer";
 }, { passive: true });
 
-function jellyPing(hue, again) {
+function jellyPing(hue, again, px) {
   const ac = audio(); if (!ac) return;
   const t0 = ac.currentTime;
   const SC = [261.6, 293.7, 329.6, 392, 440, 523.3, 587.3, 659.3];
@@ -6294,7 +6466,7 @@ function jellyPing(hue, again) {
   g.gain.setValueAtTime(0.0001, t0);
   g.gain.exponentialRampToValueAtTime(again ? 0.028 : 0.055, t0 + 0.03);
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.4);
-  o.connect(g); o2.connect(g); g.connect(BUS);
+  o.connect(g); o2.connect(g); g.connect(at(px) || BUS);
   o.start(t0); o.stop(t0 + 2.6);
   o2.start(t0); o2.stop(t0 + 2.6);
 }
