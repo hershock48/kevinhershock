@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="build" content="2026-08-19T22:49Z">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Kevin Hershock</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎈</text></svg>">
@@ -2578,6 +2579,8 @@ function waterStep(dt) {
     /* and when the last of it has gone, you go down after it */
     if (vol <= 0 && !gooHanded) {
       gooHanded = true;
+      /* belt and braces on the stage everyone gets to */
+      setTimeout(() => { if (!gooActive) activateGoo(); }, 7000);
       setTimeout(() => {
         finCanvas.style.background = "transparent";
         finCanvas.style.display = "block";
@@ -6011,6 +6014,18 @@ function passThrough(after, opts) {
   travDur = (opts && opts.dur) || 1.5;
   travDone = after || null;
   whoosh((opts && opts.up) ? 1 : -1);
+  /* watchdog: if the frame loop is not running — a backgrounded tab, a
+     throttled one — the hand-off still has to happen. */
+  if (travDone) {
+    const guard = travDone;
+    setTimeout(() => {
+      if (travDone === guard) {
+        travT = -1; travDone = null; travelOnly = false;
+        if (!finActive) finCanvas.style.display = "none";
+        guard();
+      }
+    }, travDur * 1000 + 2500);
+  }
 }
 
 function travelFrame(dt) {
