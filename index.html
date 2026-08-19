@@ -4278,6 +4278,10 @@ function dawnDown(e) {
   dawnGrab = { y, u0: dawnU };
   dawnPhase = 2;
   dawnIdle = 0;
+  /* taps raise it too, same as the pump */
+  const bump = Math.min(1, dawnU + 0.11);
+  if (bump > dawnU) { sunRise(bump - dawnU); dawnU = bump; }
+  if (dawnU >= 1 && !dawnDone) { dawnDone = 1; dawnPhase = 3; dawnGrab = null; sunUp(); }
   finCanvas.style.cursor = "grabbing";
   if (e.cancelable) e.preventDefault();
 }
@@ -4499,6 +4503,9 @@ function bottleHit(x, y) {
 window.addEventListener("pointerdown", (e) => {
   if (!bottleHit(e.clientX, e.clientY)) return;
   botGrab = { y: e.clientY, p0: botPull };
+  botPull = Math.min(1, botPull + 0.20);
+  squeakCork();
+  if (botPull >= 1 && !botOpen) { botOpen = 1; botGrab = null; openNote(); }
   if (e.cancelable) e.preventDefault();
 }, { passive: false });
 
@@ -5143,6 +5150,15 @@ function digPointer(e) {
 }
 window.addEventListener("pointerdown", (e) => {
   if (digPhase !== 1) return;
+  /* if they are tapping the wood rather than dragging the shovel, take that
+     as intent and brush the sand off it — a tap on the thing you are trying
+     to uncover should never do nothing */
+  const G0 = digGeom();
+  if (Math.abs(e.clientX - G0.lidX) < G0.lidR &&
+      Math.abs(e.clientY - lidTopAt(e.clientX)) < G0.lidR * 0.6) {
+    digAt(e.clientX, lidTopAt(e.clientX) - 4, 0, 0.05);
+    digAt(e.clientX, lidTopAt(e.clientX) - 4, 0, 0.05);
+  }
   digging = { x: e.clientX, y: e.clientY, t: performance.now() };
   const sh = document.getElementById("shovel");
   if (sh) sh.classList.add("dig");
@@ -5350,9 +5366,12 @@ function drawLift(dt, G) {
                 Hs.r * 2.2, Hs.r * 0.34);
   if (ready && pinOut < 1) {
     const p2 = 0.5 + 0.5 * Math.sin(digT * 2.6);
-    fctx.strokeStyle = `rgba(255,226,170,${(0.20 + 0.30 * p2).toFixed(2)})`;
-    fctx.lineWidth = 2;
-    fctx.beginPath(); fctx.arc(Hs.x, Hs.y, Hs.r * (1.5 + 0.4 * p2), 0, 6.3); fctx.stroke();
+    fctx.strokeStyle = `rgba(255,226,170,${(0.24 + 0.36 * p2).toFixed(2)})`;
+    fctx.lineWidth = Math.max(2, Hs.r * 0.10);
+    fctx.beginPath(); fctx.arc(Hs.x, Hs.y, Hs.r * (1.8 + 0.55 * p2), 0, 6.3); fctx.stroke();
+    /* and the pin itself works itself loose, so the eye goes to it */
+    fctx.fillStyle = `rgba(255,240,206,${(0.35 + 0.4 * p2).toFixed(2)})`;
+    fctx.fillRect(Hs.x + Hs.r * (1.05 + 0.10 * p2), Hs.y - Hs.r * 0.06, Hs.r * 0.5, Hs.r * 0.12);
   }
   fctx.restore();
 
@@ -5366,15 +5385,30 @@ function drawLift(dt, G) {
   }
 }
 
+/* The whole lid is the target, not a 70px circle on the hasp — you should
+   not have to find the pin to grab the pin. */
 function liftHit(x, y) {
   const G = digGeom(), Hs = hasp(G);
-  return Math.hypot(x - Hs.x, y - Hs.y) < Math.max(Hs.r * 2.2, 46 * UIS);
+  if (Math.abs(x - G.lidX) < G.lidR * 1.05 &&
+      y > lidTopAt(G.lidX) - G.lidR * 0.55 && y < G.lidY + G.lidR * 0.75) return true;
+  return Math.hypot(x - Hs.x, y - Hs.y) < Math.max(Hs.r * 2.4, 54 * UIS);
 }
 window.addEventListener("pointerdown", (e) => {
   if (digPhase !== 2 || liftT < 1.2 || whiteOut > 0) return;
   if (!liftHit(e.clientX, e.clientY)) return;
-  if (pinOut < 1) pinGrab = { x: e.clientX, p0: pinOut };
-  else liftGrab = { y: e.clientY, l0: lidLift };
+  /* Every other pull on this site advances on a tap — the pump, the dot.
+     This one only moved on a drag, so a click did nothing at all and the
+     chest read as broken. It takes taps now as well as drags. */
+  if (pinOut < 1) {
+    pinGrab = { x: e.clientX, p0: pinOut };
+    pinOut = Math.min(1, pinOut + 0.26);
+    pinScrape();
+    if (pinOut >= 1) thud();
+  } else {
+    liftGrab = { y: e.clientY, l0: lidLift };
+    lidLift = Math.min(1, lidLift + 0.20);
+    creak(lidLift);
+  }
   if (e.cancelable) e.preventDefault();
 }, { passive: false });
 window.addEventListener("pointermove", (e) => {
@@ -5844,6 +5878,21 @@ window.addEventListener("pointerdown", (e) => {
   }
   if (coinHit(e.clientX, e.clientY)) {
     coinGrab = { dx: coinX - e.clientX, dy: coinY - e.clientY };
+    if (e.cancelable) e.preventDefault();
+    return;
+  }
+  /* tapping the slot with the coin still in the cup posts it — you should
+     not have to work out that this particular thing wants a drag */
+  if (machPhase === 1 &&
+      Math.abs(e.clientX - G.slot.x) < G.slot.w * 1.6 &&
+      Math.abs(e.clientY - G.slot.y) < G.h * 0.06) {
+    coinGrab = null; machPhase = 2;
+    const t0 = performance.now();
+    const slide = () => {
+      coinIn = Math.min(1, (performance.now() - t0) / 420);
+      if (coinIn < 1) requestAnimationFrame(slide); else coinDrop();
+    };
+    slide();
     if (e.cancelable) e.preventDefault();
   }
 }, { passive: false });
