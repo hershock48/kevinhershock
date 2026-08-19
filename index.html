@@ -1144,7 +1144,10 @@ function frame(now) {
      torn paper and the ink, there is nothing else running */
   if (travelOnly) {
     hardClear(finCanvas, fctx);
-    if (!travelFrame(dt)) travelOnly = false;
+    if (!travelFrame(dt)) {
+      travelOnly = false;
+      if (!finActive) finCanvas.style.display = "none";
+    }
   }
 
   if (!exploded) {
@@ -2323,7 +2326,7 @@ const wheelEl = document.getElementById("tapWheel");
 let tapShown = false, tapRot = 0, valveFlow = 0, lastSqueakRot = 0, dripT = 1.2;
 let wT = 0, wFlow = 0, frontY = null, frontV = 0, wLanded = false, wMotes = [], wLastT = 0;
 let breakY = null, breakV = 0, wasFlowing = false;
-let vol = 0, slosh = 0, sloshV = 0;
+let vol = 0, slosh = 0, sloshV = 0, gooHanded = false;
 let wDrops = [], wFoam = [], wBub = [], wNucl = [];
 let waterSnd = null, splashed = false;
 
@@ -2571,6 +2574,17 @@ function waterStep(dt) {
       gurgle.g.gain.setTargetAtTime(0, AC.currentTime, 0.05);
       const gg = gurgle; gurgle = null;
       setTimeout(() => { try { gg.src.stop(); } catch (e) {} }, 400);
+    }
+    /* and when the last of it has gone, you go down after it */
+    if (vol <= 0 && !gooHanded) {
+      gooHanded = true;
+      setTimeout(() => {
+        finCanvas.style.background = "transparent";
+        finCanvas.style.display = "block";
+        sizeFinale();
+        passThrough(() => activateGoo(), { dur: 1.4 });
+        travelOnly = true;
+      }, 900);
     }
   }
 
@@ -3099,12 +3113,6 @@ function updateScrew(dt) {
       corkPopSound();
       drainOpen = true;
       startGurgle();
-      /* the transition needs a canvas to live on, and nothing else is
-         running at this moment — so hand it the finale one */
-      finCanvas.style.display = "block";
-      sizeFinale();
-      passThrough(() => activateGoo(), { dur: 1.4 });
-      travelOnly = true;
       /* unplugged — the corkscrew rises up and away with its prize */
       screwEl.style.transition = "top 1.4s ease-in, opacity 0.6s ease 1.3s";
       screwEl.style.top = (screwTargetY - 390 * UIS) + "px";
@@ -3309,6 +3317,7 @@ function finishGoo() {
   gooActive = false;
   /* you do not cut to the next room, you go through the hole you just made */
   setTimeout(() => {
+    finCanvas.style.background = "transparent";
     finCanvas.style.display = "block";
     sizeFinale();
     passThrough(() => { gooCanvas.style.display = "none"; startFinale(); },
@@ -3803,6 +3812,7 @@ function thunder(power, dist, px) {
 
 function startFinale() {
   if (finActive) return;
+  finCanvas.style.background = "#fdfdfb";     /* the paper is back */
   sizeFinale();
   finActive = true;
   fT = 0; inkY = 0; inkV = 0; splatT = -1;
