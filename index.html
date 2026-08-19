@@ -121,7 +121,7 @@
   #cord.on { transform: translateY(0); }
   #cord.grabbing { cursor: grabbing; }
   #cord svg { overflow: visible; filter: drop-shadow(0 5px 12px rgba(0,0,0,0.55)); }
-  /* it hangs in a room full of lasers — it has to move to be seen */
+  /* it hangs in a downpour lit only by lightning — it has to move to be seen */
   #cordSwing {
     transform-origin: 30px -240px;
     animation: cordsway 3.2s ease-in-out infinite;
@@ -278,6 +278,85 @@
   }
   /* a 14px dot is not a thumb target — this pad keeps it tappable
      while it is still small, without changing what you see */
+  /* the note out of the bottle: it unrolls from the top, so the paper
+     scales down to nothing about its own top edge and comes back */
+  /* the sunrise stays visible round the edges — it is the whole payoff —
+     but it steps back far enough for the paper to read */
+  #scrim {
+    position: fixed; inset: 0; z-index: 29;
+    display: none; opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.9s ease;
+    background: radial-gradient(ellipse at 50% 47%,
+      rgba(8,6,14,0.62) 0%, rgba(8,6,14,0.40) 38%, rgba(8,6,14,0) 74%);
+  }
+  #scrim.on { opacity: 1; }
+  #note {
+    position: fixed;
+    left: 50%; top: 46%;
+    transform: translate(-50%, -50%);
+    z-index: 30;
+    display: none;
+    pointer-events: none;
+    width: min(560px, 84vw);
+  }
+  #note .paper {
+    position: relative;
+    background: linear-gradient(168deg, #fdf6e4 0%, #f4e8cd 55%, #e8d8b4 100%);
+    border-radius: 3px;
+    padding: clamp(22px, 5vw, 44px) clamp(20px, 5vw, 46px);
+    box-shadow: 0 26px 60px rgba(60,36,14,0.42), 0 2px 0 rgba(255,255,255,0.5) inset;
+    transform: scaleY(0.02) rotate(-0.5deg);
+    transform-origin: 50% 0%;
+    transition: transform 1.15s cubic-bezier(.19,1,.22,1);
+  }
+  #note .paper::after {            /* the roll still curled at the foot */
+    content: "";
+    position: absolute; left: 0; right: 0; bottom: -7px; height: 14px;
+    border-radius: 0 0 7px 7px;
+    background: linear-gradient(180deg, #e2d0a8, #c9b183);
+    box-shadow: 0 5px 12px rgba(60,36,14,0.35);
+  }
+  #note.on .paper { transform: scaleY(1) rotate(-0.5deg); }
+  #note .inner {
+    opacity: 0;
+    transition: opacity 0.7s ease 0.65s;
+    text-align: center;
+    color: #3a2a16;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+  #note.on .inner { opacity: 1; }
+  #note h1 {
+    margin: 0 0 6px;
+    font-size: clamp(20px, 4.6vw, 32px);
+    letter-spacing: 0.16em;
+    font-weight: 600;
+  }
+  #note .title {
+    margin: 0 0 20px;
+    font-size: clamp(11px, 2.5vw, 13px);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: #8a6f45;
+  }
+  #note .body {
+    margin: 0 0 22px;
+    font-size: clamp(14px, 3.2vw, 17px);
+    line-height: 1.62;
+    color: #52401f;
+  }
+  #note .links { margin: 0; }
+  #note .links a {
+    pointer-events: auto;
+    display: inline-block;
+    margin: 0 10px;
+    font-size: clamp(13px, 3vw, 15px);
+    color: #6b4a1c;
+    text-decoration: none;
+    border-bottom: 1px solid rgba(107,74,28,0.4);
+    padding-bottom: 2px;
+  }
+  #note .links a:hover { color: #241804; border-bottom-color: #241804; }
   #dot::before {
     content: "";
     position: absolute;
@@ -291,6 +370,7 @@
 <body>
 <div id="stage" class="noselect"></div>
 <div id="veil"></div>
+<div id="scrim"></div>
 <canvas id="glue"></canvas>
 <canvas id="glitter"></canvas>
 <div id="dot"></div>
@@ -2865,82 +2945,232 @@ function startGurgle() {
 }
 
 /* ================= the finale =================
-   ink drop -> splatter -> hypnotic spiral -> strobe -> lasers ->
-   a baby dancing at the bottom while hearts rain. 1996 forever. */
+   The white paper takes an ink drop, the drop splatters, and then the ink
+   lets go: it floods the frame and the weather comes in. */
 const finCanvas = document.getElementById("finale");
 const fctx = finCanvas.getContext("2d");
 const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-const BPM = 112;
-let finActive = false, fT = 0, inv = 0, invT = 0;
+let finActive = false, fT = 0;
 let inkY = 0, inkV = 0, splatT = -1, splatBlobs = [], splatDots = [], splatArms = [];
-let lasers = [], hearts = [], nextNote = 0, beatStep = 0;
 
 function sizeFinale() {
-  /* the finale is huge soft shapes and a spiral — it is entirely
-     fill-rate bound, so it renders at 1x and lets the browser upscale.
-     Costs 2.25x less than 1.5x and the difference is invisible in motion. */
+  /* the storm is thousands of thin strokes over full-screen fills — it is
+     entirely fill-rate bound, so it renders at 1x and lets the browser
+     upscale. Costs 2.25x less than 1.5x and is invisible in motion. */
   const dpr = 1;
   finCanvas.width = window.innerWidth * dpr;
   finCanvas.height = window.innerHeight * dpr;
   finCanvas.style.width = window.innerWidth + "px";
   finCanvas.style.height = window.innerHeight + "px";
   fctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  buildSpiralSprite();
+  buildRain();
 }
 
-/* The spiral is tessellated ONCE into a sprite and then just rotated and
-   scaled each frame. An Archimedean spiral scaled by f is the same spiral
-   with pitch f*k, so growth is a scale — no re-tessellation, and it costs
-   one drawImage instead of 1400 path segments a frame. */
-let spiralSprite = null, spiralR = 0;
-const SPIRAL_K = 116;
-function buildSpiralSprite() {
-  /* only as big as it actually needs to be: the farthest screen corner
-     from the spiral's centre */
-  const W = window.innerWidth, H = window.innerHeight;
-  const cx = W / 2, cy = H * 0.46;
-  const R = Math.max(
-    Math.hypot(cx, cy), Math.hypot(W - cx, cy),
-    Math.hypot(cx, H - cy), Math.hypot(W - cx, H - cy)) * 1.03;
-  const q = 1;
-  const c = document.createElement("canvas");
-  c.width = c.height = Math.ceil(R * 2 * q);
-  const g = c.getContext("2d");
-  g.setTransform(q, 0, 0, q, 0, 0);
-  const k = SPIRAL_K, turns = R / (2 * k) + 1.3;
-  g.fillStyle = "#0b0b0d";
-  for (let arm = 0; arm < 2; arm++) {
-    const off = arm * Math.PI, N = 620, thMax = turns * 2 * Math.PI;
-    g.beginPath();
-    for (let i = 0; i <= N; i++) {
-      const th = thMax * i / N, r = k * th / Math.PI;
-      g.lineTo(R + Math.cos(th + off) * r, R + Math.sin(th + off) * r);
-    }
-    for (let i = N; i >= 0; i--) {
-      const th = thMax * i / N, r = Math.max(0, k * (th - Math.PI/2) / Math.PI);
-      g.lineTo(R + Math.cos(th + off) * r, R + Math.sin(th + off) * r);
-    }
-    g.closePath(); g.fill();
+/* ================= the storm =================
+   The ink does not spin. It lets go: the blot creeps outward with a ragged
+   edge, runs stream down the paper the way wet ink does, and the whole
+   frame floods to black. Then it rains — three parallax layers sheared by
+   gusts that never repeat, drops that part around your cursor, splashes
+   coming back off the ground. Lightning is a real channel, built by
+   recursive midpoint displacement with its own branches, and the thunder
+   arrives late by however far away the strike was. Near ones shake the
+   frame. Then the cord drops out of the dark. */
+
+let inkRuns = [], inkEdge = [], inkLag = [];
+const INK_N = 72;
+function buildInk(cx, cy) {
+  /* correlated noise, not white noise — smoothing the ring a few times is
+     what turns a spiky polygon into something that reads as spreading ink */
+  inkEdge = [];
+  for (let i = 0; i < INK_N; i++) inkEdge.push(Math.random());
+  for (let pass = 0; pass < 4; pass++) {
+    const s = inkEdge.slice();
+    for (let i = 0; i < INK_N; i++)
+      inkEdge[i] = (s[(i - 1 + INK_N) % INK_N] + s[i] * 2 + s[(i + 1) % INK_N]) / 4;
   }
-  spiralSprite = c; spiralR = R;
+  /* each lobe sets off at its own moment, so it creeps rather than balloons */
+  inkLag = [];
+  for (let i = 0; i < INK_N; i++) inkLag.push(0.10 + Math.random() * 0.34);
+  for (let pass = 0; pass < 3; pass++) {
+    const s = inkLag.slice();
+    for (let i = 0; i < INK_N; i++)
+      inkLag[i] = (s[(i - 1 + INK_N) % INK_N] + s[i] + s[(i + 1) % INK_N]) / 3;
+  }
+  inkRuns = [];
+  for (let i = 0; i < 30; i++) {
+    const a = Math.random() * Math.PI * 2, d = 20 + Math.random() * 190;
+    inkRuns.push({
+      x0: Math.cos(a) * d, y0: Math.sin(a) * d * 0.7,
+      len: 200 + Math.random() * 780, w: 3 + Math.random() * 13,
+      wob: (Math.random() - 0.5) * 34, ph: Math.random() * 6.3,
+      d: Math.random() * 0.16,
+    });
+  }
 }
 
-/* hearts are sprites too — 90 bezier fills a frame is not free */
-let heartSprites = [];
-function buildHeartSprites() {
-  heartSprites = [];
-  for (let i = 0; i < 6; i++) {
-    const S = 72, c = document.createElement("canvas");
-    c.width = c.height = S;
-    const g = c.getContext("2d");
-    g.translate(S/2, S/2); g.scale(S*0.44, S*0.44);
-    g.fillStyle = `hsl(${338 + i*7},80%,${56 + i*2}%)`;
-    g.beginPath();
-    g.moveTo(0, 0.32);
-    g.bezierCurveTo(-0.62, -0.18, -0.38, -0.78, 0, -0.42);
-    g.bezierCurveTo(0.38, -0.78, 0.62, -0.18, 0, 0.32);
-    g.closePath(); g.fill();
-    heartSprites.push(c);
+let rainL = null, drops = null, splashes = [];
+function buildRain() {
+  const W = window.innerWidth, H = window.innerHeight;
+  const tier = Math.max(0.42, Math.min(1, (W * H) / (1500 * 860)));
+  rainL = [
+    { n: Math.round(240 * tier), v: 640, len: 15, w: 0.9, a: 0.30, par: 0.42 },
+    { n: Math.round(150 * tier), v: 1020, len: 28, w: 1.35, a: 0.52, par: 0.72 },
+    { n: Math.round(78 * tier), v: 1520, len: 48, w: 2.1, a: 0.80, par: 1.0 },
+  ];
+  drops = rainL.map(L => {
+    const a = [];
+    for (let i = 0; i < L.n; i++)
+      a.push({ x: Math.random() * W * 1.5 - W * 0.25, y: Math.random() * H, vx: 0 });
+    return a;
+  });
+  splashes = [];
+}
+
+let wind = 0, windT = 0, gust = 0;
+let ptrX = 0, ptrY = 0, ptrVX = 0, ptrT = 0, lastPX = 0, lastPT = 0;
+let bolt = null, boltT = 0, nextBolt = 0.9, flashA = 0, shake = 0;
+const BOLT_SEQ = [1, 0.22, 0.95, 0.14, 0.62, 0.08, 0.34, 0.06, 0.18];
+
+/* the storm reads your cursor as wind — drops part around a fast swipe */
+window.addEventListener("pointermove", (e) => {
+  if (!finActive || nightPhase) return;
+  const now = performance.now();
+  const dtp = Math.max(8, now - lastPT);
+  ptrVX = (e.clientX - lastPX) / dtp * 1000;
+  lastPX = e.clientX; lastPT = now;
+  ptrX = e.clientX; ptrY = e.clientY; ptrT = 0.35;
+}, { passive: true });
+
+function makeBolt(W, H, dist) {
+  const x0 = W * (0.06 + Math.random() * 0.88);
+  let list = [{ x: x0, y: -30 },
+              { x: x0 + (Math.random() - 0.5) * W * 0.55, y: H * (0.52 + Math.random() * 0.55) }];
+  let disp = W * 0.10;
+  for (let it = 0; it < 6; it++) {
+    const out = [list[0]];
+    for (let i = 1; i < list.length; i++) {
+      const a = list[i - 1], b = list[i];
+      const nx = -(b.y - a.y), ny = b.x - a.x;
+      const nl = Math.hypot(nx, ny) || 1;
+      const o = (Math.random() - 0.5) * disp;
+      out.push({ x: (a.x + b.x) / 2 + nx / nl * o, y: (a.y + b.y) / 2 + ny / nl * o });
+      out.push(b);
+    }
+    list = out; disp *= 0.56;
+  }
+  const branches = [];
+  const nb = 1 + (Math.random() * 4 | 0);
+  for (let k = 0; k < nb; k++) {
+    const i = 6 + (Math.random() * (list.length - 12) | 0);
+    const p = list[i];
+    let a = Math.atan2(list[i + 1].y - p.y, list[i + 1].x - p.x) + (Math.random() - 0.5) * 1.6;
+    const steps = 6 + (Math.random() * 7 | 0);
+    const seg = H * (0.08 + Math.random() * 0.20) / steps;
+    const bl = [p];
+    let bx = p.x, by = p.y;
+    for (let s = 0; s < steps; s++) {
+      a += (Math.random() - 0.5) * 0.7;
+      bx += Math.cos(a) * seg; by += Math.abs(Math.sin(a)) * seg * 0.9 + seg * 0.3;
+      bl.push({ x: bx, y: by });
+    }
+    branches.push(bl);
+  }
+  return { main: list, branches, life: 0.38 + Math.random() * 0.22,
+           power: 1 - dist * 0.72 };
+}
+
+function drawBolt(b, vis) {
+  const trace = (pts) => {
+    fctx.beginPath();
+    for (let i = 0; i < pts.length; i++)
+      i ? fctx.lineTo(pts[i].x, pts[i].y) : fctx.moveTo(pts[i].x, pts[i].y);
+    fctx.stroke();
+  };
+  fctx.save();
+  fctx.lineCap = "round"; fctx.lineJoin = "round";
+  fctx.globalCompositeOperation = "lighter";
+  const p = vis * b.power;
+  /* glow, channel, then a hard white core — that stack is what makes it
+     read as light rather than a drawn line */
+  fctx.strokeStyle = `rgba(120,160,255,${(0.16 * p).toFixed(3)})`;
+  fctx.lineWidth = 16; trace(b.main);
+  fctx.strokeStyle = `rgba(180,205,255,${(0.34 * p).toFixed(3)})`;
+  fctx.lineWidth = 6; trace(b.main);
+  for (const br of b.branches) { fctx.lineWidth = 3; trace(br); }
+  fctx.strokeStyle = `rgba(255,255,255,${(0.95 * p).toFixed(3)})`;
+  fctx.lineWidth = 1.8; trace(b.main);
+  fctx.lineWidth = 1.0;
+  for (const br of b.branches) trace(br);
+  fctx.restore();
+}
+
+/* --- sound: a rain bed, wind, and thunder that arrives when it should --- */
+let stormAudio = null;
+function startStorm() {
+  const ac = audio(); if (!ac || stormAudio) return;
+  const nb = noise(ac);
+  const mk = (type, freq, q) => {
+    const s = ac.createBufferSource(); s.buffer = nb; s.loop = true;
+    const f = ac.createBiquadFilter(); f.type = type;
+    f.frequency.value = freq; f.Q.value = q;
+    const g = ac.createGain(); g.gain.value = 0.0001;
+    s.connect(f); f.connect(g); g.connect(BUS);
+    s.start();
+    return { s, f, g };
+  };
+  const rain = mk("highpass", 1400, 0.6);
+  const wnd = mk("bandpass", 340, 0.55);
+  /* the wind breathes rather than sitting flat */
+  const lfo = ac.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 0.16;
+  const lg = ac.createGain(); lg.gain.value = 0.055;
+  lfo.connect(lg); lg.connect(wnd.g.gain); lfo.start();
+  stormAudio = { rain, wnd, lfo };
+}
+
+function stormLevel(v) {
+  if (!stormAudio || !AC) return;
+  const t = AC.currentTime;
+  stormAudio.rain.g.gain.setTargetAtTime(0.055 * v, t, 0.4);
+  stormAudio.wnd.g.gain.setTargetAtTime(0.075 * v, t, 0.6);
+  stormAudio.rain.f.frequency.setTargetAtTime(1400 - 500 * v, t, 0.5);
+}
+
+function stopStorm() {
+  if (!stormAudio || !AC) return;
+  const t = AC.currentTime;
+  const S = stormAudio; stormAudio = null;
+  S.rain.g.gain.setTargetAtTime(0.0001, t, 0.35);
+  S.wnd.g.gain.setTargetAtTime(0.0001, t, 0.5);
+  setTimeout(() => {
+    try { S.rain.s.stop(); S.wnd.s.stop(); S.lfo.stop(); } catch (e) {}
+  }, 2200);
+}
+
+function thunder(power, dist) {
+  const ac = audio(); if (!ac) return;
+  /* sound is slow: the further off the strike, the later and duller it lands */
+  const t0 = ac.currentTime + 0.12 + dist * 3.4;
+  const dur = 2.2 + dist * 3.2;
+  const s = ac.createBufferSource(); s.buffer = noise(ac); s.loop = true;
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass";
+  lp.frequency.setValueAtTime(Math.max(70, 420 - dist * 300), t0);
+  lp.frequency.exponentialRampToValueAtTime(52, t0 + dur);
+  const g = ac.createGain();
+  const peak = Math.max(0.02, 0.26 * power);
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(peak, t0 + 0.05 + dist * 0.7);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  s.connect(lp); lp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + dur + 0.4);
+  /* close strikes crack before they rumble */
+  if (dist < 0.36) {
+    const c = ac.createBufferSource(); c.buffer = noise(ac);
+    const hp = ac.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 900;
+    const cg = ac.createGain();
+    cg.gain.setValueAtTime(0.30 * (1 - dist / 0.36), t0);
+    cg.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.26);
+    c.connect(hp); hp.connect(cg); cg.connect(BUS);
+    c.start(t0); c.stop(t0 + 0.3);
   }
 }
 
@@ -2974,67 +3204,9 @@ function startFinale() {
     splatArms.push({ a, len: rnd(60, 190), w: rnd(4, 14), curl: rnd(-0.5, 0.5) });
   }
 
-  buildHeartSprites();
-  lasers = [];
-  const NL = window.innerWidth < 620 ? 7 : 11;
-  for (let i = 0; i < NL; i++) {
-    lasers.push({ x: (i + 0.5) / NL, hue: (i * 360 / NL) % 360,
-                  sw: 0.5 + Math.random() * 1.1, ph: Math.random() * 6.3,
-                  spread: 0.10 + Math.random() * 0.22 });
-  }
-  hearts = [];
-}
-
-/* --- a groove for the baby to dance to --- */
-function drumHit(kind, t) {
-  const ac = audio(); if (!ac) return;
-  if (kind === "kick") {
-    const o = ac.createOscillator(); o.type = "sine";
-    o.frequency.setValueAtTime(115, t);
-    o.frequency.exponentialRampToValueAtTime(42, t + 0.11);
-    const g = ac.createGain();
-    g.gain.setValueAtTime(0.42, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
-    o.connect(g); g.connect(BUS); o.start(t); o.stop(t + 0.22);
-  } else if (kind === "hat") {
-    const s = ac.createBufferSource(); s.buffer = noise(ac);
-    const hp = ac.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 7000;
-    const g = ac.createGain();
-    g.gain.setValueAtTime(0.06, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
-    s.connect(hp); hp.connect(g); g.connect(BUS); s.start(t); s.stop(t + 0.06);
-  } else if (kind === "clap") {
-    const s = ac.createBufferSource(); s.buffer = noise(ac);
-    const bp = ac.createBiquadFilter(); bp.type = "bandpass";
-    bp.frequency.value = 1600; bp.Q.value = 1.1;
-    const g = ac.createGain();
-    g.gain.setValueAtTime(0.22, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
-    s.connect(bp); bp.connect(g); g.connect(BUS); s.start(t); s.stop(t + 0.18);
-  } else {                      // bass note
-    const o = ac.createOscillator(); o.type = "square";
-    const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 700;
-    o.frequency.setValueAtTime(kind, t);
-    const g = ac.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.13, t + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
-    o.connect(lp); lp.connect(g); g.connect(BUS); o.start(t); o.stop(t + 0.24);
-  }
-}
-const BASS = [55, 0, 0, 55, 0, 73.4, 0, 0, 65.4, 0, 0, 65.4, 0, 49, 0, 0];
-function scheduleBeats() {
-  if (!AC) return;
-  const spb = 60 / BPM / 4;                       // sixteenth
-  if (nextNote < AC.currentTime) nextNote = AC.currentTime + 0.05;
-  while (nextNote < AC.currentTime + 0.25) {
-    const s = beatStep % 16;
-    if (s % 4 === 0) drumHit("kick", nextNote);
-    if (s === 4 || s === 12) drumHit("clap", nextNote);
-    if (s % 2 === 0) drumHit("hat", nextNote);
-    if (BASS[s]) drumHit(BASS[s], nextNote);
-    nextNote += spb; beatStep++;
-  }
+  inkRuns = []; splashes = [];
+  bolt = null; boltT = 0; nextBolt = 1.0; flashA = 0; shake = 0;
+  windT = 0; wind = 0;
 }
 
 /* --- pieces --- */
@@ -3069,47 +3241,6 @@ function ball(x, y, r, base, dark, light) {
 /* The 1996 baby: chunky, rendered, and doing the cha-cha. Weight shifts
    on every beat, arms pump on the off-beat, knees bend under the weight,
    and every eight beats it turns all the way around. */
-/* ================= the dancing baby =================
-   The 1996 original was not a drawing. It was Viewpoint DataLabs' "Toddler
-   with Diaper" model #5653 -- a scan of a plastic doll -- rigged in
-   Character Studio by Robert Lurye at Rhythm & Hues and rendered out. So
-   this one is not a drawing either. babyrender.py builds the doll as a
-   signed-distance field (smooth-unioned ellipsoids and tapered capsules,
-   which is how moulded vinyl reads: blended joints, no seams), rigs it with
-   a forward-kinematic skeleton, ray-marches 48 frames of the documented
-   routine -- cha-cha with arm thrusts and hip sways, a burst of air guitar,
-   then bend over and shake the shoulders -- and bakes them to baby.webp.
-   At 48 frames over 8 beats it plays back around 11fps, which is about
-   where the original GIF sat, so it keeps that jerky quality. */
-const BABY_FRAMES = 48, BABY_COLS = 8, BABY_FW = 176, BABY_FH = 250;
-const babyImg = new Image();
-babyImg.decoding = "async";
-let babyReady = 0;
-babyImg.onload = () => { babyReady = 1; };
-babyImg.src = "baby.webp";
-/* if the browser will not take webp, fall back to the png */
-babyImg.onerror = () => {
-  if (babyImg.src.endsWith(".webp")) { babyImg.onerror = null; babyImg.src = "baby.png"; }
-};
-
-function drawBaby2(cx, footY, s, beat) {
-  /* contact shadow first -- the render has no floor of its own */
-  const cyc = ((beat % 8) + 8) % 8;
-  const f = Math.min(BABY_FRAMES - 1, Math.floor(cyc / 8 * BABY_FRAMES));
-  fctx.save();
-  fctx.fillStyle = "rgba(20,14,10,0.22)";
-  fctx.beginPath();
-  fctx.ellipse(cx, footY + s * 0.04, s * 0.80, s * 0.13, 0, 0, 6.3);
-  fctx.fill();
-  fctx.restore();
-  if (!babyReady) return;
-  const hpx = s * 3.21, wpx = hpx * (BABY_FW / BABY_FH);
-  fctx.drawImage(babyImg,
-    (f % BABY_COLS) * BABY_FW, ((f / BABY_COLS) | 0) * BABY_FH, BABY_FW, BABY_FH,
-    cx - wpx / 2, footY - hpx * 0.895, wpx, hpx);
-}
-
-
 const sstep = (a, b, t) => { const x = Math.max(0, Math.min(1, (t-a)/(b-a))); return x*x*(3-2*x); };
 
 function finaleFrame(dt) {
@@ -3120,23 +3251,6 @@ function finaleFrame(dt) {
   const W = window.innerWidth, H = window.innerHeight;
   const cx = W / 2, cy = H * 0.46;
 
-  /* strobe / inversion — rate capped for photosensitivity, off entirely
-     when the visitor asked for reduced motion */
-  /* the strobe is a burst, not a permanent state: it ramps in, rages, then
-     eases off right as the cord drops. It used to latch on forever, which
-     also meant a full-screen GPU filter pass on every frame for the rest of
-     the visit. */
-  const strobe = sstep(8.0, 10.5, fT) * (1 - sstep(13.6, 15.4, fT));
-  if (!REDUCED && strobe > 0) {
-    invT += dt;
-    const period = 0.62 - 0.28 * strobe;          // ~1.6Hz -> ~2.9Hz max
-    if (invT > period) {
-      invT = 0; inv ^= 1;
-      /* the whole scene flips via a GPU filter — far cheaper than
-         re-blending the spiral, and it strobes everything at once */
-      finCanvas.style.filter = inv ? "invert(1)" : "none";
-    }
-  } else if (inv) { inv = 0; finCanvas.style.filter = "none"; }
 
   const ink = "#0b0b0d";
   hardClear(finCanvas, fctx);
@@ -3189,104 +3303,189 @@ function finaleFrame(dt) {
     }
   }
 
-  /* ---- 3. the spiral ---- */
-  const sp = sstep(2.6, 8.5, fT);
-  if (sp > 0 && spiralSprite) {
-    const spin = Math.pow(sp, 1.6) * 22 + fT * (REDUCED ? 0.25 : 0.85);
-    const scale = (0.16 + sp * 0.84);
-    fctx.save();
-    fctx.globalAlpha = sp;
-    fctx.translate(cx, cy);
-    fctx.rotate(spin);
-    fctx.scale(scale, scale);
-    fctx.drawImage(spiralSprite, -spiralR, -spiralR, spiralR * 2, spiralR * 2);
-    fctx.restore();
-  }
-
-  /* ---- 4. lasers from the floor ---- */
-  const lz = sstep(9.6, 11.4, fT);
-  if (lz > 0) {
-    fctx.save();
-    const beams = lasers.map(L => {
-      const bx = L.x * W;
-      const ang = -Math.PI/2 + Math.sin(fT * L.sw + L.ph) * L.spread * 3.0;
-      const len = H * 1.3;
-      return { bx, ex: bx + Math.cos(ang)*len, ey: H + Math.sin(ang)*len,
-               hue: (L.hue + fT * 40) % 360,
-               wdt: 12 + Math.sin(fT * 3 + L.ph) * 6 };
-    });
-    /* beam bodies painted normally so they still read over the white
-       bands of the spiral — additive alone vanishes on white */
-    for (const b of beams) {
-      const grd = fctx.createLinearGradient(b.bx, H, b.ex, b.ey);
-      grd.addColorStop(0, `hsla(${b.hue},95%,55%,${0.62*lz})`);
-      grd.addColorStop(0.55, `hsla(${b.hue},95%,58%,${0.34*lz})`);
-      grd.addColorStop(1, `hsla(${b.hue},95%,60%,0)`);
-      fctx.fillStyle = grd;
+  /* ---- 3. the ink lets go and floods the frame ---- */
+  const fl = sstep(1.8, 6.6, fT);
+  if (fl > 0) {
+    if (!inkRuns.length) buildInk(cx, cy);
+    fctx.fillStyle = ink;
+    /* the blot creeps outward with a ragged edge */
+    const R = Math.max(W, H) * 0.82;
+    const P = [];
+    for (let i = 0; i < INK_N; i++) {
+      const a = i / INK_N * Math.PI * 2;
+      const g = Math.max(0, (fl - inkLag[i]) / (1 - inkLag[i]));
+      const r = R * Math.pow(g, 2.6) * (0.60 + inkEdge[i] * 0.62);
+      P.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r * 0.86 });
+    }
+    /* through the midpoints, so the outline is a curve and not a polygon */
+    fctx.beginPath();
+    fctx.moveTo((P[INK_N - 1].x + P[0].x) / 2, (P[INK_N - 1].y + P[0].y) / 2);
+    for (let i = 0; i < INK_N; i++) {
+      const c = P[i], n = P[(i + 1) % INK_N];
+      fctx.quadraticCurveTo(c.x, c.y, (c.x + n.x) / 2, (c.y + n.y) / 2);
+    }
+    fctx.closePath(); fctx.fill();
+    /* and runs down the paper the way wet ink actually does */
+    fctx.lineCap = "round"; fctx.strokeStyle = ink;
+    for (const r of inkRuns) {
+      const g = Math.max(0, Math.min(1, (fl - r.d) / (1 - r.d * 0.7)));
+      if (g <= 0) continue;
+      const L = r.len * g * g;
+      fctx.lineWidth = r.w * (1 - g * 0.45);
       fctx.beginPath();
-      fctx.moveTo(b.bx - 6, H);
-      fctx.lineTo(b.ex - b.wdt, b.ey); fctx.lineTo(b.ex + b.wdt, b.ey);
-      fctx.lineTo(b.bx + 6, H);
-      fctx.closePath(); fctx.fill();
+      fctx.moveTo(cx + r.x0, cy + r.y0);
+      for (let s = 1; s <= 5; s++) {
+        const t = s / 5;
+        fctx.lineTo(cx + r.x0 + Math.sin(t * 5 + r.ph) * r.wob * t,
+                    cy + r.y0 + L * t);
+      }
+      fctx.stroke();
+      fctx.beginPath();     // the bead at the head of the run
+      fctx.arc(cx + r.x0 + Math.sin(5 + r.ph) * r.wob, cy + r.y0 + L,
+               r.w * 0.62 * (1 - g * 0.3), 0, 6.3);
+      fctx.fill();
     }
-    /* hot cores glow on top */
-    fctx.globalCompositeOperation = "lighter";
-    for (const b of beams) {
-      fctx.strokeStyle = `hsla(${b.hue},100%,80%,${0.8*lz})`;
-      fctx.lineWidth = 3;
-      fctx.beginPath(); fctx.moveTo(b.bx, H); fctx.lineTo(b.ex, b.ey); fctx.stroke();
+    /* whatever is left goes under */
+    if (fl > 0.66) {
+      fctx.globalAlpha = sstep(0.66, 1.0, fl);
+      fctx.fillStyle = "#07070a";
+      fctx.fillRect(-40, -40, W + 80, H + 80);
+      fctx.globalAlpha = 1;
     }
-    fctx.globalCompositeOperation = "source-over";
-    const hz = fctx.createLinearGradient(0, H, 0, H - 110);
-    hz.addColorStop(0, `hsla(${(fT*50)%360},90%,60%,${0.30*lz})`);
-    hz.addColorStop(1, "hsla(0,0%,100%,0)");
-    fctx.fillStyle = hz; fctx.fillRect(0, H - 110, W, 110);
-    fctx.restore();
   }
 
-  /* ---- 5. the baby ---- */
-  const bb = sstep(10.8, 11.9, fT);
-  if (bb > 0) {
-    if (AC) scheduleBeats();
-    const beat = fT * (BPM / 60);
-    const s = Math.min(W, H) * 0.125 * (0.7 + 0.3 * bb);
-    const feet = H - 26;
+  /* everything from here on is the storm, and it gets knocked about
+     by the near strikes */
+  const inten = sstep(3.2, 8.8, fT);
+  if (inten > 0) {
+    if (!drops) buildRain();
+    startStorm();
+    stormLevel(inten);
+
+    shake *= Math.exp(-dt * 4.2);
+    const sx = (Math.random() - 0.5) * shake * 13, sy = (Math.random() - 0.5) * shake * 9;
     fctx.save();
-    fctx.globalAlpha = bb;
-    drawBaby2(W / 2, feet, s, beat);
-    fctx.restore();
-  }
+    fctx.translate(sx, sy);
 
-  /* ---- 6. hearts from the ceiling ---- */
-  const ht = sstep(11.4, 12.6, fT);
-  if (ht > 0) {
-    const HMAX = W < 620 ? 44 : 78;
-    if (hearts.length < HMAX && Math.random() < 22 * dt) {
-      hearts.push({ x: Math.random() * W, y: -40,
-                    vy: 55 + Math.random() * 130, sway: 12 + Math.random() * 34,
-                    ph: Math.random() * 6.3, s: 12 + Math.random() * 30,
-                    rot: Math.random() * 6.3, vr: (Math.random() - 0.5) * 1.7,
-                    sprite: (Math.random() * 6) | 0 });
+    /* ---- 4. wind ---- */
+    windT += dt;
+    /* three sines that never line up, so the gusts never repeat */
+    gust = Math.sin(windT * 0.37) * 0.55 + Math.sin(windT * 0.83 + 1.7) * 0.3
+         + Math.sin(windT * 1.61 + 4.1) * 0.17;
+    wind = (-0.44 + gust * 0.52) * inten;   // driving, and it swings
+
+    /* ---- 5. rain, three layers deep ---- */
+    const ptrOn = ptrT > 0;
+    ptrT = Math.max(0, ptrT - dt);
+    for (let li = 0; li < rainL.length; li++) {
+      const L = rainL[li], arr = drops[li];
+      const vy = L.v * (0.55 + 0.45 * inten);
+      const vx0 = wind * L.par * 1450;
+      const mag = Math.hypot(vx0, vy) || 1;
+      const ux = vx0 / mag * L.len * inten, uy = vy / mag * L.len * inten;
+      const R2 = (150 * L.par) * (150 * L.par);
+      fctx.beginPath();
+      for (const d of arr) {
+        if (ptrOn && li > 0) {
+          const ddx = d.x - ptrX, ddy = d.y - ptrY, d2 = ddx * ddx + ddy * ddy;
+          if (d2 < R2) {
+            const f = (1 - d2 / R2) * L.par;
+            d.vx += (ptrVX * 0.5 + ddx * 1.6) * f * dt * 8;
+          }
+        }
+        d.vx *= Math.pow(0.05, dt);
+        d.x += (vx0 + d.vx) * dt;
+        d.y += vy * dt;
+        if (d.y > H) {
+          if (li === 2 && Math.random() < 0.30 && splashes.length < 90)
+            splashes.push({ x: d.x, y: H - 2 - Math.random() * 10,
+                            vx: (Math.random() - 0.5) * 90 + vx0 * 0.12,
+                            vy: -60 - Math.random() * 110, life: 1 });
+          d.y = -24 - Math.random() * 90;
+          d.x = Math.random() * W * 1.5 - W * 0.25;
+          d.vx = 0;
+        }
+        if (d.x < -W * 0.28) d.x += W * 1.5;
+        else if (d.x > W * 1.22) d.x -= W * 1.5;
+        fctx.moveTo(d.x, d.y);
+        fctx.lineTo(d.x - ux, d.y - uy);
+      }
+      fctx.strokeStyle = `rgba(198,214,238,${(L.a * inten * (0.62 + 0.55 * flashA)).toFixed(3)})`;
+      fctx.lineWidth = L.w;
+      fctx.stroke();
     }
-    for (let i = hearts.length - 1; i >= 0; i--) {
-      const h = hearts[i];
-      h.ph += dt * 1.6; h.y += h.vy * dt;
-      h.x += Math.sin(h.ph) * h.sway * dt; h.rot += h.vr * dt;
-      if (h.y > H + 60) { hearts.splice(i, 1); continue; }
-      const spr = heartSprites[h.sprite];
-      fctx.save();
-      fctx.translate(h.x, h.y);
-      fctx.rotate(h.rot + Math.sin(h.ph) * 0.25);
-      fctx.drawImage(spr, -h.s, -h.s, h.s * 2, h.s * 2);
-      fctx.restore();
+
+    /* rain hitting the ground and coming back up */
+    fctx.strokeStyle = `rgba(206,220,240,${(0.55 * inten).toFixed(3)})`;
+    fctx.lineWidth = 1.1;
+    fctx.beginPath();
+    for (let i = splashes.length - 1; i >= 0; i--) {
+      const s = splashes[i];
+      s.life -= dt * 2.6;
+      if (s.life <= 0) { splashes.splice(i, 1); continue; }
+      s.vy += 900 * dt;
+      s.x += s.vx * dt; s.y += s.vy * dt;
+      fctx.moveTo(s.x, s.y);
+      fctx.lineTo(s.x - s.vx * 0.012, s.y - s.vy * 0.012);
     }
+    fctx.stroke();
+
+    /* ---- 6. lightning ---- */
+    if (fT > 5.6) {
+      nextBolt -= dt;
+      if (nextBolt <= 0) {
+        const dist = Math.pow(Math.random(), 1.6);        // near strikes are rarer
+        bolt = makeBolt(W, H, dist);
+        boltT = 0;
+        thunder(bolt.power, dist);
+        if (dist < 0.34 && !REDUCED) shake = Math.max(shake, 0.55 + (0.34 - dist) * 1.6);
+        /* strikes get closer together as it builds, but never fast enough
+           to read as a strobe */
+        nextBolt = (REDUCED ? 3.4 : 1.25) + Math.random() * (REDUCED ? 4 : 3.2)
+                   - inten * 0.55;
+      }
+    }
+    flashA = 0;
+    if (bolt) {
+      boltT += dt;
+      const step = Math.floor(boltT / 0.052);
+      const vis = step < BOLT_SEQ.length
+        ? BOLT_SEQ[step] * (1 - boltT / bolt.life) : 0;
+      if (boltT > bolt.life) bolt = null;
+      else if (vis > 0.01) {
+        flashA = Math.min(1, vis * bolt.power) * (REDUCED ? 0.16 : 1);
+        /* the sky lights up from wherever the channel is */
+        const fg = fctx.createLinearGradient(0, 0, 0, H);
+        const a0 = 0.42 * flashA, a1 = 0.10 * flashA;
+        fg.addColorStop(0, `rgba(214,228,255,${a0.toFixed(3)})`);
+        fg.addColorStop(1, `rgba(150,175,225,${a1.toFixed(3)})`);
+        fctx.fillStyle = fg;
+        fctx.fillRect(-40, -40, W + 80, H + 80);
+        drawBolt(bolt, vis);
+      }
+    }
+
+    /* ---- 7. the wash at the bottom ---- */
+    const wh = H * 0.055;
+    const wg = fctx.createLinearGradient(0, H - wh, 0, H);
+    wg.addColorStop(0, `rgba(34,42,60,${(0.50 * inten).toFixed(3)})`);
+    wg.addColorStop(1, `rgba(12,16,28,${(0.80 * inten).toFixed(3)})`);
+    fctx.fillStyle = wg;
+    fctx.fillRect(0, H - wh, W, wh);
+    if (flashA > 0.02) {
+      for (let i = 0; i < 5; i++) {
+        const y = H - wh + 4 + i * (wh / 6.5);
+        fctx.fillStyle = `rgba(190,208,240,${(0.11 * flashA * (1 - i / 6)).toFixed(3)})`;
+        fctx.fillRect(0, y + Math.sin(windT * 1.6 + i * 1.7) * 2.2, W, 1);
+      }
+    }
+    fctx.restore();
   }
 }
 
 /* ================= lights out =================
-   A pull cord drops into the party. Yank it and the whole thing dies —
-   music, lasers, spiral, all of it — and what's left is a night sky with
-   the balloon you inflated at the very beginning, drawn in stars. */
+   A pull cord drops out of the storm. Yank it and the whole thing dies —
+   rain, wind, thunder, all of it — and what is left is a clear night sky. */
 const cordEl = document.getElementById("cord");
 let cordShown = false, cordPull = 0, cordDrag = null;
 let nightPhase = 0, nightT = 0, stars = [], shooters = [], nightPad = null;
@@ -3399,7 +3598,7 @@ function chime(n) {
 function lightsOut() {
   if (nightPhase) return;
   nightPhase = 1; nightT = 0;
-  inv = 0;
+  stopStorm();
   finCanvas.style.filter = "none";
   finCanvas.style.background = "#05060a";
   switchClick();
@@ -3773,6 +3972,10 @@ function drawDawn(dt) {
     fctx.restore();
   }
 
+  /* ---- something comes in on the tide ---- */
+  if (dawnDone && botT < 0 && dawnPost > 5.5) botT = 0;
+  if (botT >= 0) drawBottle(dt);
+
   /* ---- the name, traced back on in light ---- */
   if (!nameTrace) nameTrace = buildNameTrace();
   const NT = nameTrace;
@@ -3892,6 +4095,270 @@ function sunUp() {
   });
 }
 
+/* ================= the bottle =================
+   The site is an elaborate lock. This is what is behind it.
+   Once the sun is properly up, something comes in on the tide: a bottle,
+   riding the swell, small at the horizon and closer every wave. Pull the
+   cork — the same pull the chest taught you — and the note unrolls. */
+
+/* ---- the note. This is the payload; edit this and nothing else. ---- */
+const NOTE = {
+  name: "KEVIN HERSHOCK",
+  title: "President, PEN15 Club",
+  body: "You actually got to the end.\nThat took some doing.",
+  links: [
+    { label: "kevin@beanumber.org", href: "mailto:kevin@beanumber.org" },
+  ],
+};
+
+let botT = -1, botPull = 0, botGrab = null, botOpen = 0, botLand = 0, corkFloat = 0;
+const botEl = () => document.getElementById("note");
+
+function bottleGeom() {
+  const W = window.innerWidth, H = window.innerHeight, hz = HORIZ();
+  const t = Math.max(0, Math.min(1, botT / 22));
+  const e = t * t * (3 - 2 * t);
+  /* it comes in from the glare under the sun and lands centre-low */
+  const x = W * (0.5 + (0.06 - 0.06 * e));
+  const y = hz + (H - hz) * (0.06 + 0.44 * e);
+  const s = Math.min(W, H) * (0.045 + 0.235 * e);
+  /* the swell keeps working on it right up until it grounds */
+  const rest = 1 - botLand;
+  const bob = Math.sin(nightT * 1.35 + 0.6) * s * 0.055 * rest;
+  const roll = Math.sin(nightT * 0.95) * 0.16 * rest - 0.34;
+  return { x, y: y + bob, s, roll, hz };
+}
+
+function drawBottle(dt) {
+  if (botT < 0) return;
+  botT += dt;
+  const B = bottleGeom();
+  if (botT > 22) botLand = Math.min(1, botLand + dt * 0.6);
+  const W = window.innerWidth;
+
+  fctx.save();
+  fctx.translate(B.x, B.y);
+  fctx.rotate(B.roll);
+  const L = B.s, w = L * 0.30;                 // length and barrel width
+
+  /* what it sits in: a dark wet shadow and a wake on the water */
+  fctx.save();
+  fctx.rotate(-B.roll);
+  fctx.fillStyle = "rgba(24,18,14,0.20)";
+  fctx.beginPath();
+  fctx.ellipse(0, L * 0.16, L * 0.52, L * 0.08, 0, 0, 6.3);
+  fctx.fill();
+  fctx.restore();
+
+  const body = (inset, col) => {
+    fctx.beginPath();
+    fctx.moveTo(-L * 0.50 + inset, -w / 2 + inset);
+    fctx.lineTo(L * 0.06 - inset, -w / 2 + inset);
+    fctx.quadraticCurveTo(L * 0.20, -w / 2 + inset, L * 0.24, -w * 0.22);
+    fctx.lineTo(L * 0.44 - inset, -w * 0.20);
+    fctx.lineTo(L * 0.44 - inset, w * 0.20);
+    fctx.lineTo(L * 0.24, w * 0.22);
+    fctx.quadraticCurveTo(L * 0.20, w / 2 - inset, L * 0.06 - inset, w / 2 - inset);
+    fctx.lineTo(-L * 0.50 + inset, w / 2 - inset);
+    fctx.quadraticCurveTo(-L * 0.58 + inset, 0, -L * 0.50 + inset, -w / 2 + inset);
+    fctx.closePath();
+    if (col) { fctx.fillStyle = col; fctx.fill(); }
+  };
+
+  /* the glass: dark bottle-green, lit through from the sun side */
+  const gg = fctx.createLinearGradient(0, -w / 2, 0, w / 2);
+  gg.addColorStop(0, "rgba(96,132,104,0.72)");
+  gg.addColorStop(0.42, "rgba(44,74,58,0.80)");
+  gg.addColorStop(1, "rgba(20,38,30,0.86)");
+  body(0, null); fctx.fillStyle = gg; fctx.fill();
+
+  /* the rolled note inside, warm against the green */
+  fctx.save();
+  body(0, null); fctx.clip();
+  fctx.fillStyle = "rgba(226,206,168,0.80)";
+  fctx.beginPath();
+  fctx.roundRect ? fctx.roundRect(-L * 0.34, -w * 0.20, L * 0.52, w * 0.40, w * 0.20)
+                 : fctx.rect(-L * 0.34, -w * 0.20, L * 0.52, w * 0.40);
+  fctx.fill();
+  fctx.strokeStyle = "rgba(150,124,86,0.55)";
+  fctx.lineWidth = Math.max(0.6, L * 0.006);
+  for (let i = 0; i < 3; i++) {
+    const x = -L * 0.30 + i * L * 0.16;
+    fctx.beginPath(); fctx.moveTo(x, -w * 0.19); fctx.lineTo(x, w * 0.19); fctx.stroke();
+  }
+  /* a band of daylight across the glass */
+  fctx.fillStyle = "rgba(255,240,205,0.20)";
+  fctx.fillRect(-L * 0.55, -w * 0.5, L * 1.2, w * 0.16);
+  fctx.restore();
+
+  /* rim light down the top edge, and a hard specular */
+  fctx.strokeStyle = "rgba(224,246,224,0.55)";
+  fctx.lineWidth = Math.max(1, L * 0.014);
+  body(L * 0.012, null); fctx.stroke();
+  fctx.fillStyle = "rgba(255,255,255,0.60)";
+  fctx.beginPath();
+  fctx.ellipse(-L * 0.18, -w * 0.30, L * 0.16, w * 0.055, -0.05, 0, 6.3);
+  fctx.fill();
+
+  /* the cork, pulling free — and once it is out it goes in the water */
+  const out = botPull * L * 0.26;
+  if (botOpen) {
+    fctx.restore();
+    corkFloat += dt;
+    const cx2 = B.x + B.s * (0.62 + Math.min(1, corkFloat * 0.28) * 0.30);
+    const cy2 = B.y + B.s * 0.10 + Math.sin(nightT * 1.9) * B.s * 0.022;
+    fctx.save();
+    fctx.translate(cx2, cy2);
+    fctx.rotate(Math.sin(nightT * 1.2) * 0.22 + 0.5);
+    const cg2 = fctx.createLinearGradient(0, -w * 0.19, 0, w * 0.19);
+    cg2.addColorStop(0, "#c99a63"); cg2.addColorStop(0.45, "#a9743f");
+    cg2.addColorStop(1, "#7c4f28");
+    fctx.fillStyle = cg2;
+    fctx.beginPath();
+    fctx.roundRect ? fctx.roundRect(-L * 0.065, -w * 0.19, L * 0.13, w * 0.38, w * 0.06)
+                   : fctx.rect(-L * 0.065, -w * 0.19, L * 0.13, w * 0.38);
+    fctx.fill();
+    fctx.restore();
+    /* the ring it leaves on the water */
+    fctx.fillStyle = "rgba(255,232,196,0.10)";
+    fctx.beginPath();
+    fctx.ellipse(cx2, cy2 + B.s * 0.03, B.s * 0.13, B.s * 0.035, 0, 0, 6.3);
+    fctx.fill();
+    return;
+  }
+  const cg = fctx.createLinearGradient(0, -w * 0.20, 0, w * 0.20);
+  cg.addColorStop(0, "#c99a63"); cg.addColorStop(0.45, "#a9743f");
+  cg.addColorStop(1, "#7c4f28");
+  fctx.fillStyle = cg;
+  fctx.beginPath();
+  fctx.roundRect ? fctx.roundRect(L * 0.40 + out, -w * 0.19, L * 0.13, w * 0.38, w * 0.06)
+                 : fctx.rect(L * 0.40 + out, -w * 0.19, L * 0.13, w * 0.38);
+  fctx.fill();
+  fctx.fillStyle = "rgba(255,255,255,0.16)";
+  fctx.fillRect(L * 0.41 + out, -w * 0.15, L * 0.11, w * 0.07);
+  fctx.restore();
+
+  /* below the waterline it goes soft and dark, the way things do in water */
+  fctx.save();
+  fctx.beginPath();
+  fctx.rect(0, B.y + B.s * 0.06, W, window.innerHeight);
+  fctx.clip();
+  fctx.globalAlpha = 0.30;
+  fctx.fillStyle = "rgba(12,22,30,0.9)";
+  fctx.beginPath();
+  fctx.ellipse(B.x, B.y + B.s * 0.14, B.s * 0.46, B.s * 0.12, B.roll, 0, 6.3);
+  fctx.fill();
+  fctx.restore();
+}
+
+/* --- pulling the cork --- */
+function bottleHit(x, y) {
+  if (botT < 0 || botLand < 0.9 || botOpen) return false;
+  const B = bottleGeom();
+  return Math.hypot(x - B.x, y - B.y) < Math.max(B.s * 0.55, 48 * UIS);
+}
+
+window.addEventListener("pointerdown", (e) => {
+  if (!bottleHit(e.clientX, e.clientY)) return;
+  botGrab = { y: e.clientY, p0: botPull };
+  if (e.cancelable) e.preventDefault();
+}, { passive: false });
+
+window.addEventListener("pointermove", (e) => {
+  if (nightPhase && dawnDone && !botOpen && botLand >= 0.9)
+    finCanvas.style.cursor = bottleHit(e.clientX, e.clientY) ? "grab" : "";
+  if (!botGrab) return;
+  const H = window.innerHeight;
+  const np = Math.max(0, Math.min(1, botGrab.p0 + (botGrab.y - e.clientY) / (H * 0.22)));
+  if (np > botPull && Math.random() < 0.4) squeakCork();
+  botPull = Math.max(botPull, np);
+  if (botPull >= 1 && !botOpen) { botOpen = 1; botGrab = null; openNote(); }
+  if (e.cancelable) e.preventDefault();
+}, { passive: false });
+
+window.addEventListener("pointerup", () => { botGrab = null; });
+
+/* click off the paper and it rolls back up, so the sunrise is not lost
+   behind it; the bottle opens it again */
+window.addEventListener("pointerdown", (e) => {
+  if (!botOpen) return;
+  const el = botEl();
+  if (!el || el.contains(e.target)) return;
+  const open = el.classList.contains("on");
+  const B = bottleGeom();
+  const onBottle = Math.hypot(e.clientX - B.x, e.clientY - B.y) < Math.max(B.s * 0.55, 48 * UIS);
+  if (open && !onBottle) {
+    el.classList.remove("on");
+    document.getElementById("scrim").classList.remove("on");
+  } else if (!open && onBottle) {
+    el.classList.add("on");
+    document.getElementById("scrim").classList.add("on");
+  }
+});
+
+let lastSqueak = 0;
+function squeakCork() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  if (t0 - lastSqueak < 0.11) return;
+  lastSqueak = t0;
+  const o = ac.createOscillator(); o.type = "sawtooth";
+  o.frequency.setValueAtTime(150 + botPull * 260, t0);
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass";
+  bp.frequency.value = 900 + botPull * 900; bp.Q.value = 6;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(0.020, t0 + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.13);
+  o.connect(bp); bp.connect(g); g.connect(BUS);
+  o.start(t0); o.stop(t0 + 0.15);
+}
+
+function openNote() {
+  corkPopSound();
+  const el = botEl(), sc = document.getElementById("scrim");
+  if (!el) return;
+  el.style.display = "block";
+  if (sc) sc.style.display = "block";
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    el.classList.add("on");
+    if (sc) sc.classList.add("on");
+  }));
+  const ac = audio();
+  if (ac) {                       /* paper coming unrolled */
+    const t0 = ac.currentTime + 0.18;
+    const s = ac.createBufferSource(); s.buffer = noise(ac);
+    const bp = ac.createBiquadFilter(); bp.type = "bandpass";
+    bp.frequency.setValueAtTime(2600, t0);
+    bp.frequency.linearRampToValueAtTime(1500, t0 + 1.0);
+    bp.Q.value = 0.8;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(0.045, t0 + 0.25);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.2);
+    s.connect(bp); bp.connect(g); g.connect(BUS);
+    s.start(t0); s.stop(t0 + 1.3);
+  }
+}
+
+function buildNote() {
+  const el = document.createElement("div");
+  el.id = "note";
+  const links = NOTE.links.map(l =>
+    `<a href="${l.href}">${l.label}</a>`).join("");
+  el.innerHTML =
+    `<div class="paper">
+       <div class="inner">
+         <h1>${NOTE.name}</h1>
+         <p class="title">${NOTE.title}</p>
+         <p class="body">${NOTE.body.replace(/\n/g, "<br>")}</p>
+         <p class="links">${links}</p>
+       </div>
+     </div>`;
+  document.body.appendChild(el);
+}
+buildNote();
+
 function splatSound() {
   const ac = audio(); if (!ac) return;
   const t0 = ac.currentTime;
@@ -3922,7 +4389,7 @@ document.addEventListener("visibilitychange", () => {
     if (audioWasRunning) AC.suspend();
   } else {
     prevT = performance.now();
-    if (audioWasRunning && AC) { AC.resume(); nextNote = 0; }
+    if (audioWasRunning && AC) AC.resume();
   }
 });
 
