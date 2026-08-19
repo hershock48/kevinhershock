@@ -4363,6 +4363,8 @@ let lastSeg = -1;
 function drawNight(dt) {
   const W = window.innerWidth, H = window.innerHeight;
   nightT += dt;
+  if (chainEnd) { restFrame(dt); return; }
+  if (woodOn) { woodFrame(dt); return; }
   if (beaconOn) { beaconFrame(dt); return; }
   if (surfOn) { surfaceFrame(dt); return; }
   if (jellyOn) { jellyFrame(dt); travelFrame(dt); return; }
@@ -6267,10 +6269,12 @@ function windowFrame(dt) {
     fogX.fillStyle = `rgba(0,0,0,${(dt * 3.4).toFixed(3)})`;
     fogX.fillRect(0, 0, W, H);
     fogX.restore();
-    if (winGone >= 1 && !jellyOn && travT < 0) {
-      passThrough(() => { winOn = false; startJelly(196); }, { dur: 1.5 });
+    if (winGone >= 1 && !jellyOn && travT < 0 && !nat) {
+      natRun("frost", () => { winOn = false; startJelly(196); }, 3.0);
     }
   }
+
+  natFrame(dt);
 
   /* a nudge, if they have not touched it */
   if (winT > 4 && winClear < 0.04) {
@@ -6937,10 +6941,11 @@ function surfaceFrame(dt) {
     lampRise = Math.min(1, lampRise + dt * 0.10);
     if (lampRise > 0.55 && travT < 0 && !surfHanded) {
       surfHanded = true;
-      passThrough(() => { surfOn = false; startBeacon(); }, { dur: 2.0, up: true });
+      natRun("cloud", () => { surfOn = false; startBeacon(); }, 3.4);
     }
   }
   travelFrame(dt);
+  natFrame(dt);
 }
 let surfHanded = false;
 
@@ -7293,9 +7298,10 @@ function beaconFrame(dt) {
   /* three passes, and then the fourth one comes round and takes you */
   if (sweeps >= 2 && !beacHanded && Math.cos(beamA) > 0.86) {
     beacHanded = true;
-    passThrough(() => { beaconOn = false; }, { dur: 2.2 });
+    natRun("cloud", () => { beaconOn = false; startWood(); }, 3.2);
   }
   travelFrame(dt);
+  natFrame(dt);
 }
 
 /* --- throwing the switch --- */
@@ -7423,6 +7429,542 @@ function beaconWind() {
   g.gain.linearRampToValueAtTime(0.038, t0 + 5);
   s.connect(bp); bp.connect(g); g.connect(BUS);
   s.start(t0);
+}
+
+/* ================= transitions that are things =================
+   One effect used at every cut is a slide transition. These are events
+   instead: frost taking a pane, cloud coming up a hillside, wind stripping
+   a tree. Each one belongs to the two scenes it joins. */
+
+let nat = null;   /* { kind, t, dur, after, seeds } */
+
+function natRun(kind, after, dur) {
+  nat = { kind, t: 0, dur: dur || 2.6, after: after || null, seeds: null };
+  if (kind === "frost") frostSound();
+  else if (kind === "cloud") cloudSound();
+  else if (kind === "leaf") leafSound();
+  if (after) {
+    const guard = after;
+    setTimeout(() => {
+      if (nat && nat.after === guard) { nat = null; guard(); }
+    }, (dur || 2.6) * 1000 + 2500);
+  }
+}
+
+/* --- frost: dendrites out of the corners, then the thaw --- */
+function frostSeeds(W, H) {
+  const S = [];
+  const N = 26;
+  for (let i = 0; i < N; i++) {
+    /* they start on the edge, because that is where a pane goes first */
+    const e = i / N * 4;
+    let x, y, a;
+    if (e < 1) { x = W * e; y = 0; a = Math.PI * 0.5; }
+    else if (e < 2) { x = W; y = H * (e - 1); a = Math.PI; }
+    else if (e < 3) { x = W * (3 - e); y = H; a = -Math.PI * 0.5; }
+    else { x = 0; y = H * (4 - e); a = 0; }
+    S.push({ x, y, a: a + (Math.random() - 0.5) * 0.9,
+             len: Math.min(W, H) * (0.30 + Math.random() * 0.55),
+             seed: Math.random() * 100 });
+  }
+  return S;
+}
+
+function frostBranch(c, x, y, a, len, depth, grow, seed) {
+  if (len < 4 || depth > 4 || grow <= 0) return;
+  const steps = 7;
+  let px = x, py = y;
+  c.beginPath();
+  c.moveTo(px, py);
+  for (let s = 1; s <= steps; s++) {
+    const f = s / steps;
+    if (f > grow) break;
+    const aa = a + Math.sin(seed + f * 5) * 0.16;
+    px += Math.cos(aa) * len / steps;
+    py += Math.sin(aa) * len / steps;
+    c.lineTo(px, py);
+  }
+  c.stroke();
+  /* the side spikes, which is what makes frost read as frost */
+  for (let s = 1; s <= steps; s++) {
+    const f = s / steps;
+    if (f > grow) break;
+    if (s % 2) continue;
+    const bx = x + Math.cos(a) * len * f, by = y + Math.sin(a) * len * f;
+    for (const side of [-1, 1]) {
+      frostBranch(c, bx, by, a + side * (0.55 + (seed % 1) * 0.25),
+                  len * 0.34, depth + 1, Math.min(1, (grow - f) * 3), seed + s);
+    }
+  }
+}
+
+/* --- the whole thing, drawn over whatever scene is live --- */
+function natFrame(dt) {
+  if (!nat) return false;
+  const W = window.innerWidth, H = window.innerHeight;
+  nat.t += dt;
+  const u = Math.min(1, nat.t / nat.dur);
+
+  if (nat.kind === "frost") {
+    if (!nat.seeds) nat.seeds = frostSeeds(W, H);
+    const grow = Math.min(1, u / 0.62);
+    const thaw = Math.max(0, (u - 0.66) / 0.34);
+    fctx.save();
+    fctx.globalAlpha = 1 - thaw;
+    /* the pane hazes over as the crystals take it */
+    fctx.fillStyle = `rgba(226,240,250,${(0.50 * grow).toFixed(3)})`;
+    fctx.fillRect(0, 0, W, H);
+    fctx.globalCompositeOperation = "lighter";
+    fctx.strokeStyle = "rgba(238,250,255,0.55)";
+    fctx.lineWidth = 1.6;
+    fctx.lineCap = "round";
+    for (const s of nat.seeds) frostBranch(fctx, s.x, s.y, s.a, s.len, 0, grow, s.seed);
+    fctx.strokeStyle = "rgba(255,255,255,0.30)";
+    fctx.lineWidth = 3.4;
+    for (const s of nat.seeds) frostBranch(fctx, s.x, s.y, s.a, s.len, 0, grow * 0.8, s.seed);
+    fctx.restore();
+    /* and then it goes, from the middle out, the way a warm pane clears */
+    if (thaw > 0) {
+      const g = fctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.hypot(W, H) * 0.6 * thaw);
+      g.addColorStop(0, "rgba(0,0,0,0)");
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      fctx.globalCompositeOperation = "destination-out";
+      fctx.fillStyle = `rgba(0,0,0,${thaw.toFixed(3)})`;
+      fctx.beginPath();
+      fctx.arc(W / 2, H / 2, Math.hypot(W, H) * 0.62 * thaw, 0, 6.3);
+      fctx.fill();
+      fctx.globalCompositeOperation = "source-over";
+    }
+  }
+
+  else if (nat.kind === "cloud") {
+    if (!nat.seeds) {
+      nat.seeds = [];
+      for (let i = 0; i < 26; i++)
+        nat.seeds.push({ x: Math.random() * W, y: H * (0.7 + Math.random() * 0.7),
+                         r: Math.min(W, H) * (0.16 + Math.random() * 0.30),
+                         v: 0.6 + Math.random() * 0.9, ph: Math.random() * 6.3 });
+    }
+    const rise = u * 1.5;
+    for (const s of nat.seeds) {
+      const y = s.y - rise * H * s.v;
+      const a = Math.min(0.5, u * 0.9) * (1 - Math.max(0, (u - 0.72) / 0.28));
+      const g = fctx.createRadialGradient(s.x, y, 0, s.x, y, s.r);
+      g.addColorStop(0, `rgba(232,238,246,${a.toFixed(3)})`);
+      g.addColorStop(0.6, `rgba(206,216,230,${(a * 0.5).toFixed(3)})`);
+      g.addColorStop(1, "rgba(196,208,224,0)");
+      fctx.fillStyle = g;
+      fctx.fillRect(s.x - s.r, y - s.r, s.r * 2, s.r * 2);
+    }
+    /* thickest in the middle of it, when you are inside the cloud */
+    const dense = Math.sin(Math.min(1, u / 0.7) * Math.PI) * 0.72;
+    fctx.fillStyle = `rgba(222,230,240,${dense.toFixed(3)})`;
+    fctx.fillRect(0, 0, W, H);
+  }
+
+  else if (nat.kind === "leaf") {
+    if (!nat.seeds) {
+      nat.seeds = [];
+      for (let i = 0; i < 90; i++)
+        nat.seeds.push({ x: Math.random() * W, y: H * (0.2 + Math.random() * 1.0),
+                         s: 5 + Math.random() * 13, sp: 0.6 + Math.random() * 1.3,
+                         rot: Math.random() * 6.3, spin: (Math.random() - 0.5) * 6,
+                         hue: 18 + Math.random() * 34, ph: Math.random() * 6.3 });
+    }
+    const veil = Math.sin(Math.min(1, u / 0.75) * Math.PI);
+    for (const l of nat.seeds) {
+      const t = u * l.sp;
+      const x = l.x + Math.sin(l.ph + t * 6) * 90 + t * W * 0.5;
+      const y = l.y - t * H * 1.35;
+      l.rot += l.spin * dt;
+      drawLeaf(fctx, x, y, l.s, l.rot, l.hue, Math.min(1, veil * 1.6));
+    }
+    fctx.fillStyle = `rgba(28,20,12,${(veil * 0.55).toFixed(3)})`;
+    fctx.fillRect(0, 0, W, H);
+  }
+
+  if (u >= 1) {
+    const f = nat.after; nat = null;
+    if (f) f();
+    return false;
+  }
+  return true;
+}
+
+function drawLeaf(c, x, y, s, rot, hue, a) {
+  c.save();
+  c.translate(x, y);
+  c.rotate(rot);
+  /* leaves are seen edge-on half the time, which is most of the flutter */
+  c.scale(1, 0.35 + 0.65 * Math.abs(Math.cos(rot * 1.3)));
+  c.globalAlpha = a;
+  const g = c.createLinearGradient(-s, -s, s, s);
+  g.addColorStop(0, `hsl(${hue},72%,46%)`);
+  g.addColorStop(0.5, `hsl(${hue + 8},78%,58%)`);
+  g.addColorStop(1, `hsl(${hue - 6},66%,34%)`);
+  c.fillStyle = g;
+  c.beginPath();
+  c.moveTo(0, -s);
+  c.quadraticCurveTo(s * 0.9, -s * 0.15, 0, s);
+  c.quadraticCurveTo(-s * 0.9, -s * 0.15, 0, -s);
+  c.closePath();
+  c.fill();
+  c.strokeStyle = `hsla(${hue - 10},60%,26%,0.55)`;
+  c.lineWidth = Math.max(0.6, s * 0.07);
+  c.beginPath(); c.moveTo(0, -s); c.lineTo(0, s); c.stroke();
+  c.restore();
+  c.globalAlpha = 1;
+}
+
+/* --- sound for each --- */
+function frostSound() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  for (let i = 0; i < 40; i++) {
+    const t = t0 + Math.random() * 1.7;
+    const o = ac.createOscillator(); o.type = "sine";
+    o.frequency.value = 2600 + Math.random() * 4200;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.016 + Math.random() * 0.012, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05 + Math.random() * 0.09);
+    o.connect(g); g.connect(at(Math.random() * window.innerWidth) || BUS);
+    o.start(t); o.stop(t + 0.16);
+  }
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const hp = ac.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 5200;
+  const g2 = ac.createGain();
+  g2.gain.setValueAtTime(0.0001, t0);
+  g2.gain.linearRampToValueAtTime(0.030, t0 + 1.2);
+  g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.8);
+  s.connect(hp); hp.connect(g2); g2.connect(BUS);
+  s.start(t0); s.stop(t0 + 3);
+}
+function cloudSound() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noise(ac); s.loop = true;
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass";
+  lp.frequency.setValueAtTime(240, t0);
+  lp.frequency.linearRampToValueAtTime(900, t0 + 1.6);
+  lp.frequency.linearRampToValueAtTime(300, t0 + 3.4);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(0.075, t0 + 1.5);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.6);
+  s.connect(lp); lp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 3.7);
+}
+function leafSound() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noise(ac); s.loop = true;
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass";
+  bp.frequency.setValueAtTime(900, t0);
+  bp.frequency.linearRampToValueAtTime(3400, t0 + 1.4);
+  bp.Q.value = 0.6;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(0.095, t0 + 1.0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.2);
+  s.connect(bp); bp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 3.3);
+}
+
+/* ================= the wood =================
+   The beam comes round, cloud takes the frame, and it puts you down in a
+   stand of trees at dusk with a wind getting up. Drag your hand through
+   them and the wgust follows it — leaves let go where you pass, and go
+   over the field. Strip enough of them and the wind takes the lot, and
+   you with it. */
+
+let woodOn = false, woodT = 0, trees = [], loose = [], grass = [];
+/* the far end of the chain, for now — a place to rest rather than a fall
+   back through every earlier scene, which is what happened before */
+let chainEnd = false, restT = 0, restLeaves = null;
+let wgust = 0, wgustX = 0, wgustY = 0, wgustV = 0, woodDrag = false, stripped = 0, woodHanded = false;
+let windNode = null;
+
+function startWood() {
+  if (woodOn) return;
+  woodOn = true; woodT = 0; stripped = 0; woodHanded = false;
+  loose = [];
+  const W = window.innerWidth, H = window.innerHeight;
+  const hz = H * 0.72;
+
+  trees = [];
+  /* three depths: far ones small, pale and many; near ones big and dark */
+  const layers = [
+    { n: W < 620 ? 9 : 16, s: 0.16, dark: 0.30, y: hz - H * 0.02 },
+    { n: W < 620 ? 5 : 8, s: 0.30, dark: 0.62, y: hz + H * 0.02 },
+    { n: W < 620 ? 3 : 4, s: 0.52, dark: 1.00, y: hz + H * 0.07 },
+  ];
+  layers.forEach((L, li) => {
+    for (let i = 0; i < L.n; i++) {
+      const x = W * ((i + 0.5 + (rnd() - 0.5) * 0.7) / L.n);
+      const hgt = H * L.s * (0.8 + rnd() * 0.45);
+      const t = { x, y: L.y, h: hgt, li, dark: L.dark,
+                  lean: (rnd() - 0.5) * 0.10, ph: rnd() * 6.3, leaves: [] };
+      /* a canopy of clusters, each of which can be shaken loose */
+      const NC = li === 2 ? 26 : li === 1 ? 16 : 8;
+      for (let k = 0; k < NC; k++) {
+        const a = rnd() * Math.PI * 2, rr = Math.pow(rnd(), 0.6);
+        t.leaves.push({
+          ox: Math.cos(a) * rr * hgt * 0.42,
+          oy: -hgt * 0.62 + Math.sin(a) * rr * hgt * 0.34,
+          s: hgt * (0.035 + rnd() * 0.030),
+          hue: 16 + rnd() * 40, ph: rnd() * 6.3, on: true,
+        });
+      }
+      trees.push(t);
+    }
+  });
+  trees.sort((a, b) => a.li - b.li);
+
+  grass = [];
+  for (let i = 0; i < (W < 620 ? 90 : 170); i++)
+    grass.push({ x: rnd() * W, y: hz + (H - hz) * (0.10 + rnd() * 0.9),
+                 h: H * (0.012 + rnd() * 0.030), ph: rnd() * 6.3,
+                 hue: 34 + rnd() * 26 });
+
+  bed("sand");
+  woodWind();
+}
+
+function woodFrame(dt) {
+  const W = window.innerWidth, H = window.innerHeight, hz = H * 0.72;
+  woodT += dt;
+
+  /* the wind: three sines that never line up, plus whatever your hand is
+     doing to it */
+  const base = 0.34 + 0.30 * Math.sin(woodT * 0.31)
+             + 0.18 * Math.sin(woodT * 0.77 + 1.3)
+             + 0.10 * Math.sin(woodT * 1.9 + 3.1);
+  wgust = base + Math.min(1.6, wgustV * 0.004);
+  wgustV *= Math.exp(-2.4 * dt);
+  if (windNode && AC)
+    windNode.g.gain.setTargetAtTime(0.020 + wgust * 0.055, AC.currentTime, 0.2);
+
+  hardClear(finCanvas, fctx);
+
+  /* ---- dusk ---- */
+  const sky = fctx.createLinearGradient(0, 0, 0, hz);
+  sky.addColorStop(0, "#16283c");
+  sky.addColorStop(0.48, "#3b4a56");
+  sky.addColorStop(0.80, "#9a7f62");
+  sky.addColorStop(1, "#d9a86a");
+  fctx.fillStyle = sky; fctx.fillRect(0, 0, W, hz + 2);
+  /* a low sun somewhere behind the trunks */
+  const sg = fctx.createRadialGradient(W * 0.72, hz - H * 0.03, 0, W * 0.72, hz, H * 0.34);
+  sg.addColorStop(0, "rgba(255,214,150,0.55)");
+  sg.addColorStop(1, "rgba(255,180,110,0)");
+  fctx.fillStyle = sg; fctx.fillRect(0, 0, W, hz + 2);
+
+  /* ---- ground ---- */
+  const gr = fctx.createLinearGradient(0, hz, 0, H);
+  gr.addColorStop(0, "#4a3a26");
+  gr.addColorStop(0.4, "#33281a");
+  gr.addColorStop(1, "#1c1610");
+  fctx.fillStyle = gr; fctx.fillRect(0, hz, W, H - hz);
+
+  /* ---- the trees ---- */
+  for (const t of trees) {
+    const sway = Math.sin(woodT * (0.7 + t.li * 0.2) + t.ph) * wgust * (0.05 + t.li * 0.03);
+    const lean = t.lean + sway;
+    fctx.save();
+    fctx.translate(t.x, t.y);
+    /* trunk: tapered, leaning with the wind, with a couple of limbs */
+    const trunk = (x0, y0, x1, y1, w0, w1) => {
+      fctx.beginPath();
+      fctx.moveTo(x0 - w0, y0);
+      fctx.lineTo(x1 - w1, y1);
+      fctx.lineTo(x1 + w1, y1);
+      fctx.lineTo(x0 + w0, y0);
+      fctx.closePath();
+      fctx.fill();
+    };
+    const shade = 0.10 + 0.16 * (1 - t.dark);
+    fctx.fillStyle = `rgba(${(30 + shade * 190) | 0},${(24 + shade * 170) | 0},${(18 + shade * 150) | 0},${(0.45 + t.dark * 0.55).toFixed(2)})`;
+    const tipX = Math.sin(lean) * t.h * 0.55, tipY = -t.h * 0.62;
+    trunk(0, 0, tipX, tipY, t.h * 0.035, t.h * 0.014);
+    for (const side of [-1, 1]) {
+      const bx = tipX * 0.55, by = tipY * 0.55;
+      trunk(bx, by, bx + side * t.h * 0.26 + tipX * 0.3, by - t.h * 0.24,
+            t.h * 0.016, t.h * 0.006);
+    }
+    /* what is still attached */
+    for (const l of t.leaves) {
+      if (!l.on) continue;
+      const flut = Math.sin(woodT * (2.2 + t.li) + l.ph) * wgust * t.h * 0.020;
+      drawLeaf(fctx, l.ox + Math.sin(lean) * (-l.oy) * 0.9 + flut,
+               l.oy + Math.cos(woodT * 1.7 + l.ph) * wgust * t.h * 0.010,
+               l.s, l.ph + woodT * 0.6 + flut * 0.05,
+               l.hue, 0.35 + t.dark * 0.65);
+    }
+    fctx.restore();
+  }
+
+  /* ---- grass, bending ---- */
+  fctx.lineCap = "round";
+  for (const g of grass) {
+    const d = (g.y - hz) / Math.max(1, H - hz);
+    const bend = wgust * (12 + d * 26) + Math.sin(woodT * 2.4 + g.ph) * wgust * 7;
+    fctx.strokeStyle = `hsla(${g.hue},${28 + d * 16}%,${16 + d * 16}%,${(0.5 + d * 0.5).toFixed(2)})`;
+    fctx.lineWidth = Math.max(1, g.h * 0.10);
+    fctx.beginPath();
+    fctx.moveTo(g.x, g.y);
+    fctx.quadraticCurveTo(g.x + bend * 0.4, g.y - g.h * 0.6, g.x + bend, g.y - g.h);
+    fctx.stroke();
+  }
+
+  /* ---- loose leaves ---- */
+  for (let i = loose.length - 1; i >= 0; i--) {
+    const l = loose[i];
+    l.vx += (wgust * 190 - l.vx) * 1.4 * dt + Math.sin(woodT * 3 + l.ph) * 40 * dt;
+    l.vy += (34 - l.vy * 0.6) * dt * 2 + Math.sin(woodT * 2.3 + l.ph * 2) * 30 * dt;
+    /* whatever your hand is doing, they feel it */
+    if (woodDrag) {
+      const dx = l.x - wgustX, dy = l.y - wgustY, d2 = dx * dx + dy * dy;
+      const R2 = Math.pow(Math.min(W, H) * 0.22, 2);
+      if (d2 < R2) {
+        const f = (1 - d2 / R2);
+        l.vx += (dx * 0.9 + 260) * f * dt * 3;
+        l.vy += (dy * 0.6 - 120) * f * dt * 3;
+      }
+    }
+    l.x += l.vx * dt; l.y += l.vy * dt;
+    l.rot += l.spin * dt * (0.6 + wgust);
+    if (l.x > W + 60) l.x = -50;
+    if (l.x < -60) l.x = W + 50;
+    if (l.y > H + 40) { l.y = H + 30; l.vy = -Math.abs(l.vy) * 0.2; }
+    drawLeaf(fctx, l.x, l.y, l.s, l.rot, l.hue, 0.95);
+  }
+
+  /* ---- what your hand is doing to the air ---- */
+  if (woodDrag) {
+    fctx.save();
+    fctx.globalCompositeOperation = "lighter";
+    const g2 = fctx.createRadialGradient(wgustX, wgustY, 0, wgustX, wgustY, Math.min(W, H) * 0.2);
+    g2.addColorStop(0, "rgba(255,236,200,0.055)");
+    g2.addColorStop(1, "rgba(255,220,170,0)");
+    fctx.fillStyle = g2;
+    fctx.fillRect(wgustX - W, wgustY - H, W * 2, H * 2);
+    fctx.restore();
+  }
+
+  /* a nudge if they are just watching */
+  const still = trees.reduce((a, t) => a + t.leaves.filter(l => l.on).length, 0);
+  if (woodT > 5 && stripped < 3) {
+    const p = 0.5 + 0.5 * Math.sin(woodT * 1.9);
+    fctx.strokeStyle = `rgba(255,232,190,${(0.06 + 0.10 * p).toFixed(3)})`;
+    fctx.lineWidth = Math.max(4, Math.min(W, H) * 0.010);
+    fctx.beginPath();
+    const cx = W * 0.5 + Math.sin(woodT * 0.8) * W * 0.22;
+    fctx.moveTo(cx - W * 0.10, H * 0.42);
+    fctx.quadraticCurveTo(cx, H * 0.40, cx + W * 0.10, H * 0.42);
+    fctx.stroke();
+  }
+
+  /* stripped: the wind takes the rest of it */
+  if (still === 0 && !woodHanded) {
+    woodHanded = true;
+    setTimeout(() => natRun("leaf", () => { woodOn = false; chainEnd = true; restT = 0; }, 3.0), 700);
+  }
+  natFrame(dt);
+}
+
+function restFrame(dt) {
+  const W = window.innerWidth, H = window.innerHeight;
+  restT += dt;
+  hardClear(finCanvas, fctx);
+  const sky = fctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, "#0a1220");
+  sky.addColorStop(0.62, "#131c2a");
+  sky.addColorStop(0.88, "#2b2a2c");
+  sky.addColorStop(1, "#171412");
+  fctx.fillStyle = sky; fctx.fillRect(0, 0, W, H);
+  /* something coming, a long way off */
+  const g = fctx.createRadialGradient(W * 0.5, H * 0.99, 0, W * 0.5, H * 0.99, H * 0.5);
+  g.addColorStop(0, `rgba(190,140,96,${(0.10 + 0.05 * Math.sin(restT * 0.4)).toFixed(3)})`);
+  g.addColorStop(1, "rgba(160,120,90,0)");
+  fctx.fillStyle = g; fctx.fillRect(0, H * 0.5, W, H * 0.5);
+  if (!restLeaves) {
+    restLeaves = [];
+    for (let i = 0; i < 26; i++)
+      restLeaves.push({ x: rnd() * W, y: rnd() * H, s: 5 + rnd() * 10,
+                        rot: rnd() * 6.3, spin: (rnd() - 0.5) * 1.6,
+                        hue: 16 + rnd() * 34, v: 8 + rnd() * 22, ph: rnd() * 6.3 });
+  }
+  for (const l of restLeaves) {
+    l.y += l.v * dt;
+    l.x += Math.sin(restT * 0.6 + l.ph) * 14 * dt;
+    l.rot += l.spin * dt;
+    if (l.y > H + 30) { l.y = -30; l.x = Math.random() * W; }
+    drawLeaf(fctx, l.x, l.y, l.s, l.rot, l.hue, 0.32);
+  }
+  natFrame(dt);
+}
+
+/* --- the hand in the wind --- */
+function woodStrip(x, y) {
+  const W = window.innerWidth, H = window.innerHeight;
+  const R = Math.min(W, H) * 0.16;
+  let took = 0;
+  for (const t of trees) {
+    for (const l of t.leaves) {
+      if (!l.on) continue;
+      const lx = t.x + l.ox, ly = t.y + l.oy;
+      if (Math.hypot(lx - x, ly - y) > R) continue;
+      l.on = false; took++;
+      loose.push({ x: lx, y: ly, s: l.s, hue: l.hue, ph: l.ph,
+                   rot: Math.random() * 6.3, spin: (Math.random() - 0.5) * 7,
+                   vx: 60 + Math.random() * 120, vy: -40 - Math.random() * 90 });
+    }
+  }
+  if (took) { stripped += took; rustle(x, Math.min(1, took / 6)); }
+}
+window.addEventListener("pointerdown", (e) => {
+  if (!woodOn) return;
+  woodDrag = true; wgustX = e.clientX; wgustY = e.clientY;
+  woodStrip(e.clientX, e.clientY);
+  if (e.cancelable) e.preventDefault();
+}, { passive: false });
+window.addEventListener("pointermove", (e) => {
+  if (!woodOn) return;
+  finCanvas.style.cursor = "grab";
+  const dx = e.clientX - wgustX;
+  wgustX = e.clientX; wgustY = e.clientY;
+  wgustV = Math.min(400, wgustV + Math.abs(dx) * 4);
+  if (woodDrag) { woodStrip(e.clientX, e.clientY); if (e.cancelable) e.preventDefault(); }
+}, { passive: false });
+window.addEventListener("pointerup", () => { woodDrag = false; });
+
+/* --- sound --- */
+function woodWind() {
+  const ac = audio(); if (!ac || windNode) return;
+  const s = ac.createBufferSource(); s.buffer = noise(ac); s.loop = true;
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass";
+  bp.frequency.value = 1500; bp.Q.value = 0.45;
+  const g = ac.createGain(); g.gain.value = 0.0001;
+  s.connect(bp); bp.connect(g); g.connect(BUS);
+  s.start();
+  windNode = { s, bp, g };
+}
+let lastRustle = 0;
+function rustle(px, v) {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  if (t0 - lastRustle < 0.05) return;
+  lastRustle = t0;
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  s.playbackRate.value = 0.8 + Math.random() * 0.7;
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass";
+  bp.frequency.value = 2400 + Math.random() * 2600; bp.Q.value = 0.9;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(0.020 + 0.050 * v, t0 + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.32 + v * 0.3);
+  s.connect(bp); bp.connect(g); g.connect(at(px) || BUS);
+  s.start(t0); s.stop(t0 + 0.7);
 }
 
 function splatSound() {
