@@ -24,7 +24,11 @@
     margin: 0;
     padding: 0;
     height: 100%;
-    background: #fdfdfb;
+    /* paper, not a browser default: a warm sheet with a little light on it */
+    background: #f7f3ec;
+    background-image:
+      radial-gradient(ellipse 120% 90% at 50% 22%, #ffffff 0%, rgba(255,255,255,0) 62%),
+      linear-gradient(180deg, #fbf8f3 0%, #f4f0e8 62%, #ece7dc 100%);
     overflow: hidden;
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
@@ -136,7 +140,7 @@
     inset: 0;
     pointer-events: none;
     z-index: 40;
-    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 58%, rgba(0,0,0,0.11) 100%);
+    background: radial-gradient(ellipse at 50% 44%, rgba(38,26,14,0) 52%, rgba(38,26,14,0.16) 100%);
   }
   #grain {
     position: fixed;
@@ -207,6 +211,11 @@
     transition: opacity 1.5s ease;
     display: none;
     cursor: inherit;
+    /* it sits at the bottom of deep water, which is nearly black down
+       there — this is the light that reaches it */
+    filter: drop-shadow(0 0 40px rgba(255,204,132,0.44))
+            drop-shadow(0 6px 16px rgba(0,0,0,0.5))
+            saturate(1.55) brightness(1.34) contrast(1.08);
   }
   #chest.on { opacity: 1; }
   #chest.shake { animation: chestshake 0.4s ease; }
@@ -1576,7 +1585,11 @@ function explode() {
     while (cum[bi] < r) bi++;
     /* depth: far flakes are small, slow, dim; near ones big, fast, bright */
     const z = 0.4 + Math.pow(Math.random(), 1.5) * 1.3;
-    const s = (Math.random() < 0.06 ? 3.6 + Math.random() * 1.6 : 1.5 + Math.random() * 2.1) * z;
+    /* Real glitter is mostly tiny and mostly dark — what you see is the
+       flash when a face turns into the light, not the chip itself. Big
+       coloured chips read as confetti, which is exactly what this looked
+       like. So: small bodies, dim, and let the glints do the work. */
+    const s = (Math.random() < 0.05 ? 2.8 + Math.random() * 2.0 : 0.9 + Math.random() * 1.6) * z;
     const pt = {
       x: 0, y: 0, vx: 0, vy: 0,
       phi: Math.random() * Math.PI * 2,
@@ -1699,10 +1712,10 @@ function tickParticles(dt) {
       const c2 = c * c, c4 = c2 * c2;
       const b8 = c4 * c4;                       // sharp specular lobe
       const fore = Math.abs(Math.sin(p.phi));   // face turns away -> sliver
-      ctx.globalAlpha = (0.2 + 0.55 * fore) * (p.za || 1);
+      ctx.globalAlpha = (0.13 + 0.40 * fore) * (p.za || 1);
       const w = p.s * (0.25 + 0.75 * fore);
       ctx.fillRect(p.x - w / 2, p.y - p.s * 0.4, w, p.s * 0.8);
-      if (b8 > 0.72) bucket.glints.push(p.x, p.y, p.s, b8 * (p.za || 1));
+      if (b8 > 0.58) bucket.glints.push(p.x, p.y, p.s, b8 * (p.za || 1));
     }
     arr.length = j;
     alive += j;
@@ -1716,14 +1729,14 @@ function tickParticles(dt) {
     ctx.fillStyle = bucket.glint;
     for (let i = 0; i < gl.length; i += 4) {
       const x = gl[i], y = gl[i + 1], s = gl[i + 2], b = gl[i + 3];
-      const a = (b - 0.72) / 0.28;
-      ctx.globalAlpha = a;
-      const gs = s * (1.3 + 1.6 * a);
+      const a = (b - 0.58) / 0.42;
+      ctx.globalAlpha = a * a;
+      const gs = s * (1.5 + 2.2 * a);
       ctx.fillRect(x - gs / 2, y - gs / 2, gs, gs);
-      if (a > 0.75) {
+      if (a > 0.70) {
         /* the brightest faces flare into little star rays */
-        ctx.globalAlpha = (a - 0.75) * 2.8;
-        const r = gs * 2.6, t = gs * 0.28;
+        ctx.globalAlpha = (a - 0.70) * 2.4;
+        const r = gs * 3.4, t = gs * 0.20;
         ctx.fillRect(x - r / 2, y - t / 2, r, t);
         ctx.fillRect(x - t / 2, y - r / 2, t, r);
       }
@@ -1776,8 +1789,22 @@ function tickParticles(dt) {
 
 /* ================= the dot ================= */
 const dotEl = document.getElementById("dot");
-const DOT_COLORS = ["#e63950","#ff8c00","#ffcf00","#00b869","#00a8e8","#8b46d9",
-                    "#ff5d9e","#2aa8b8","#d92645","#6cb520","#ffd60a","#9b5de5"];
+/* A curated walk rather than a hue step. Rotating the hue by a fixed
+   amount marches straight through lime and mustard, and the last one is
+   the one that becomes the whole screen — it has to be a colour you would
+   choose, and it has to be a colour that looks like water when the tap
+   fills it. So the walk warms and cools but converges on deep sea. */
+const DOT_COLORS = ["#e6394f", "#ff7a1f", "#f5b800", "#3fbf72", "#00a3d9",
+                    "#7d4bd6", "#e0407f", "#17a89b", "#c9333f", "#e58a1c",
+                    "#2f9fd4", "#1c7f96"];
+const DOT_FINAL = "#0d5468";
+function mixHex(a, b, t) {
+  const A = parseInt(a.slice(1), 16), B = parseInt(b.slice(1), 16);
+  const r = ((A >> 16 & 255) * (1 - t) + (B >> 16 & 255) * t) | 0;
+  const g = ((A >> 8 & 255) * (1 - t) + (B >> 8 & 255) * t) | 0;
+  const bl = ((A & 255) * (1 - t) + (B & 255) * t) | 0;
+  return "#" + ((1 << 24) + (r << 16) + (g << 8) + bl).toString(16).slice(1);
+}
 let dotShown = false, dotN = 0, dotSize = 0, dotDone = false;
 
 function bloopSound(n) {
@@ -1812,13 +1839,17 @@ function dotTap() {
   if (dotDone || !dotShown) return;
   dotN++;
   dotSize *= 1.55;
-  dotHue = (dotHue + 47) % 360;
-  const color = `hsl(${dotHue},80%,58%)`;
+  const diagN = Math.hypot(window.innerWidth, window.innerHeight);
+  const near = Math.max(0, Math.min(1, (dotSize / diagN - 0.42) / 0.58));
+  const base = DOT_COLORS[(dotN - 1) % DOT_COLORS.length];
+  const color = mixHex(base, DOT_FINAL, near * near);
   const dur = Math.min(2.8, 0.4 + dotN * 0.16);
   dotEl.style.transition = `width ${dur}s ease, height ${dur}s ease, background ${dur * 0.7}s ease`;
   dotEl.style.width = dotSize + "px";
   dotEl.style.height = dotSize + "px";
-  dotEl.style.background = color;
+  dotEl.style.background =
+    `radial-gradient(circle at 42% 36%, ${shade(color, 0.34)} 0%, ${color} 46%, ${shade(color, -0.34)} 100%)`;
+  dotEl.dataset.col = color;
   /* jelly wobble + a ripple ring */
   dotEl.classList.remove("jelly");
   void dotEl.offsetWidth;
@@ -2235,10 +2266,57 @@ function waterDraw() {
     ctx.lineTo(W, H);
     ctx.closePath();
     const grad = ctx.createLinearGradient(0, Math.max(0, level - 10), 0, H);
-    grad.addColorStop(0, "rgba(150,205,245,0.55)");
-    grad.addColorStop(1, "rgba(20,80,140,0.78)");
+    grad.addColorStop(0, "rgba(176,226,250,0.40)");
+    grad.addColorStop(0.32, "rgba(52,146,192,0.62)");
+    grad.addColorStop(1, "rgba(8,52,98,0.80)");
     ctx.fillStyle = grad;
     ctx.fill();
+
+    /* light coming through the surface — the shafts sway with the swell and
+       are what makes a body of water read as deep rather than as a fill */
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(0, H);
+    for (let x = 0; x <= W; x += 8) ctx.lineTo(x, surfaceY(x, level, agit));
+    ctx.lineTo(W, H); ctx.closePath(); ctx.clip();
+    ctx.globalCompositeOperation = "lighter";
+    const shafts = W < 620 ? 4 : 7;
+    for (let i = 0; i < shafts; i++) {
+      const px = (i + 0.5) / shafts;
+      const sx = W * px + Math.sin(wT * 0.5 + i * 1.9) * W * 0.05;
+      const sy = surfaceY(sx, level, agit);
+      const lean = Math.sin(wT * 0.32 + i * 2.4) * W * 0.10 + W * 0.05;
+      const wide = W * (0.020 + 0.016 * Math.abs(Math.sin(i * 1.7)));
+      const g2 = ctx.createLinearGradient(sx, sy, sx + lean, H);
+      const a = 0.055 + 0.035 * Math.abs(Math.sin(wT * 0.7 + i));
+      g2.addColorStop(0, `rgba(206,240,255,${a.toFixed(3)})`);
+      g2.addColorStop(0.55, `rgba(150,215,245,${(a * 0.45).toFixed(3)})`);
+      g2.addColorStop(1, "rgba(120,190,235,0)");
+      ctx.fillStyle = g2;
+      ctx.beginPath();
+      ctx.moveTo(sx - wide, sy);
+      ctx.lineTo(sx + wide, sy);
+      ctx.lineTo(sx + lean + wide * 3.2, H);
+      ctx.lineTo(sx + lean - wide * 3.2, H);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+
+    /* a bright band of refraction just under the surface */
+    if (W >= 620) {
+    ctx.save();
+    ctx.beginPath();
+    for (let x = 0; x <= W; x += 8) {
+      const y = surfaceY(x, level, agit);
+      x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    for (let x = W; x >= 0; x -= 8) ctx.lineTo(x, surfaceY(x, level, agit) + 16);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(214,244,255,0.16)";
+    ctx.fill();
+    ctx.restore();
+    }
+
     /* surface light */
     ctx.beginPath();
     for (let x = 0; x <= W; x += 8) {
@@ -2321,7 +2399,7 @@ function waterDraw() {
     const rows = QUOTE.length;
     const rowH = Math.min(30, (H - 90) / rows);
     const qx = Math.max(70, W * 0.13);
-    ctx.font = `italic ${Math.round(rowH * 0.8)}px Georgia, "Times New Roman", serif`;
+    ctx.font = `italic ${Math.round(rowH * 0.95)}px Georgia, "Times New Roman", serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     for (let i = 0; i < rows; i++) {
@@ -2330,11 +2408,18 @@ function waterDraw() {
       const qy = 55 + rowH / 2 + i * rowH;
       const depth = qy - surfaceY(qx, level, agit);
       if (depth <= 0) continue;
-      ctx.globalAlpha = Math.min(0.9, depth / 45);
-      ctx.fillStyle = "#ffffff";
-      ctx.fillText(q, qx + Math.sin(wT * 1.2 + qy * 0.045) * 2, qy);
+      ctx.globalAlpha = Math.min(1, depth / 32);
+      const jx = qx + Math.sin(wT * 1.2 + qy * 0.045) * 2.4;
+      /* a dark halo first, or white letters vanish into the bright shafts */
+      ctx.shadowColor = "rgba(4,26,50,0.85)";
+      ctx.shadowBlur = rowH * 0.55;
+      ctx.fillStyle = "rgba(238,250,255,0.96)";
+      ctx.fillText(q, jx, qy);
+      ctx.shadowBlur = 0;
+      ctx.fillText(q, jx, qy);
     }
     ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
   }
   /* a bead swells at the spout before it lets go — motion exactly where
      the eye needs to land */
@@ -2776,6 +2861,20 @@ function squelchSound(v) {
   o.start(t0); o.stop(t0 + 0.2);
 }
 
+let gooTile = null, gooPat = null;
+function buildGooTile() {
+  const S = 96, c = document.createElement("canvas");
+  c.width = c.height = S;
+  const g = c.getContext("2d");
+  for (let i = 0; i < 2400; i++) {
+    const v = Math.random();
+    g.fillStyle = v > 0.5 ? `rgba(255,255,255,${(v * 0.16).toFixed(3)})`
+                          : `rgba(40,20,60,${((0.5 - v) * 0.16).toFixed(3)})`;
+    g.fillRect(Math.random() * S, Math.random() * S, 1, 1);
+  }
+  gooTile = c;
+}
+
 function gooFrame(dt) {
   if (!gooActive) return;
   const W = window.innerWidth, H = window.innerHeight;
@@ -2788,7 +2887,7 @@ function gooFrame(dt) {
     W / 2 - gx * W * 0.6, H / 2 - gy * H * 0.6,
     W / 2 + gx * W * 0.6, H / 2 + gy * H * 0.6);
   for (let k = 0; k <= 6; k++) {
-    grad.addColorStop(k / 6, `hsl(${((wT * 7) + k * 60) % 360},72%,58%)`);
+    grad.addColorStop(k / 6, `hsl(${((wT * 7) + k * 60) % 360},84%,50%)`);
   }
   lg.fillStyle = grad;
   lg.fillRect(0, 0, W, H);
@@ -2804,14 +2903,30 @@ function gooFrame(dt) {
     b.vx *= damp; b.vy *= damp;
     b.x += b.vx * dt; b.y += b.vy * dt;
     const rg = lg.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r);
-    rg.addColorStop(0, `hsla(${(b.hue + wT * 5) % 360},85%,62%,0.72)`);
+    rg.addColorStop(0, `hsla(${(b.hue + wT * 5) % 360},92%,56%,0.80)`);
     rg.addColorStop(1, "hsla(0,0%,100%,0)");
     lg.fillStyle = rg;
     lg.fillRect(b.x - b.r, b.y - b.r, b.r * 2, b.r * 2);
+    /* the film catches the light along the top of every bulge */
+    const rim = lg.createRadialGradient(b.x, b.y, b.r * 0.52, b.x, b.y, b.r * 0.92);
+    rim.addColorStop(0, "rgba(255,255,255,0)");
+    rim.addColorStop(0.72, "rgba(255,255,255,0.10)");
+    rim.addColorStop(1, "rgba(255,255,255,0)");
+    lg.fillStyle = rim;
+    lg.beginPath(); lg.arc(b.x, b.y, b.r * 0.95, 0, 6.3); lg.fill();
+    if (W >= 700) {
+    const hot = lg.createRadialGradient(
+      b.x - b.r * 0.34, b.y - b.r * 0.38, 0,
+      b.x - b.r * 0.34, b.y - b.r * 0.38, b.r * 0.30);
+    hot.addColorStop(0, "rgba(255,255,255,0.30)");
+    hot.addColorStop(1, "rgba(255,255,255,0)");
+    lg.fillStyle = hot;
+    lg.fillRect(b.x - b.r, b.y - b.r, b.r * 2, b.r * 2);
+    }
   }
 
   /* trapped-air specks + a plastic-sheen streak, so it reads as goo under film */
-  lg.fillStyle = "rgba(255,255,255,0.13)";
+  lg.fillStyle = "rgba(255,255,255,0.10)";
   for (const sp of gooSpecks) {
     lg.beginPath();
     lg.arc(sp.x, sp.y, sp.r, 0, Math.PI * 2);
@@ -2833,6 +2948,37 @@ function gooFrame(dt) {
     lg.fillRect(0, 0, W, H);
   }
   lg.globalCompositeOperation = "source-over";
+
+  /* a hard little reflection sliding over the plastic — a broad sheen alone
+     reads as fog; it takes one crisp highlight to read as a surface */
+  const hx2 = W * (0.24 + 0.06 * Math.sin(wT * 0.23));
+  const hy2 = H * (0.20 + 0.05 * Math.sin(wT * 0.31 + 1.1));
+  const hr = Math.min(W, H) * 0.16;
+  const spec2 = lg.createRadialGradient(hx2, hy2, 0, hx2, hy2, hr);
+  spec2.addColorStop(0, "rgba(255,255,255,0.30)");
+  spec2.addColorStop(0.45, "rgba(255,255,255,0.09)");
+  spec2.addColorStop(1, "rgba(255,255,255,0)");
+  lg.save();
+  lg.translate(hx2, hy2); lg.scale(1.7, 1); lg.translate(-hx2, -hy2);
+  lg.fillStyle = spec2;
+  lg.fillRect(hx2 - hr * 1.2, hy2 - hr, hr * 2.4, hr * 2);
+  lg.restore();
+
+  /* tooth, and the roll-off at the edges that makes it sit in the frame
+     like an object — both on the half-res canvas, four times cheaper and
+     indistinguishable once it is blown back up */
+  if (!gooTile) buildGooTile();
+  if (!gooPat) gooPat = lg.createPattern(gooTile, "repeat");
+  lg.globalAlpha = 0.16;
+  lg.fillStyle = gooPat;
+  lg.fillRect(0, 0, W, H);
+  lg.globalAlpha = 1;
+  const vg = lg.createRadialGradient(W * 0.5, H * 0.46, Math.min(W, H) * 0.28,
+                                     W * 0.5, H * 0.46, Math.max(W, H) * 0.78);
+  vg.addColorStop(0, "rgba(24,12,34,0)");
+  vg.addColorStop(1, "rgba(20,8,30,0.46)");
+  lg.fillStyle = vg;
+  lg.fillRect(0, 0, W, H);
 
   /* composite the soft stack up to full res in one blit */
   gtx.drawImage(gooLow, 0, 0, W, H);
@@ -2859,6 +3005,8 @@ function gooFrame(dt) {
   gtx.fillStyle = sheen;
   gtx.fillRect(-W, -60, W * 2, 120);
   gtx.restore();
+
+
 
   /* the tears: punch through to the white, leave frayed edges */
   if (gooFringes.length) {
@@ -4730,7 +4878,9 @@ function drawDig(dt) {
   }
 
   /* it is only visible where the sand has actually come off it, so clip to
-     the runs of columns that have been dug down to the wood */
+     the runs of columns that have been dug down to the wood. Once it is
+     found, drawLift owns it — hinge, hasp and all. */
+  if (digPhase !== 2) {
   fctx.save();
   fctx.beginPath();
   let run = -1;
@@ -4795,6 +4945,7 @@ function drawDig(dt) {
   fctx.fillStyle = bg2;
   fctx.fillRect(G.lidX - G.lidR, G.lidY + G.lidR * 0.30, G.lidR * 2, G.lidR * 0.34);
   fctx.restore();
+  }
 
   /* grain — a beach is not a flat fill, and at this size the eye wants tooth */
   if (!sandTile) buildSandTile();
@@ -4862,6 +5013,8 @@ function drawDig(dt) {
     fctx.fillRect(g2.x, g2.y, g2.s, g2.s);
   }
   fctx.globalAlpha = 1;
+
+  if (digPhase === 2) drawLift(dt, G);
 }
 
 /* --- the shovel --- */
@@ -4959,6 +5112,208 @@ function foundIt() {
     o.connect(g); g.connect(BUS);
     o.start(t0 + i * 0.13); o.stop(t0 + 3.8);
   });
+}
+
+/* ================= the lid =================
+   The sand is off it. Now it has to be opened, and it is held by an iron
+   hasp with a pin through it — pull the pin, then lift. The lid swings on
+   its hinges, the last of the sand slides off it, and what is inside is
+   light. */
+let pinOut = 0, pinGrab = null, lidLift = 0, liftGrab = null, liftT = -1, whiteOut = 0;
+
+function hasp(G) {
+  const y = lidTopAt(G.lidX);
+  return { x: G.lidX, y: y + G.lidR * 0.10, r: Math.max(22, G.lidR * 0.26) };
+}
+
+function drawLift(dt, G) {
+  const W = window.innerWidth, H = window.innerHeight;
+  if (liftT < 0) liftT = 0; else liftT += dt;
+  const ready = liftT > 1.2;
+
+  /* the opening under the lid, and the light in it */
+  const open = lidLift;
+  if (open > 0.004) {
+    const cx = G.lidX, top = lidTopAt(cx);
+    fctx.save();
+    /* the mouth */
+    const ry = G.lidR * 0.10 + open * G.lidR * 0.18;
+    const mg = fctx.createRadialGradient(cx, top + G.lidR * 0.06, 0,
+                                         cx, top + G.lidR * 0.06, G.lidR * 0.86);
+    mg.addColorStop(0, `rgba(${255},${228 - 40 * (1 - open) | 0},${168 - 60 * (1 - open) | 0},${(0.10 + 0.85 * open).toFixed(3)})`);
+    mg.addColorStop(0.55, `rgba(120,78,32,${(0.30 + 0.30 * open).toFixed(3)})`);
+    mg.addColorStop(1, "#150d06");
+    fctx.fillStyle = mg;
+    fctx.beginPath();
+    fctx.ellipse(cx, top + G.lidR * 0.06, G.lidR * 0.86, ry, 0, 0, 6.3);
+    fctx.fill();
+    /* light coming up out of it, widening as it opens */
+    fctx.globalCompositeOperation = "lighter";
+    const rise = H * (0.20 + 0.80 * open);
+    const spread = G.lidR * (0.45 + 1.9 * open);
+    const a = 0.42 * open;
+    const N = 26;
+    for (let i = 0; i < N; i++) {
+      const u0 = i / N * 2 - 1, u1 = (i + 1) / N * 2 - 1;
+      const fall = Math.pow(Math.cos(((u0 + u1) / 2) * Math.PI / 2), 1.6);
+      const lg2 = fctx.createLinearGradient(cx, top, cx, top - rise);
+      lg2.addColorStop(0, `rgba(255,240,202,${(a * fall).toFixed(4)})`);
+      lg2.addColorStop(0.40, `rgba(255,216,146,${(a * fall * 0.40).toFixed(4)})`);
+      lg2.addColorStop(1, "rgba(255,198,112,0)");
+      fctx.fillStyle = lg2;
+      fctx.beginPath();
+      fctx.moveTo(cx + u0 * G.lidR * 0.74, top);
+      fctx.lineTo(cx + u1 * G.lidR * 0.74, top);
+      fctx.lineTo(cx + u1 * spread * 1.55, top - rise);
+      fctx.lineTo(cx + u0 * spread * 1.55, top - rise);
+      fctx.closePath(); fctx.fill();
+    }
+    /* motes turning over in the beam */
+    fctx.fillStyle = `rgba(255,244,214,${(0.5 * open).toFixed(3)})`;
+    for (let i = 0; i < 26; i++) {
+      const t = ((digT * (0.10 + (i % 5) * 0.035) + i * 0.137) % 1);
+      const yy = top - t * rise;
+      const xx = cx + Math.sin(digT * 0.6 + i * 2.3) * spread * t * 1.2;
+      const s = 1 + (1 - t) * 1.8;
+      fctx.globalAlpha = (1 - t) * open;
+      fctx.fillRect(xx, yy, s, s);
+    }
+    fctx.globalAlpha = 1;
+    fctx.restore();
+  }
+
+  /* the lid itself, swinging back on its hinges */
+  const cx = G.lidX, hy = lidTopAt(cx + G.lidR * 0.98);
+  fctx.save();
+  fctx.translate(cx + G.lidR * 0.92, hy);
+  fctx.rotate(lidLift * 1.55);
+  fctx.translate(-(cx + G.lidR * 0.92), -hy);
+  /* A chest lid is a curved plank with thickness. Drawing it as the dome
+     down to a flat chord made it a sliver the moment it swung up — edge on,
+     you have to actually see how thick it is. */
+  const TH = Math.max(7, G.lidR * 0.155);
+  const wood2 = fctx.createLinearGradient(0, G.lidY - G.lidR * 0.24, 0, G.lidY + TH * 1.4);
+  wood2.addColorStop(0, "#9a6d3d");
+  wood2.addColorStop(0.45, "#6b4a28");
+  wood2.addColorStop(1, "#3c2914");
+  fctx.fillStyle = wood2;
+  fctx.beginPath();
+  for (let k = -1; k <= 1.0001; k += 0.04) fctx.lineTo(cx + k * G.lidR, lidTopAt(cx + k * G.lidR));
+  for (let k = 1; k >= -1.0001; k -= 0.04) fctx.lineTo(cx + k * G.lidR, lidTopAt(cx + k * G.lidR) + TH);
+  fctx.closePath(); fctx.fill();
+  /* the underside is in its own shadow */
+  fctx.fillStyle = "rgba(24,14,6,0.42)";
+  fctx.beginPath();
+  for (let k = -1; k <= 1.0001; k += 0.06) fctx.lineTo(cx + k * G.lidR, lidTopAt(cx + k * G.lidR) + TH * 0.52);
+  for (let k = 1; k >= -1.0001; k -= 0.06) fctx.lineTo(cx + k * G.lidR, lidTopAt(cx + k * G.lidR) + TH);
+  fctx.closePath(); fctx.fill();
+  /* a highlight along the crown */
+  fctx.strokeStyle = "rgba(255,226,178,0.30)";
+  fctx.lineWidth = Math.max(1.2, TH * 0.16);
+  fctx.beginPath();
+  for (let k = -0.94; k <= 0.94; k += 0.05) fctx.lineTo(cx + k * G.lidR, lidTopAt(cx + k * G.lidR) + TH * 0.14);
+  fctx.stroke();
+  fctx.strokeStyle = "rgba(18,11,5,0.40)";
+  fctx.lineWidth = Math.max(1, G.lidR * 0.012);
+  for (let k = -0.8; k < 0.85; k += 0.22) {
+    const x2 = cx + k * G.lidR;
+    fctx.beginPath(); fctx.moveTo(x2, lidTopAt(x2)); fctx.lineTo(x2, lidTopAt(x2) + TH); fctx.stroke();
+  }
+  fctx.fillStyle = "#4a4038";
+  for (const k of [-0.62, 0.62]) {
+    const x2 = cx + k * G.lidR;
+    fctx.fillRect(x2 - G.lidR * 0.045, lidTopAt(x2) - 1, G.lidR * 0.09, TH + 2);
+  }
+  /* the hasp, and the pin through it */
+  const Hs = hasp(G);
+  fctx.strokeStyle = "#5d564c"; fctx.lineWidth = Math.max(2, Hs.r * 0.30);
+  fctx.beginPath();
+  fctx.arc(Hs.x, Hs.y, Hs.r * 0.62, Math.PI * 0.15, Math.PI * 0.85);
+  fctx.stroke();
+  const pg = fctx.createLinearGradient(0, Hs.y - Hs.r * 0.2, 0, Hs.y + Hs.r * 0.2);
+  pg.addColorStop(0, "#b9b2a6"); pg.addColorStop(0.5, "#7d766a"); pg.addColorStop(1, "#4a443b");
+  fctx.fillStyle = pg;
+  fctx.fillRect(Hs.x - Hs.r * 1.1 + pinOut * Hs.r * 2.6, Hs.y - Hs.r * 0.17,
+                Hs.r * 2.2, Hs.r * 0.34);
+  if (ready && pinOut < 1) {
+    const p2 = 0.5 + 0.5 * Math.sin(digT * 2.6);
+    fctx.strokeStyle = `rgba(255,226,170,${(0.20 + 0.30 * p2).toFixed(2)})`;
+    fctx.lineWidth = 2;
+    fctx.beginPath(); fctx.arc(Hs.x, Hs.y, Hs.r * (1.5 + 0.4 * p2), 0, 6.3); fctx.stroke();
+  }
+  fctx.restore();
+
+  /* it floods at the end */
+  if (lidLift >= 0.995) whiteOut = Math.min(1, whiteOut + dt * 0.42);
+  if (whiteOut > 0) {
+    fctx.fillStyle = `rgba(255,250,238,${(whiteOut * whiteOut).toFixed(3)})`;
+    fctx.fillRect(0, 0, W, H);
+  }
+}
+
+function liftHit(x, y) {
+  const G = digGeom(), Hs = hasp(G);
+  return Math.hypot(x - Hs.x, y - Hs.y) < Math.max(Hs.r * 2.2, 46 * UIS);
+}
+window.addEventListener("pointerdown", (e) => {
+  if (digPhase !== 2 || liftT < 1.2 || whiteOut > 0) return;
+  if (!liftHit(e.clientX, e.clientY)) return;
+  if (pinOut < 1) pinGrab = { x: e.clientX, p0: pinOut };
+  else liftGrab = { y: e.clientY, l0: lidLift };
+  if (e.cancelable) e.preventDefault();
+}, { passive: false });
+window.addEventListener("pointermove", (e) => {
+  if (digPhase === 2 && liftT >= 1.2 && !whiteOut)
+    finCanvas.style.cursor = liftHit(e.clientX, e.clientY) ? "grab" : "";
+  const W = window.innerWidth, H = window.innerHeight;
+  if (pinGrab) {
+    const np = Math.max(0, Math.min(1, pinGrab.p0 + (e.clientX - pinGrab.x) / (W * 0.11)));
+    if (np > pinOut) pinScrape();
+    pinOut = Math.max(pinOut, np);
+    if (pinOut >= 1) { pinGrab = null; thud(); }
+    if (e.cancelable) e.preventDefault();
+  } else if (liftGrab) {
+    const nl = Math.max(0, Math.min(1, liftGrab.l0 + (liftGrab.y - e.clientY) / (H * 0.34)));
+    if (nl > lidLift) creak(nl);
+    lidLift = Math.max(lidLift, nl);
+    if (e.cancelable) e.preventDefault();
+  }
+}, { passive: false });
+window.addEventListener("pointerup", () => { pinGrab = null; liftGrab = null; });
+
+let lastPin = 0;
+function pinScrape() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  if (t0 - lastPin < 0.08) return;
+  lastPin = t0;
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass";
+  bp.frequency.value = 3600 + Math.random() * 2200; bp.Q.value = 9;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(0.026, t0 + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.1);
+  s.connect(bp); bp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 0.12);
+}
+let lastCreak = 0;
+function creak(v) {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  if (t0 - lastCreak < 0.16) return;
+  lastCreak = t0;
+  const o = ac.createOscillator(); o.type = "sawtooth";
+  o.frequency.setValueAtTime(78 + v * 90, t0);
+  o.frequency.linearRampToValueAtTime(94 + v * 130, t0 + 0.3);
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass";
+  bp.frequency.value = 420 + v * 500; bp.Q.value = 7;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(0.030, t0 + 0.06);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.42);
+  o.connect(bp); bp.connect(g); g.connect(BUS);
+  o.start(t0); o.stop(t0 + 0.45);
 }
 
 function splatSound() {
