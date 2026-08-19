@@ -2951,6 +2951,14 @@ function startFinale() {
   fT = 0; inkY = 0; inkV = 0; splatT = -1;
   finCanvas.style.display = "block";
 
+  /* every earlier layer is spent by now. They were still full-screen
+     canvases the compositor had to blend on every single frame, for
+     nothing — that is pure GPU cost, and it is worst on phones. */
+  for (const id of ["glue", "glitter", "goo", "dot", "stage", "veil"]) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = "none";
+  }
+
   const rnd = (a, b) => a + Math.random() * (b - a);
   splatBlobs = []; splatDots = []; splatArms = [];
   for (let i = 0; i < 15; i++) {
@@ -3114,7 +3122,11 @@ function finaleFrame(dt) {
 
   /* strobe / inversion — rate capped for photosensitivity, off entirely
      when the visitor asked for reduced motion */
-  const strobe = sstep(8.0, 11.0, fT);
+  /* the strobe is a burst, not a permanent state: it ramps in, rages, then
+     eases off right as the cord drops. It used to latch on forever, which
+     also meant a full-screen GPU filter pass on every frame for the rest of
+     the visit. */
+  const strobe = sstep(8.0, 10.5, fT) * (1 - sstep(13.6, 15.4, fT));
   if (!REDUCED && strobe > 0) {
     invT += dt;
     const period = 0.62 - 0.28 * strobe;          // ~1.6Hz -> ~2.9Hz max
@@ -3237,7 +3249,7 @@ function finaleFrame(dt) {
   if (bb > 0) {
     if (AC) scheduleBeats();
     const beat = fT * (BPM / 60);
-    const s = Math.min(W, H) * 0.105 * (0.7 + 0.3 * bb);
+    const s = Math.min(W, H) * 0.125 * (0.7 + 0.3 * bb);
     const feet = H - 26;
     fctx.save();
     fctx.globalAlpha = bb;
@@ -3520,7 +3532,8 @@ function drawNight(dt) {
    go out one by one, the sea catches the light, and the name comes back,
    this time written in it. Which is where the whole thing started. */
 let dawnPhase = 0, dawnU = 0, dawnGrab = null, dawnIdle = 0;
-let nameTrace = null, seaRows = null, dawnDone = 0;
+let nameTrace = null, seaRows = null, dawnDone = 0, dawnPost = 0;
+let clouds = null, birds = [];
 
 const HORIZ = () => window.innerHeight * 0.775;
 
@@ -3528,7 +3541,8 @@ function sunGeom() {
   const W = window.innerWidth, H = window.innerHeight;
   const R = Math.max(46, Math.min(W, H) * 0.118);
   const hz = HORIZ();
-  return { x: W * 0.5, y: hz + R * 0.86 - dawnU * (R * 2.30), R, hz };
+  const drift = Math.min(0.42, dawnPost * 0.012) * R;   // it keeps rising, slowly
+  return { x: W * 0.5, y: hz + R * 0.86 - dawnU * (R * 2.30) - drift, R, hz };
 }
 
 /* the name, rebuilt from the very same balloon paths, as a polyline we can
@@ -3556,6 +3570,22 @@ function buildNameTrace() {
   if (!segs.length) return null;
   segs.sort((a, b) => a.pts[0].x - b.pts[0].x);          // left to right
   return { segs, total: segs.reduce((a, s) => a + s.len, 0), minX, maxX, minY, maxY };
+}
+
+function buildClouds() {
+  const H = window.innerHeight, W = window.innerWidth;
+  clouds = [];
+  const N = W < 620 ? 4 : 6;
+  for (let i = 0; i < N; i++) {
+    const alt = Math.pow(Math.random(), 1.7) * 0.86 + 0.06;   // 0 = horizon, 1 = zenith
+    clouds.push({
+      alt, x: Math.random() * W * 1.4 - W * 0.2,
+      w: (0.14 + Math.random() * 0.30) * W,
+      h: (0.008 + Math.random() * 0.020) * H,
+      sp: (5 + Math.random() * 13) * (Math.random() < 0.5 ? -1 : 1),
+      a: 0.20 + Math.random() * 0.42,
+    });
+  }
 }
 
 function buildSea() {
@@ -3671,6 +3701,74 @@ function drawDawn(dt) {
         fctx.fillStyle = `rgba(255,214,160,${(0.5 * (1 - t) * Math.min(1, (dawnIdle - 4) / 2)).toFixed(3)})`;
         fctx.beginPath(); fctx.arc(x, y, 1.5 + (1 - t) * 1.6, 0, 6.3); fctx.fill();
       }
+    }
+    fctx.restore();
+  }
+
+  /* ---- swell: a few slow lines of water right under the horizon ---- */
+  fctx.save();
+  fctx.globalCompositeOperation = "lighter";
+  for (let i = 0; i < 3; i++) {
+    const y = S.hz + 3 + i * 5 + Math.sin(nightT * (0.4 + i * 0.15) + i) * 1.6;
+    const a = above * (0.10 - i * 0.026);
+    if (a <= 0) continue;
+    fctx.fillStyle = `rgba(255,206,158,${a.toFixed(3)})`;
+    fctx.fillRect(0, y, W, 1);
+  }
+  fctx.restore();
+
+  /* ---- cloud bars catching the light from underneath ---- */
+  if (!clouds) buildClouds();
+  fctx.save();
+  fctx.beginPath(); fctx.rect(0, 0, W, S.hz); fctx.clip();
+  for (const c of clouds) {
+    c.x += c.sp * dt;
+    if (c.x > W + c.w) c.x = -c.w * 1.2;
+    if (c.x < -c.w * 1.4) c.x = W + c.w * 0.2;
+    const cy = S.hz - c.alt * S.hz;
+    /* the closer to the sun, the more light it takes on its underside */
+    const near = Math.max(0, 1 - Math.abs(cy - S.y) / (H * 0.42));
+    const warm = u * (0.30 + 0.70 * near);
+    const g = fctx.createRadialGradient(c.x, cy, 0, c.x, cy, c.w);
+    const lit = [196 + 59 * warm, 142 + 88 * warm, 148 + 42 * warm];
+    const A = c.a * (0.22 + 0.52 * u);
+    g.addColorStop(0, `rgba(${lit[0]|0},${lit[1]|0},${lit[2]|0},${A.toFixed(3)})`);
+    g.addColorStop(0.45, `rgba(${lit[0]|0},${lit[1]|0},${lit[2]|0},${(A * 0.62).toFixed(3)})`);
+    g.addColorStop(1, "rgba(132,112,142,0)");
+    fctx.save();
+    fctx.translate(c.x, cy);
+    fctx.scale(1, c.h / c.w);
+    fctx.fillStyle = g;
+    fctx.beginPath(); fctx.arc(0, 0, c.w, 0, 6.3); fctx.fill();
+    fctx.restore();
+  }
+  fctx.restore();
+
+  /* ---- once the sun is up, the odd bird crosses a long way off ---- */
+  if (dawnDone) {
+    dawnPost += dt;
+    if (birds.length < 5 && Math.random() < 0.14 * dt) {
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      birds.push({ x: dir > 0 ? -30 : W + 30, y: S.hz - H * (0.18 + Math.random() * 0.42),
+                   v: dir * (16 + Math.random() * 26), ph: Math.random() * 6.3,
+                   s: 3.5 + Math.random() * 4.5, a: 0.20 + Math.random() * 0.28 });
+    }
+    fctx.save();
+    fctx.strokeStyle = "rgba(46,32,30,0.85)";
+    fctx.lineCap = "round";
+    for (let i = birds.length - 1; i >= 0; i--) {
+      const b = birds[i];
+      b.x += b.v * dt;
+      b.y -= dt * 1.6;
+      if (b.x < -60 || b.x > W + 60) { birds.splice(i, 1); continue; }
+      const flap = Math.sin(nightT * 5.2 + b.ph) * 0.55;
+      fctx.globalAlpha = b.a;
+      fctx.lineWidth = Math.max(1, b.s * 0.22);
+      fctx.beginPath();
+      fctx.moveTo(b.x - b.s, b.y + flap * b.s * 0.5);
+      fctx.quadraticCurveTo(b.x - b.s * 0.35, b.y - flap * b.s * 0.4, b.x, b.y);
+      fctx.quadraticCurveTo(b.x + b.s * 0.35, b.y - flap * b.s * 0.4, b.x + b.s, b.y + flap * b.s * 0.5);
+      fctx.stroke();
     }
     fctx.restore();
   }
