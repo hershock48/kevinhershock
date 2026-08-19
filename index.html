@@ -233,6 +233,15 @@
     pointer-events: none;   /* the held key rides along; taps pass through to the chest */
     z-index: 30;
   }
+  #shovel {
+    position: fixed;
+    z-index: 30;
+    display: none;
+    pointer-events: none;
+    transform: translate(-24%, -76%) rotate(0deg);
+    transition: transform 0.12s ease;
+  }
+  #shovel.dig { transform: translate(-24%, -70%) rotate(16deg); }
   #broom {
     position: fixed;
     z-index: 30;
@@ -294,12 +303,14 @@
   #note {
     position: fixed;
     left: 50%; top: 46%;
+    /* the paper takes clicks so the X on it can be found */
     transform: translate(-50%, -50%);
     z-index: 30;
     display: none;
     pointer-events: none;
     width: min(560px, 84vw);
   }
+  #note.on .paper { pointer-events: auto; cursor: crosshair; }
   #note .paper {
     position: relative;
     background: linear-gradient(168deg, #fdf6e4 0%, #f4e8cd 55%, #e8d8b4 100%);
@@ -318,45 +329,7 @@
     box-shadow: 0 5px 12px rgba(60,36,14,0.35);
   }
   #note.on .paper { transform: scaleY(1) rotate(-0.5deg); }
-  #note .inner {
-    opacity: 0;
-    transition: opacity 0.7s ease 0.65s;
-    text-align: center;
-    color: #3a2a16;
-    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-  }
-  #note.on .inner { opacity: 1; }
-  #note h1 {
-    margin: 0 0 6px;
-    font-size: clamp(20px, 4.6vw, 32px);
-    letter-spacing: 0.16em;
-    font-weight: 600;
-  }
-  #note .title {
-    margin: 0 0 20px;
-    font-size: clamp(11px, 2.5vw, 13px);
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
-    color: #8a6f45;
-  }
-  #note .body {
-    margin: 0 0 22px;
-    font-size: clamp(14px, 3.2vw, 17px);
-    line-height: 1.62;
-    color: #52401f;
-  }
-  #note .links { margin: 0; }
-  #note .links a {
-    pointer-events: auto;
-    display: inline-block;
-    margin: 0 10px;
-    font-size: clamp(13px, 3vw, 15px);
-    color: #6b4a1c;
-    text-decoration: none;
-    border-bottom: 1px solid rgba(107,74,28,0.4);
-    padding-bottom: 2px;
-  }
-  #note .links a:hover { color: #241804; border-bottom-color: #241804; }
+  #note canvas { display: block; width: 100%; height: auto; }
   #dot::before {
     content: "";
     position: absolute;
@@ -422,6 +395,15 @@
     <rect x="64" y="48" width="22" height="24" rx="4" fill="#e2b84f" stroke="#8a6a1e" stroke-width="2"/>
     <circle cx="75" cy="57" r="3.4" fill="#3a2413"/>
     <rect x="73.4" y="57" width="3.2" height="8" fill="#3a2413"/>
+  </svg>
+</div>
+<div id="shovel">
+  <svg width="78" height="78" viewBox="0 0 32 32">
+    <line x1="27" y1="3" x2="14" y2="18" stroke="#8a5a2b" stroke-width="3.4" stroke-linecap="round"/>
+    <rect x="24.5" y="1" width="6" height="3.4" rx="1.7" transform="rotate(-49 27 3)" fill="#6f4520"/>
+    <path d="M14.5 16.5 L20 22 L14 29 Q10 30.5 6.5 27.5 L11 20 Z" fill="#c7ccd2"/>
+    <path d="M14.5 16.5 L11 20 L6.5 27.5 Q9 29.4 11.5 28.6 L17 21 Z" fill="#e9edf1"/>
+    <path d="M6.5 27.5 Q10 30.5 14 29" stroke="#9aa2ab" stroke-width="1.2" fill="none"/>
   </svg>
 </div>
 <div id="broom">
@@ -3623,6 +3605,8 @@ let lastSeg = -1;
 function drawNight(dt) {
   const W = window.innerWidth, H = window.innerHeight;
   nightT += dt;
+  if (digPhase) { drawDig(dt); return; }   /* the chart said here */
+  if (chartT >= 0) drawChart(dt);
   if (dawnPhase) dawnIdle += dt;
   hardClear(finCanvas, fctx);
   fctx.fillStyle = dawnPhase ? skyGradient(dawnU) : "#05060a";
@@ -4101,16 +4085,9 @@ function sunUp() {
    riding the swell, small at the horizon and closer every wave. Pull the
    cork — the same pull the chest taught you — and the note unrolls. */
 
-/* ---- the note. This is the payload; edit this and nothing else. ---- */
-const NOTE = {
-  name: "KEVIN HERSHOCK",
-  title: "President, PEN15 Club",
-  body: "You actually got to the end.\nThat took some doing.",
-  links: [
-    { label: "kevin@beanumber.org", href: "mailto:kevin@beanumber.org" },
-  ],
-};
-
+/* What is in the bottle is not a sign-off. It is a chart, and it is blank
+   until the sun gets at it — old citrus ink only shows once it is warmed.
+   The X on it is where this goes next. */
 let botT = -1, botPull = 0, botGrab = null, botOpen = 0, botLand = 0, corkFloat = 0;
 const botEl = () => document.getElementById("note");
 
@@ -4323,7 +4300,9 @@ function openNote() {
   requestAnimationFrame(() => requestAnimationFrame(() => {
     el.classList.add("on");
     if (sc) sc.classList.add("on");
+    buildChart();
   }));
+  el.addEventListener("pointerdown", chartClick);
   const ac = audio();
   if (ac) {                       /* paper coming unrolled */
     const t0 = ac.currentTime + 0.18;
@@ -4344,20 +4323,643 @@ function openNote() {
 function buildNote() {
   const el = document.createElement("div");
   el.id = "note";
-  const links = NOTE.links.map(l =>
-    `<a href="${l.href}">${l.label}</a>`).join("");
-  el.innerHTML =
-    `<div class="paper">
-       <div class="inner">
-         <h1>${NOTE.name}</h1>
-         <p class="title">${NOTE.title}</p>
-         <p class="body">${NOTE.body.replace(/\n/g, "<br>")}</p>
-         <p class="links">${links}</p>
-       </div>
-     </div>`;
+  el.innerHTML = '<div class="paper"><canvas id="chart"></canvas></div>';
   document.body.appendChild(el);
 }
 buildNote();
+
+/* ---- the chart, developing ----
+   Citrus ink is invisible until it is heated, and then it browns before it
+   darkens. So the paper comes out blank and a warm front sweeps across it,
+   scorching the lines up out of nothing as it goes. */
+let chartC = null, chartX = null, chartT = -1, chartGeo = null, chartDone = 0;
+
+function buildChart() {
+  const c = document.getElementById("chart");
+  if (!c) return;
+  const el = botEl();
+  const W = Math.round(el.getBoundingClientRect().width) || 480;
+  const H = Math.round(W * 0.62);
+  c.width = W * 2; c.height = H * 2;
+  c.style.height = H + "px";
+  chartC = c; chartX = c.getContext("2d");
+  chartX.setTransform(2, 0, 0, 2, 0, 0);
+
+  /* a coastline that is recognisably the one outside the window: a long
+     shore with a bay bitten out of it, and the X inland of the point */
+  const shore = [];
+  const N = 40;
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    const y = H * (0.30 + 0.30 * Math.sin(t * 4.1 + 0.7)
+                        + 0.09 * Math.sin(t * 9.3 + 2.2)
+                        + 0.04 * Math.sin(t * 17.0));
+    shore.push({ x: W * (0.06 + t * 0.88), y });
+  }
+  const px = W * 0.66, py = H * 0.70;
+  /* the dotted walk from where you land to where you dig */
+  const path = [];
+  const from = { x: W * 0.17, y: H * 0.80 };
+  for (let i = 0; i <= 26; i++) {
+    const t = i / 26;
+    path.push({
+      x: from.x + (px - from.x) * t + Math.sin(t * 5.6) * W * 0.045,
+      y: from.y + (py - from.y) * t + Math.cos(t * 4.2) * H * 0.05,
+    });
+  }
+  chartGeo = { W, H, shore, path, X: { x: px, y: py }, rose: { x: W * 0.855, y: H * 0.845 } };
+  chartT = 0;
+  chartDone = 0;
+}
+
+/* everything is drawn behind a sweeping front, so it browns into being */
+function developed(g, x, y) {
+  const d = Math.hypot(x - g.W * 0.42, (y - g.H * 0.42) * 1.15);
+  const max = Math.hypot(g.W * 0.68, g.H * 0.72);
+  return (chartT * 0.34) * max - d;      /* >0 developed, near 0 = the scorch */
+}
+
+function drawChart(dt) {
+  if (!chartX || chartT < 0) return;
+  const g = chartGeo, x = chartX;
+  chartT += dt;
+  if (chartT > 4.6) chartDone = 1;
+  x.clearRect(0, 0, g.W, g.H);
+
+  const seg = (a, b, col, w) => {
+    const dA = developed(g, a.x, a.y);
+    if (dA <= 0) return;
+    const heat = Math.max(0, 1 - dA / 26);            /* the scorch edge */
+    x.strokeStyle = heat > 0.02
+      ? `rgba(${164 + 60 * heat | 0},${96 - 20 * heat | 0},${40 - 22 * heat | 0},${(0.55 + 0.45 * (1 - heat)).toFixed(2)})`
+      : col;
+    x.lineWidth = w * (1 + heat * 0.5);
+    x.beginPath(); x.moveTo(a.x, a.y); x.lineTo(b.x, b.y); x.stroke();
+  };
+
+  x.lineCap = "round"; x.lineJoin = "round";
+  const INK = "rgba(112,64,26,0.86)", FAINT = "rgba(126,84,44,0.42)";
+
+  /* the sea side, hatched the way old charts are */
+  for (let i = 0; i < g.shore.length - 1; i++) {
+    const a = g.shore[i], b = g.shore[i + 1];
+    seg(a, b, INK, 1.6);
+    if (i % 2 === 0) {
+      const nx = -(b.y - a.y), ny = b.x - a.x;
+      const nl = Math.hypot(nx, ny) || 1;
+      const L = 7 + 4 * Math.sin(i * 1.3);
+      seg(a, { x: a.x - nx / nl * L, y: a.y - ny / nl * L }, FAINT, 0.9);
+    }
+  }
+
+  /* the walk, dotted */
+  for (let i = 0; i < g.path.length - 1; i += 2) {
+    seg(g.path[i], g.path[i + 1], FAINT, 1.5);
+  }
+
+  /* the compass rose */
+  const R = g.rose, rr = g.W * 0.055;
+  for (let k = 0; k < 8; k++) {
+    const a = k * Math.PI / 4, l = k % 2 ? rr * 0.5 : rr;
+    seg(R, { x: R.x + Math.cos(a) * l, y: R.y + Math.sin(a) * l }, INK, k % 2 ? 0.9 : 1.5);
+  }
+  if (developed(g, R.x, R.y - rr) > 0) {
+    x.fillStyle = INK;
+    x.beginPath();
+    x.moveTo(R.x, R.y - rr * 1.42);
+    x.lineTo(R.x - rr * 0.16, R.y - rr * 1.05);
+    x.lineTo(R.x + rr * 0.16, R.y - rr * 1.05);
+    x.closePath(); x.fill();
+  }
+
+  /* the X — the last thing to come up, and then it will not sit still */
+  const XG = g.X, xr = g.W * 0.032;
+  const xd = developed(g, XG.x, XG.y);
+  if (xd > 0) {
+    const puls = chartDone ? 0.72 + 0.28 * Math.sin(nightT * 3.4) : 1;
+    x.strokeStyle = `rgba(166,32,26,${(0.90 * puls).toFixed(2)})`;
+    x.lineWidth = 3.4;
+    x.beginPath();
+    x.moveTo(XG.x - xr, XG.y - xr); x.lineTo(XG.x + xr, XG.y + xr);
+    x.moveTo(XG.x + xr, XG.y - xr); x.lineTo(XG.x - xr, XG.y + xr);
+    x.stroke();
+    if (chartDone) {
+      x.strokeStyle = `rgba(166,32,26,${(0.30 * (1 - puls)).toFixed(2)})`;
+      x.lineWidth = 1.4;
+      x.beginPath();
+      x.arc(XG.x, XG.y, xr * (2.0 + 1.4 * (1 - puls)), 0, 6.3);
+      x.stroke();
+    }
+  }
+}
+
+/* clicking the X is what starts the dig */
+function chartClick(e) {
+  if (!chartDone || !chartC || digPhase) return;
+  const r = chartC.getBoundingClientRect();
+  const g = chartGeo;
+  const px = (e.clientX - r.left) / r.width * g.W;
+  const py = (e.clientY - r.top) / r.height * g.H;
+  if (Math.hypot(px - g.X.x, py - g.X.y) > g.W * 0.09) return;
+  e.stopPropagation();
+  startDig();
+}
+
+/* ================= the dig =================
+   The X said here. So: a shovel, and sand that behaves like sand — what
+   you scoop out of the pit has to go somewhere, so it piles on the lip,
+   and the pile slumps whenever it gets steeper than sand can stand. Dig
+   far enough and the blade stops on something that is not sand. */
+
+let digPhase = 0, sandH = null, sandBase = null, digN = 0, digCol = 0;
+let grains = [], digT = 0, lidSeen = 0, digging = null, lastScrape = 0, lidClear = 0;
+/* Dry sand will not stand steeper than about thirty degrees, which is why
+   you cannot dig a narrow deep hole at the top of a beach. Go down far
+   enough and it is damp, and damp sand will stand almost vertically — so
+   the pit starts out shallow and bowl-shaped and gets steeper the deeper
+   it goes, exactly the way a real one does. */
+const REPOSE_DRY = 0.55, REPOSE_WET = 1.45;
+function reposeAt(i) {
+  const d = Math.max(sandH[i] - sandBase[i], sandH[i + 1] - sandBase[i + 1]);
+  return REPOSE_DRY + (REPOSE_WET - REPOSE_DRY) * Math.min(1, Math.max(0, d) / 70);
+}
+
+function digGeom() {
+  const W = window.innerWidth, H = window.innerHeight;
+  const top = H * 0.42;                                  /* where sand starts */
+  return {
+    W, H, top,
+    water: top + (H - top) * 0.62,
+    lidX: W * 0.5,
+    lidY: top + (H - top) * 0.20,
+    lidR: Math.min(W * 0.105, (H - top) * 0.30),
+  };
+}
+
+let sandTile = null, sandPat = null;
+function buildSandTile() {
+  const S = 128, c = document.createElement("canvas");
+  c.width = c.height = S;
+  const g = c.getContext("2d");
+  for (let i = 0; i < 5200; i++) {
+    const v = Math.random();
+    g.fillStyle = v > 0.5 ? `rgba(255,246,222,${(0.05 + v * 0.16).toFixed(3)})`
+                          : `rgba(96,72,42,${(0.04 + (0.5 - v) * 0.18).toFixed(3)})`;
+    g.fillRect(Math.random() * S, Math.random() * S, 1, 1);
+  }
+  sandTile = c;
+  sandPat = null;
+}
+
+function buildSand() {
+  const G = digGeom();
+  digCol = Math.max(3, Math.round(4 * UIS));
+  digN = Math.ceil(G.W / digCol) + 1;
+  sandBase = new Float32Array(digN);
+  sandH = new Float32Array(digN);
+  for (let i = 0; i < digN; i++) {
+    const t = i / (digN - 1);
+    /* a beach, not a table: a slope off the water with dune noise on it */
+    const y = G.top + (G.H - G.top) * 0.02
+            + Math.sin(t * 7.2) * 5 + Math.sin(t * 3.1 + 1.4) * 9
+            + Math.sin(t * 19.0 + 0.3) * 2;
+    sandBase[i] = y; sandH[i] = y;
+  }
+  grains = [];
+}
+
+/* the top of the buried lid at a given x, or Infinity where there is none */
+function lidTopAt(x) {
+  const G = digGeom();
+  const dx = (x - G.lidX) / G.lidR;
+  if (Math.abs(dx) >= 1) return Infinity;
+  return G.lidY - Math.cos(dx * Math.PI * 0.5) * G.lidR * 0.16 + G.lidR * 0.16;
+}
+
+function startDig() {
+  if (digPhase) return;
+  digPhase = 1; digT = 0; lidSeen = 0; lidClear = 0;
+  buildSand();
+  const el = botEl(), sc = document.getElementById("scrim");
+  if (el) { el.classList.remove("on"); setTimeout(() => { el.style.display = "none"; }, 900); }
+  if (sc) { sc.classList.remove("on"); setTimeout(() => { sc.style.display = "none"; }, 900); }
+  botT = -1;                                   /* the beach we are on now */
+  const sh = document.getElementById("shovel");
+  if (sh && !("ontouchstart" in window)) finCanvas.style.cursor = "none";
+  if (sh) sh.style.display = "block";
+  digWhoosh();
+}
+
+/* --- scooping --- */
+function digAt(x, y, dx, dt) {
+  const G = digGeom();
+  const R = Math.max(30, 48 * UIS);
+  const i0 = Math.max(0, Math.floor((x - R) / digCol));
+  const i1 = Math.min(digN - 1, Math.ceil((x + R) / digCol));
+  let moved = 0, clank = 0;
+  for (let i = i0; i <= i1; i++) {
+    const cx = i * digCol;
+    const f = 1 - Math.abs(cx - x) / R;
+    if (f <= 0) continue;
+    if (y < sandH[i] - R * 1.35) continue;             /* blade is in the air */
+    const want = 1150 * f * dt;
+    const floor = lidTopAt(cx);
+    const room = floor - sandH[i];
+    if (room <= 0.4) { clank += f; continue; }         /* that is not sand */
+    const take = Math.min(want, room);
+    sandH[i] += take; moved += take;
+    if (take < want) clank += f * 0.5;
+  }
+  if (moved > 0) {
+    /* it has to go somewhere: onto the lip, on the side you are pulling to */
+    /* It goes on the rim, not in front of the blade. Depositing at a fixed
+       offset from the shovel turns the beach into a conveyor: you dig the
+       spoil straight back up on the next stroke and bulldoze the whole pile
+       downwind. So walk out to where the sand is still undisturbed on each
+       side, and throw it there. */
+    const c = Math.max(0, Math.min(digN - 1, Math.round(x / digCol)));
+    let li = c, ri = c;
+    while (li > 0 && sandH[li] > sandBase[li] + 2) li--;
+    while (ri < digN - 1 && sandH[ri] > sandBase[ri] + 2) ri++;
+    const span = Math.max(2, Math.round(R / digCol));
+    let wsum = 0;
+    for (let k = -span; k <= span; k++) wsum += Math.max(0, 1 - Math.abs(k) / span);
+    const G2 = digGeom();
+    const ceil = G2.top - (G2.H - G2.top) * 0.16;      /* piles are not mountains */
+    const side = dx >= 0 ? 1 : -1;
+    for (const [j0, share] of [[li, side < 0 ? 0.6 : 0.4], [ri, side > 0 ? 0.6 : 0.4]]) {
+      for (let k = -span; k <= span; k++) {
+        const j = j0 + k;
+        if (j < 0 || j >= digN) continue;
+        const add = moved * share * Math.max(0, 1 - Math.abs(k) / span) / (wsum || 1);
+        sandH[j] = Math.max(ceil, sandH[j] - add);
+      }
+    }
+    if (grains.length < 260) {
+      for (let n = 0; n < 3; n++)
+        grains.push({ x: x + (Math.random() - 0.5) * R, y: y - Math.random() * 8,
+                      vx: side * (90 + Math.random() * 210) + dx * 0.4,
+                      vy: -120 - Math.random() * 190, life: 1,
+                      s: 0.9 + Math.random() * 1.8 });
+    }
+    scrape(Math.min(1, moved / 10));
+  }
+  if (clank > 0.35) thud();
+}
+
+/* sand will not stand steeper than it will stand */
+function slump(passes) {
+  for (let p = 0; p < passes; p++) {
+    for (let i = 0; i < digN - 1; i++) {
+      const d = sandH[i + 1] - sandH[i], lim = reposeAt(i) * digCol;
+      if (d > lim) { const m = (d - lim) * 0.5; sandH[i] += m; sandH[i + 1] -= m; }
+      else if (d < -lim) { const m = (-d - lim) * 0.5; sandH[i] -= m; sandH[i + 1] += m; }
+    }
+    for (let i = digN - 2; i >= 0; i--) {
+      const d = sandH[i + 1] - sandH[i], lim = reposeAt(i) * digCol;
+      if (d > lim) { const m = (d - lim) * 0.5; sandH[i] += m; sandH[i + 1] -= m; }
+      else if (d < -lim) { const m = (-d - lim) * 0.5; sandH[i] -= m; sandH[i + 1] += m; }
+    }
+    /* nothing gets pushed through the lid */
+    for (let i = 0; i < digN; i++) {
+      const f = lidTopAt(i * digCol);
+      if (sandH[i] > f) sandH[i] = f;
+    }
+  }
+}
+
+function drawDig(dt) {
+  const G = digGeom();
+  if (!sandH || sandH.length !== digN) buildSand();
+  digT += dt;
+  if (digPhase === 2) {
+    /* found — the rest of it comes off on its own, and the walls stop
+       creeping back in over what you just uncovered */
+    lidClear = Math.min(1, lidClear + dt * 0.55);
+    const k = Math.min(1, dt * 2.6);
+    for (let i = 0; i < digN; i++) {
+      const cx2 = i * digCol;
+      const f = lidTopAt(cx2);
+      if (f === Infinity) continue;
+      if (Math.abs(cx2 - digGeom().lidX) > digGeom().lidR * 0.98) continue;
+      if (sandH[i] < f) sandH[i] += (f - sandH[i]) * k;
+    }
+  } else slump(2);
+  hardClear(finCanvas, fctx);
+  const W = G.W, H = G.H;
+
+  /* ---- the morning, an hour on from the sunrise ---- */
+  const sky = fctx.createLinearGradient(0, 0, 0, G.top);
+  sky.addColorStop(0, "#7fa8d6");
+  sky.addColorStop(0.55, "#bcd2e6");
+  sky.addColorStop(1, "#f0dcc0");
+  fctx.fillStyle = sky; fctx.fillRect(0, 0, W, H);
+
+  /* the sea, running in behind us. It is drawn well past the sand line so
+     a dune or a spoil heap never opens a gap onto the background. */
+  const seaTop = G.top - H * 0.14, seaBot = G.top + H * 0.10;
+  const sg = fctx.createLinearGradient(0, seaTop, 0, seaBot);
+  sg.addColorStop(0, "#3f6f92");
+  sg.addColorStop(0.7, "#96b6c0");
+  sg.addColorStop(1, "#bcd2cf");
+  fctx.fillStyle = sg; fctx.fillRect(0, seaTop, W, seaBot - seaTop);
+  for (let i = 0; i < 7; i++) {
+    const y = seaTop + (i + 0.5) * (G.top - seaTop) / 7;
+    const ph = Math.sin(digT * (0.55 + i * 0.17) + i * 2.1);
+    const x0 = W * (0.5 + 0.42 * Math.sin(digT * 0.22 + i * 1.3)) - W * 0.55;
+    const wid = W * (0.5 + 0.35 * Math.abs(Math.sin(i * 2.3)));
+    const lg = fctx.createLinearGradient(x0, 0, x0 + wid, 0);
+    const a = (0.10 + 0.06 * i).toFixed(2);
+    lg.addColorStop(0, "rgba(255,255,255,0)");
+    lg.addColorStop(0.5, `rgba(255,255,255,${a})`);
+    lg.addColorStop(1, "rgba(255,255,255,0)");
+    fctx.fillStyle = lg;
+    fctx.fillRect(x0, y + ph * 2.2, wid, 1.2 + i * 0.25);
+  }
+  /* the last of the swash sliding up the sand and soaking in */
+  const swash = 0.5 + 0.5 * Math.sin(digT * 0.55);
+  fctx.fillStyle = `rgba(214,232,236,${(0.26 + 0.16 * swash).toFixed(2)})`;
+  fctx.fillRect(0, G.top - 6, W, 10 + swash * 12);
+
+  /* ---- the sand ---- */
+  const surf = () => {
+    fctx.beginPath();
+    fctx.moveTo(-2, sandH[0]);
+    for (let i = 1; i < digN; i++) fctx.lineTo(i * digCol, sandH[i]);
+    fctx.lineTo(W + 2, sandH[digN - 1]);
+    fctx.lineTo(W + 2, H + 2); fctx.lineTo(-2, H + 2);
+    fctx.closePath();
+  };
+  const dry = fctx.createLinearGradient(0, G.top, 0, H);
+  dry.addColorStop(0, "#e8d3a8");
+  dry.addColorStop(0.35, "#dcc194");
+  dry.addColorStop(1, "#c2a274");
+  surf(); fctx.fillStyle = dry; fctx.fill();
+
+  /* the inside of the pit: everything between where the sand was and where
+     it is now, darkening as it goes down because it is wetter down there */
+  fctx.save();
+  fctx.beginPath();
+  fctx.moveTo(-2, sandBase[0]);
+  for (let i = 1; i < digN; i++) fctx.lineTo(i * digCol, sandBase[i]);
+  fctx.lineTo(W + 2, sandBase[digN - 1]);
+  for (let i = digN - 1; i >= 0; i--) fctx.lineTo(i * digCol, sandH[i]);
+  fctx.closePath();
+  const wet = fctx.createLinearGradient(0, G.top, 0, H);
+  wet.addColorStop(0, "#a98a5e");
+  wet.addColorStop(0.4, "#79603c");
+  wet.addColorStop(1, "#463522");
+  fctx.fillStyle = wet; fctx.fill();
+  fctx.restore();
+
+  /* ---- what the blade found ---- */
+  let exposed = 0, total = 0;
+  for (let i = 0; i < digN; i++) {
+    const cx2 = i * digCol;
+    if (Math.abs(cx2 - G.lidX) > G.lidR * 0.60) continue;
+    total++;
+    if (sandH[i] >= lidTopAt(cx2) - 1.4) exposed++;
+  }
+  lidSeen = total ? exposed / total : 0;
+  if (lidSeen > 0.42 && digPhase === 1) {
+    digPhase = 2; foundIt();
+    const sh = document.getElementById("shovel");
+    if (sh) { sh.style.transition = "opacity 0.8s ease"; sh.style.opacity = "0";
+              setTimeout(() => { sh.style.display = "none"; }, 900); }
+    finCanvas.style.cursor = "";
+  }
+
+  /* it is only visible where the sand has actually come off it, so clip to
+     the runs of columns that have been dug down to the wood */
+  fctx.save();
+  fctx.beginPath();
+  let run = -1;
+  for (let i = 0; i < digN; i++) {
+    const cx2 = i * digCol;
+    const f = lidTopAt(cx2);
+    const up = f !== Infinity && sandH[i] >= f - 1.4;
+    if (up && run < 0) run = cx2;
+    if (!up && run >= 0) { fctx.rect(run - 1, 0, cx2 - run + 2, H); run = -1; }
+  }
+  if (run >= 0) fctx.rect(run - 1, 0, W - run + 2, H);
+  fctx.clip();
+  const wood = fctx.createLinearGradient(0, G.lidY - G.lidR * 0.20, 0, G.lidY + G.lidR * 0.6);
+  wood.addColorStop(0, "#7a5530");
+  wood.addColorStop(0.45, "#54391f");
+  wood.addColorStop(1, "#2d1e10");
+  fctx.fillStyle = wood;
+  fctx.beginPath();
+  fctx.moveTo(G.lidX - G.lidR, G.lidY + G.lidR * 0.46);
+  for (let k = -1; k <= 1.0001; k += 0.04) {
+    fctx.lineTo(G.lidX + k * G.lidR, lidTopAt(G.lidX + k * G.lidR));
+  }
+  fctx.lineTo(G.lidX + G.lidR, G.lidY + G.lidR * 0.46);
+  fctx.closePath(); fctx.fill();
+  /* planks, and the iron that holds them */
+  fctx.strokeStyle = "rgba(18,11,5,0.42)";
+  fctx.lineWidth = Math.max(1, G.lidR * 0.014);
+  for (let k = -0.8; k < 0.85; k += 0.22) {
+    const x2 = G.lidX + k * G.lidR;
+    fctx.beginPath();
+    fctx.moveTo(x2, lidTopAt(x2)); fctx.lineTo(x2, G.lidY + G.lidR * 0.46);
+    fctx.stroke();
+  }
+  fctx.fillStyle = "#403830";
+  for (const k of [-0.62, 0.62]) {
+    const x2 = G.lidX + k * G.lidR;
+    fctx.fillRect(x2 - G.lidR * 0.04, lidTopAt(x2) - 1, G.lidR * 0.08, G.lidR * 0.46);
+  }
+  /* morning coming down into the hole and catching the top of it */
+  const sun2 = fctx.createLinearGradient(0, G.lidY - G.lidR * 0.20, 0, G.lidY + G.lidR * 0.22);
+  sun2.addColorStop(0, "rgba(255,224,170,0.34)");
+  sun2.addColorStop(1, "rgba(255,214,150,0)");
+  fctx.fillStyle = sun2;
+  fctx.beginPath();
+  fctx.moveTo(G.lidX - G.lidR, G.lidY + G.lidR * 0.46);
+  for (let k = -1; k <= 1.0001; k += 0.06) fctx.lineTo(G.lidX + k * G.lidR, lidTopAt(G.lidX + k * G.lidR));
+  fctx.lineTo(G.lidX + G.lidR, G.lidY + G.lidR * 0.46);
+  fctx.closePath(); fctx.fill();
+
+  /* damp sand still lying in the seams */
+  fctx.fillStyle = "rgba(150,124,86,0.28)";
+  for (let k = -0.9; k < 0.95; k += 0.11) {
+    const x2 = G.lidX + k * G.lidR;
+    fctx.fillRect(x2 - G.lidR * 0.05, lidTopAt(x2) - 1, G.lidR * 0.10, 2.5 + Math.sin(k * 9) * 1.4);
+  }
+  /* it goes down into sand again — a dark seam so it does not read as a
+     hole cut through the world */
+  const bg2 = fctx.createLinearGradient(0, G.lidY + G.lidR * 0.30, 0, G.lidY + G.lidR * 0.62);
+  bg2.addColorStop(0, "rgba(30,20,10,0)");
+  bg2.addColorStop(0.55, "rgba(28,19,10,0.85)");
+  bg2.addColorStop(1, "rgba(70,54,34,0)");
+  fctx.fillStyle = bg2;
+  fctx.fillRect(G.lidX - G.lidR, G.lidY + G.lidR * 0.30, G.lidR * 2, G.lidR * 0.34);
+  fctx.restore();
+
+  /* grain — a beach is not a flat fill, and at this size the eye wants tooth */
+  if (!sandTile) buildSandTile();
+  if (!sandPat) sandPat = fctx.createPattern(sandTile, "repeat");
+  fctx.save();
+  fctx.beginPath();
+  fctx.moveTo(-2, Math.min(sandBase[0], sandH[0]));
+  for (let i = 1; i < digN; i++) fctx.lineTo(i * digCol, Math.min(sandBase[i], sandH[i]));
+  fctx.lineTo(W + 2, Math.min(sandBase[digN - 1], sandH[digN - 1]));
+  fctx.lineTo(W + 2, H + 2); fctx.lineTo(-2, H + 2);
+  fctx.closePath();
+  fctx.clip();
+  fctx.globalAlpha = 0.55;
+  fctx.fillStyle = sandPat;
+  fctx.fillRect(0, G.top - 40, W, H - G.top + 40);
+  fctx.globalAlpha = 1;
+  /* wind ripples, but only where the sand has not been turned over */
+  fctx.strokeStyle = "rgba(160,132,88,0.22)";
+  fctx.lineWidth = 1;
+  for (let r = 0; r < 9; r++) {
+    const off = 12 + r * (H - G.top) * 0.105;
+    fctx.beginPath();
+    let pen = false;
+    for (let i = 0; i < digN; i += 2) {
+      const cx2 = i * digCol;
+      if (sandH[i] > sandBase[i] + 3) { pen = false; continue; }
+      const y = sandH[i] + off + Math.sin(cx2 * 0.035 + r * 1.7) * (2 + r * 0.5);
+      if (!pen) { fctx.moveTo(cx2, y); pen = true; } else fctx.lineTo(cx2, y);
+    }
+    fctx.stroke();
+  }
+  fctx.restore();
+
+  /* a rim of shadow where the pit wall meets the light */
+  fctx.strokeStyle = "rgba(70,48,24,0.30)";
+  fctx.lineWidth = 2;
+  fctx.beginPath();
+  for (let i = 0; i < digN; i++) {
+    if (sandH[i] <= sandBase[i] + 0.5) { fctx.moveTo(i * digCol, sandH[i]); continue; }
+    fctx.lineTo(i * digCol, sandBase[i]);
+  }
+  fctx.stroke();
+
+  /* the surface itself, catching the low sun */
+  fctx.strokeStyle = "rgba(255,246,222,0.55)";
+  fctx.lineWidth = 1.6;
+  fctx.beginPath();
+  fctx.moveTo(-2, sandH[0] - 1);
+  for (let i = 1; i < digN; i++) fctx.lineTo(i * digCol, sandH[i] - 1);
+  fctx.stroke();
+
+  /* ---- grains in the air ---- */
+  fctx.fillStyle = "#d9bd8c";
+  for (let i = grains.length - 1; i >= 0; i--) {
+    const g2 = grains[i];
+    g2.vy += 1500 * dt;
+    g2.x += g2.vx * dt; g2.y += g2.vy * dt;
+    g2.life -= dt * 0.9;
+    const col = Math.max(0, Math.min(digN - 1, Math.round(g2.x / digCol)));
+    if (g2.life <= 0 || g2.y > sandH[col]) {
+      if (g2.y > sandH[col] && g2.y < H) sandH[col] -= 0.35;   /* it lands somewhere */
+      grains.splice(i, 1); continue;
+    }
+    fctx.globalAlpha = Math.min(1, g2.life * 1.4);
+    fctx.fillRect(g2.x, g2.y, g2.s, g2.s);
+  }
+  fctx.globalAlpha = 1;
+}
+
+/* --- the shovel --- */
+function digPointer(e) {
+  if (digPhase !== 1) return;
+  const sh = document.getElementById("shovel");
+  if (sh) { sh.style.left = e.clientX + "px"; sh.style.top = e.clientY + "px"; }
+  if (!digging) return;
+  const dx = e.clientX - digging.x;
+  digAt(e.clientX, e.clientY, dx, Math.min(0.05, Math.max(0.008, (performance.now() - digging.t) / 1000)));
+  digging = { x: e.clientX, y: e.clientY, t: performance.now() };
+  if (e.cancelable) e.preventDefault();
+}
+window.addEventListener("pointerdown", (e) => {
+  if (digPhase !== 1) return;
+  digging = { x: e.clientX, y: e.clientY, t: performance.now() };
+  const sh = document.getElementById("shovel");
+  if (sh) sh.classList.add("dig");
+  if (e.cancelable) e.preventDefault();
+}, { passive: false });
+window.addEventListener("pointermove", digPointer, { passive: false });
+window.addEventListener("pointerup", () => {
+  digging = null;
+  const sh = document.getElementById("shovel");
+  if (sh) sh.classList.remove("dig");
+});
+
+/* --- sound --- */
+function scrape(v) {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  if (t0 - lastScrape < 0.055) return;
+  lastScrape = t0;
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  s.playbackRate.value = 0.7 + Math.random() * 0.6;
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass";
+  bp.frequency.value = 2400 + Math.random() * 2600; bp.Q.value = 0.9;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(0.035 * (0.4 + v), t0 + 0.015);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.14);
+  s.connect(bp); bp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 0.16);
+}
+
+let lastThud = 0;
+function thud() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  if (t0 - lastThud < 0.16) return;
+  lastThud = t0;
+  const o = ac.createOscillator(); o.type = "sine";
+  o.frequency.setValueAtTime(190, t0);
+  o.frequency.exponentialRampToValueAtTime(74, t0 + 0.14);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.14, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
+  o.connect(g); g.connect(BUS);
+  o.start(t0); o.stop(t0 + 0.24);
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const hp = ac.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 1800;
+  const g2 = ac.createGain();
+  g2.gain.setValueAtTime(0.05, t0);
+  g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.09);
+  s.connect(hp); hp.connect(g2); g2.connect(BUS);
+  s.start(t0); s.stop(t0 + 0.1);
+}
+
+function digWhoosh() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass";
+  bp.frequency.setValueAtTime(300, t0);
+  bp.frequency.exponentialRampToValueAtTime(2400, t0 + 0.5);
+  bp.Q.value = 0.7;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(0.10, t0 + 0.22);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9);
+  s.connect(bp); bp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 1.0);
+}
+
+function foundIt() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  [196, 261.6, 329.6].forEach((f, i) => {
+    const o = ac.createOscillator(); o.type = "triangle";
+    o.frequency.value = f;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t0 + i * 0.13);
+    g.gain.exponentialRampToValueAtTime(0.05, t0 + i * 0.13 + 0.2);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.6);
+    o.connect(g); g.connect(BUS);
+    o.start(t0 + i * 0.13); o.stop(t0 + 3.8);
+  });
+}
 
 function splatSound() {
   const ac = audio(); if (!ac) return;
