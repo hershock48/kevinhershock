@@ -281,6 +281,15 @@
     0%, 100% { transform: translateY(0); }
     50% { transform: translateY(-9px); }
   }
+  #pool {
+    position: fixed;
+    inset: 0;
+    z-index: 8;
+    display: none;
+    opacity: 0;
+    transition: opacity 0.9s ease;
+    touch-action: none;
+  }
   #dot {
     position: fixed;
     left: 50%;
@@ -1057,6 +1066,8 @@ function frame(now) {
   const dt = Math.min(0.09, (now - prevT) / 1000);
   prevT = now;
 
+  if (poolOn) poolFrame(dt);
+
   if (!exploded) {
     if (now - lastPump > IDLE_MS && target > 0) {
       target = Math.max(0, target - DECAY_PER_S * dt);
@@ -1825,13 +1836,7 @@ function bloopSound(n) {
 function showDot() {
   if (dotShown) return;
   dotShown = true;
-  dotEl.style.display = "block";
-  dotEl.style.transition = "width 0.5s ease, height 0.5s ease, background 0.5s ease";
-  requestAnimationFrame(() => {
-    dotSize = 24;
-    dotEl.style.width = dotSize + "px";
-    dotEl.style.height = dotSize + "px";
-  });
+  startPool();
 }
 
 let dotHue = 348;
@@ -1881,6 +1886,329 @@ window.addEventListener("pointerdown", (e) => {
   const r = Math.max(dotSize / 2 + 16, 30);
   if (dx * dx + dy * dy <= r * r) dotTap();
 });
+
+/* ================= the pool =================
+   A field of liquid drops, one of them yours. Move yours through them and
+   they come in — surface tension does most of the work, they lean toward
+   you as you get close and let go of their own shape when they touch. No
+   rules to work out and nothing to get wrong: it is a gathering, and the
+   only thing it asks of you is to move. It ends by filling the frame. */
+
+const poolCanvas = document.createElement("canvas");
+poolCanvas.id = "pool";
+document.body.appendChild(poolCanvas);
+const pctx = poolCanvas.getContext("2d");
+
+let pool = [], you = null, poolOn = false, poolT = 0, poolGrab = null;
+let poolTarget = null, poolFlood = 0, poolDone = false;
+
+function sizePool() {
+  const W = window.innerWidth, H = window.innerHeight;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  poolCanvas.width = W * dpr; poolCanvas.height = H * dpr;
+  poolCanvas.style.width = W + "px"; poolCanvas.style.height = H + "px";
+  pctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function buildPool() {
+  const W = window.innerWidth, H = window.innerHeight;
+  const unit = Math.min(W, H) * 0.030;
+  pool = [];
+  const N = W < 620 ? 13 : 17;
+  for (let i = 0; i < N; i++) {
+    const r = unit * (0.55 + Math.pow(i / N, 1.25) * 2.1 + rnd() * 0.3);
+    /* placed off-centre and spread out, biggest furthest away */
+    const a = rnd() * Math.PI * 2;
+    const spread = 0.16 + 0.34 * (i / N) + rnd() * 0.14;
+    pool.push({
+      x: W * 0.5 + Math.cos(a) * W * spread * 0.82,
+      y: H * 0.5 + Math.sin(a) * H * spread * 0.86,
+      r, hue: (RUN.hueShift + i * 37) % 360,
+      vx: (rnd() - 0.5) * 8, vy: (rnd() - 0.5) * 8,
+      w1: 0, w2: 0, p1: rnd() * 6.3, p2: rnd() * 6.3,
+      mine: false,
+    });
+  }
+  you = { x: W * 0.5, y: H * 0.5, r: unit * 1.06, hue: (RUN.hueShift + 200) % 360,
+          vx: 0, vy: 0, w1: 0, w2: 0, p1: 0, p2: 1.7, mine: true };
+  pool.push(you);
+  /* keep everyone inside the frame to start with */
+  for (const d of pool) {
+    d.x = Math.max(d.r + 12, Math.min(W - d.r - 12, d.x));
+    d.y = Math.max(d.r + 12, Math.min(H - d.r - 12, d.y));
+  }
+}
+
+function startPool() {
+  if (poolOn) return;
+  sizePool();
+  buildPool();
+  poolOn = true; poolT = 0; poolFlood = 0; poolDone = false;
+  poolCanvas.style.display = "block";
+  requestAnimationFrame(() => poolCanvas.style.opacity = "1");
+}
+
+/* --- the wobbling outline: two harmonics, damped, kicked by contact --- */
+function poolPath(c, d, t, scale) {
+  const N = 30;
+  c.beginPath();
+  for (let i = 0; i <= N; i++) {
+    const th = i / N * Math.PI * 2;
+    const rr = d.r * (scale || 1) *
+      (1 + d.w1 * Math.cos(2 * th + d.p1 + t * 5.2)
+         + d.w2 * Math.cos(3 * th + d.p2 - t * 3.4));
+    const x = d.x + Math.cos(th) * rr, y = d.y + Math.sin(th) * rr;
+    i ? c.lineTo(x, y) : c.moveTo(x, y);
+  }
+  c.closePath();
+}
+
+function drawBlob(d, t, near) {
+  const c = pctx;
+  const light = d.mine ? 68 : 58 + (near || 0) * 10;
+  const sat = d.mine ? 80 : 86;
+  poolPath(c, d, t);
+  const g = c.createRadialGradient(d.x - d.r * 0.34, d.y - d.r * 0.40, d.r * 0.04,
+                                   d.x + d.r * 0.10, d.y + d.r * 0.18, d.r * 1.25);
+  g.addColorStop(0, `hsl(${d.hue},${sat}%,${Math.min(92, light + 26)}%)`);
+  g.addColorStop(0.42, `hsl(${d.hue},${sat}%,${light}%)`);
+  g.addColorStop(1, `hsl(${(d.hue + 12) % 360},${sat}%,${Math.max(12, light - 30)}%)`);
+  c.fillStyle = g;
+  c.fill();
+  /* a bright rim where the surface curves away, and one hard specular */
+  c.save();
+  c.clip();
+  c.strokeStyle = `hsla(${d.hue},92%,90%,${(0.34 + 0.30 * (near || 0) + (d.mine ? 0.2 : 0)).toFixed(2)})`;
+  c.lineWidth = Math.max(1.5, d.r * 0.10);
+  poolPath(c, d, t, 0.995); c.stroke();
+  c.fillStyle = `rgba(255,255,255,${d.mine ? 0.62 : 0.44})`;
+  c.beginPath();
+  c.ellipse(d.x - d.r * 0.34, d.y - d.r * 0.42, d.r * 0.24, d.r * 0.15, -0.6, 0, 6.3);
+  c.fill();
+  c.restore();
+  /* yours carries a halo so you never lose track of which one you are */
+  if (d.mine) {
+    c.save();
+    c.globalCompositeOperation = "lighter";
+    const h = c.createRadialGradient(d.x, d.y, d.r * 0.85, d.x, d.y, d.r * 1.7);
+    h.addColorStop(0, `hsla(${d.hue},95%,80%,0.22)`);
+    h.addColorStop(1, "hsla(0,0%,0%,0)");
+    c.fillStyle = h;
+    c.fillRect(d.x - d.r * 1.8, d.y - d.r * 1.8, d.r * 3.6, d.r * 3.6);
+    c.restore();
+  } else if ((near || 0) > 0.02) {
+    /* it knows you are coming */
+    c.save();
+    c.globalCompositeOperation = "lighter";
+    const h2 = c.createRadialGradient(d.x, d.y, d.r * 0.8, d.x, d.y, d.r * 1.9);
+    h2.addColorStop(0, `hsla(${d.hue},95%,82%,${(0.20 * near).toFixed(3)})`);
+    h2.addColorStop(1, "hsla(0,0%,0%,0)");
+    c.fillStyle = h2;
+    c.fillRect(d.x - d.r * 2, d.y - d.r * 2, d.r * 4, d.r * 4);
+    c.restore();
+  }
+}
+
+/* liquid does not meet at a point — it necks between two surfaces before
+   it lets go, and that neck is most of why this reads as liquid */
+function neck(a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const D = Math.hypot(dx, dy) || 1;
+  const reach = (a.r + b.r) * 1.34;
+  if (D > reach || D < 0.001) return;
+  const f = 1 - (D - (a.r + b.r) * 0.7) / (reach - (a.r + b.r) * 0.7);
+  if (f <= 0) return;
+  const nx = -dy / D, ny = dx / D;
+  const wa = a.r * 0.62 * f, wb = b.r * 0.62 * f;
+  const c = pctx;
+  c.beginPath();
+  c.moveTo(a.x + nx * wa, a.y + ny * wa);
+  c.quadraticCurveTo((a.x + b.x) / 2 + nx * Math.min(wa, wb) * 0.35,
+                     (a.y + b.y) / 2 + ny * Math.min(wa, wb) * 0.35,
+                     b.x + nx * wb, b.y + ny * wb);
+  c.lineTo(b.x - nx * wb, b.y - ny * wb);
+  c.quadraticCurveTo((a.x + b.x) / 2 - nx * Math.min(wa, wb) * 0.35,
+                     (a.y + b.y) / 2 - ny * Math.min(wa, wb) * 0.35,
+                     a.x - nx * wa, a.y - ny * wa);
+  c.closePath();
+  const g = c.createLinearGradient(a.x, a.y, b.x, b.y);
+  g.addColorStop(0, `hsl(${a.hue},70%,52%)`);
+  g.addColorStop(1, `hsl(${b.hue},70%,52%)`);
+  c.fillStyle = g;
+  c.fill();
+}
+
+function poolFrame(dt) {
+  if (!poolOn) return;
+  const W = window.innerWidth, H = window.innerHeight;
+  poolT += dt;
+  if (poolCanvas.width !== Math.round(W * Math.min(2, devicePixelRatio || 1))) sizePool();
+  hardClear(poolCanvas, pctx);
+
+  /* ---- the flood at the end ---- */
+  if (poolDone) {
+    poolFlood = Math.min(1, poolFlood + dt * 0.5);
+    const diag = Math.hypot(W, H);
+    you.r = you.r + (diag * 0.62 - you.r) * Math.min(1, dt * 2.2);
+    you.hue = you.hue;
+    drawBlob(you, poolT, 1);
+    if (poolFlood >= 1) finishPool();
+    return;
+  }
+
+  /* ---- move ---- */
+  for (const d of pool) {
+    if (d === you && poolGrab) {
+      const k = Math.min(1, dt * 16);
+      d.x += (poolGrab.x - d.x) * k;
+      d.y += (poolGrab.y - d.y) * k;
+    } else if (d === you && poolTarget) {
+      const dx = poolTarget.x - d.x, dy = poolTarget.y - d.y;
+      const D = Math.hypot(dx, dy);
+      if (D < 3) poolTarget = null;
+      else { d.x += dx / D * Math.min(D, 420 * dt); d.y += dy / D * Math.min(D, 420 * dt); }
+    } else {
+      const dx2 = you.x - d.x, dy2 = you.y - d.y;
+      const D2 = Math.hypot(dx2, dy2) || 1;
+      /* a weak pull from anywhere on the field on top of the close-range
+         one, so it always converges — the scene should reward moving, not
+         demand a route */
+      const pull = Math.max(0, 1 - D2 / (you.r * 3.4 + d.r)) + 0.16;
+      d.x += (d.vx + dx2 / D2 * pull * 190) * dt;
+      d.y += (d.vy + dy2 / D2 * pull * 190) * dt;
+      if (d.x < d.r || d.x > W - d.r) d.vx *= -1;
+      if (d.y < d.r || d.y > H - d.r) d.vy *= -1;
+      if (pull > 0.05) { d.w1 = Math.max(d.w1, pull * 0.09); }
+    }
+    d.x = Math.max(d.r * 0.4, Math.min(W - d.r * 0.4, d.x));
+    d.y = Math.max(d.r * 0.4, Math.min(H - d.r * 0.4, d.y));
+    d.w1 *= Math.exp(-2.6 * dt);
+    d.w2 *= Math.exp(-3.4 * dt);
+  }
+
+  /* ---- contact ---- */
+  for (let i = pool.length - 1; i >= 0; i--) {
+    const d = pool[i];
+    if (d === you) continue;
+    const dx = d.x - you.x, dy = d.y - you.y;
+    const D = Math.hypot(dx, dy);
+    if (D > d.r + you.r * 0.88) continue;
+    /* areas add, so the merge conserves liquid */
+    const a1 = you.r * you.r, a2 = d.r * d.r;
+    you.hue = mixHue(you.hue, d.hue, a2 / (a1 + a2));
+    you.r = Math.sqrt(a1 + a2);
+    you.w1 = 0.16; you.w2 = 0.10;
+    pool.splice(i, 1);
+    mergeSound(you.r / (Math.min(W, H) * 0.03));
+    if (pool.length <= 1) { poolDone = true; swellSound(); }
+  }
+
+  /* ---- draw: necks first so they sit under the bodies ---- */
+  for (const d of pool) if (d !== you) neck(you, d);
+  const sorted = pool.slice().sort((a, b) => a.r - b.r);
+  for (const d of sorted) {
+    if (d === you) continue;
+    const D3 = Math.hypot(d.x - you.x, d.y - you.y);
+    drawBlob(d, poolT, Math.max(0, 1 - D3 / (you.r * 3.4 + d.r)));
+  }
+  drawBlob(you, poolT, 1);
+}
+
+const mixHue = (a, b, t) => {
+  let dd = ((b - a + 540) % 360) - 180;
+  return (a + dd * t + 360) % 360;
+};
+
+function finishPool() {
+  if (!poolOn) return;
+  poolOn = false;
+  poolCanvas.style.transition = "opacity 0.8s ease";
+  poolCanvas.style.opacity = "0";
+  setTimeout(() => { poolCanvas.style.display = "none"; }, 900);
+  /* hand the filled screen to the old dot element, which is what the water
+     stage reads its background colour from */
+  dotSize = Math.hypot(window.innerWidth, window.innerHeight) * 1.3;
+  dotEl.style.display = "block";
+  dotEl.style.transition = "none";
+  dotEl.style.width = dotSize + "px";
+  dotEl.style.height = dotSize + "px";
+  dotEl.style.background =
+    `radial-gradient(circle at 46% 38%, ${shade(DOT_FINAL, 0.30)} 0%, ${DOT_FINAL} 52%, ${shade(DOT_FINAL, -0.34)} 100%)`;
+  dotDone = true;
+  dotEl.style.cursor = "default";
+  setTimeout(showTap, 1100);
+}
+
+/* --- input: drag it, or tap where you want it to go --- */
+function poolHit(x, y) {
+  return poolOn && !poolDone &&
+    Math.hypot(x - you.x, y - you.y) < Math.max(you.r * 1.5, 42 * UIS);
+}
+window.addEventListener("pointerdown", (e) => {
+  if (!poolOn || poolDone) return;
+  if (poolHit(e.clientX, e.clientY)) poolGrab = { x: you.x, y: you.y };
+  else poolTarget = { x: e.clientX, y: e.clientY };   /* tapping works too */
+  if (e.cancelable) e.preventDefault();
+}, { passive: false });
+window.addEventListener("pointermove", (e) => {
+  if (!poolOn || poolDone) return;
+  poolCanvas.style.cursor = poolHit(e.clientX, e.clientY) ? "grab" : "crosshair";
+  if (poolGrab) { poolGrab.x = e.clientX; poolGrab.y = e.clientY; if (e.cancelable) e.preventDefault(); }
+}, { passive: false });
+window.addEventListener("pointerup", () => { poolGrab = null; });
+
+/* --- sound --- */
+function mergeSound(scale) {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const f = 190 + Math.min(9, scale) * 62;
+  const o = ac.createOscillator(); o.type = "sine";
+  o.frequency.setValueAtTime(f * 0.65, t0);
+  o.frequency.exponentialRampToValueAtTime(f, t0 + 0.09);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(0.085, t0 + 0.03);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.5);
+  o.connect(g); g.connect(BUS);
+  o.start(t0); o.stop(t0 + 0.55);
+  /* a little wet click on top */
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 900;
+  const g2 = ac.createGain();
+  g2.gain.setValueAtTime(0.05, t0);
+  g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.10);
+  s.connect(lp); lp.connect(g2); g2.connect(BUS);
+  s.start(t0); s.stop(t0 + 0.12);
+}
+let lastReject = 0;
+function rejectSound() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  if (t0 - lastReject < 0.28) return;
+  lastReject = t0;
+  const o = ac.createOscillator(); o.type = "sine";
+  o.frequency.setValueAtTime(112, t0);
+  o.frequency.exponentialRampToValueAtTime(66, t0 + 0.18);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.075, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.26);
+  o.connect(g); g.connect(BUS);
+  o.start(t0); o.stop(t0 + 0.28);
+}
+function swellSound() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  [130.8, 196, 261.6, 392].forEach((f, i) => {
+    const o = ac.createOscillator(); o.type = i > 1 ? "sine" : "triangle";
+    o.frequency.value = f;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t0 + i * 0.07);
+    g.gain.exponentialRampToValueAtTime(0.06, t0 + i * 0.07 + 0.3);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.4);
+    o.connect(g); g.connect(BUS);
+    o.start(t0 + i * 0.07); o.stop(t0 + 3.6);
+  });
+}
 
 /* ================= the tap =================
    Liquid engine ported from the Griffin Claw pour: causal falling front
@@ -3852,10 +4180,11 @@ let lastSeg = -1;
 function drawNight(dt) {
   const W = window.innerWidth, H = window.innerHeight;
   nightT += dt;
+  if (jellyOn) { jellyFrame(dt); return; }
   if (machPhase) {
     drawMachine(dt);
     if (whiteOut < 2.4) { whiteOut = Math.min(2.4, whiteOut + dt * 0.42);
-      const a = Math.max(0, 1 - (whiteOut - 1) / 1.2);
+      const a = Math.max(0, Math.min(1, 1 - (whiteOut - 1) / 1.2));
       if (a > 0) { fctx.fillStyle = `rgba(255,250,238,${a.toFixed(3)})`;
         fctx.fillRect(0, 0, window.innerWidth, window.innerHeight); } }
     return;
@@ -5474,8 +5803,9 @@ function creak(v) {
    This is the hub the rest of the way runs through — the arm fetches, the
    jar comes down, and whatever is in the jar is the next place. */
 
-let machPhase = 0;      /* 0 off  1 coin loose  2 coin in  3 fetching  4 lit */
+let machPhase = 0;      /* 0 off  1 waiting  3 fetching  4 blooming */
 let machT = 0, coinX = 0, coinY = 0, coinGrab = null, coinIn = 0;
+let levPull = 0, levGrab = null;
 let armX = 0, armY = 0, armT = -1, heldJar = -1, jarGlow = 0, machLit = 0;
 let JARS = null;
 
@@ -5491,6 +5821,9 @@ function machGeom() {
     gw: w * 0.78, gh: h * 0.505,
     slot: { x: W * 0.5 + w * 0.24, y: H * 0.5 + h * 0.10, w: w * 0.11, h: h * 0.016 },
     btn: { x: W * 0.5 - w * 0.24, y: H * 0.5 + h * 0.11, r: Math.max(16, w * 0.062) },
+    /* one brass lever down the right flank — the only thing it wants */
+    lev: { x: W * 0.5 + w * 0.545, y0: H * 0.5 - h * 0.10, y1: H * 0.5 + h * 0.20,
+           r: Math.max(15, w * 0.055) },
     deck: { y: H * 0.5 + h * 0.24 },
     cup: { x: W * 0.5 + w * 0.255, y: H * 0.5 - h / 2 + h * 0.885 },
   };
@@ -5521,6 +5854,7 @@ function startMachine() {
   buildJars();
   const G = machGeom();
   machPhase = 1; machT = 0;
+  whiteOut = Math.max(whiteOut, 1.02);
   coinX = G.cup.x; coinY = G.cup.y - G.h * 0.004;
   armX = G.gx + G.gw * 0.5; armY = G.gy - G.gh * 0.06;
   finCanvas.style.cursor = "";
@@ -5690,16 +6024,10 @@ function drawMachine(dt) {
   fctx.fillRect(S.x - S.w / 2, S.y - S.h / 2, S.w, S.h);
   fctx.strokeStyle = chrome; fctx.lineWidth = Math.max(2, G.w * 0.010);
   fctx.strokeRect(S.x - S.w / 2 - 2, S.y - S.h / 2 - 2, S.w + 4, S.h + 4);
-  if (machPhase === 1) {
-    const p = 0.5 + 0.5 * Math.sin(machT * 3.1);
-    fctx.strokeStyle = `rgba(255,214,150,${(0.18 + 0.34 * p).toFixed(2)})`;
-    fctx.lineWidth = 2;
-    fctx.strokeRect(S.x - S.w / 2 - 7 - p * 3, S.y - S.h / 2 - 7 - p * 3,
-                    S.w + 14 + p * 6, S.h + 14 + p * 6);
-  }
+
 
   const B = G.btn;
-  const lit = machPhase >= 2 ? 1 : 0;
+  const lit = machPhase >= 1 ? 1 : 0;
   const bp = 0.5 + 0.5 * Math.sin(machT * 2.6);
   const bg = fctx.createRadialGradient(B.x - B.r * 0.3, B.y - B.r * 0.35, 0, B.x, B.y, B.r);
   bg.addColorStop(0, lit ? "#ff9d8a" : "#7a4038");
@@ -5709,10 +6037,38 @@ function drawMachine(dt) {
   fctx.beginPath(); fctx.arc(B.x, B.y, B.r, 0, 6.3); fctx.fill();
   fctx.strokeStyle = chrome; fctx.lineWidth = Math.max(2, B.r * 0.16);
   fctx.stroke();
-  if (lit && machPhase === 2) {
-    fctx.strokeStyle = `rgba(255,120,90,${(0.16 + 0.34 * bp).toFixed(2)})`;
-    fctx.lineWidth = 2;
-    fctx.beginPath(); fctx.arc(B.x, B.y, B.r * (1.4 + 0.35 * bp), 0, 6.3); fctx.stroke();
+  /* the lever: a brass rod with a ball on it, hinged at the bottom */
+  const L = G.lev;
+  const ly = L.y0 + (L.y1 - L.y0) * levPull;
+  fctx.strokeStyle = "rgba(20,14,10,0.5)"; fctx.lineWidth = L.r * 0.9;
+  fctx.beginPath(); fctx.moveTo(L.x, L.y1 + L.r * 0.4); fctx.lineTo(L.x, ly); fctx.stroke();
+  const rodg = fctx.createLinearGradient(L.x - L.r * 0.4, 0, L.x + L.r * 0.4, 0);
+  rodg.addColorStop(0, "#7a5a1c"); rodg.addColorStop(0.4, "#e8c464");
+  rodg.addColorStop(0.6, "#fff0b8"); rodg.addColorStop(1, "#6d4f18");
+  fctx.strokeStyle = rodg; fctx.lineWidth = L.r * 0.55;
+  fctx.beginPath(); fctx.moveTo(L.x, L.y1 + L.r * 0.4); fctx.lineTo(L.x, ly); fctx.stroke();
+  /* the pivot plate */
+  fctx.fillStyle = "rgba(40,28,18,0.85)";
+  fctx.beginPath(); fctx.ellipse(L.x, L.y1 + L.r * 0.5, L.r * 0.95, L.r * 0.5, 0, 0, 6.3); fctx.fill();
+  /* the knob */
+  const kg = fctx.createRadialGradient(L.x - L.r * 0.34, ly - L.r * 0.4, 0, L.x, ly, L.r);
+  kg.addColorStop(0, "#fff6d2"); kg.addColorStop(0.45, "#e7c05a");
+  kg.addColorStop(1, "#7c5a18");
+  fctx.fillStyle = kg;
+  fctx.beginPath(); fctx.arc(L.x, ly, L.r, 0, 6.3); fctx.fill();
+  fctx.strokeStyle = "rgba(60,42,10,0.55)"; fctx.lineWidth = Math.max(1, L.r * 0.12);
+  fctx.stroke();
+  if (machPhase === 1) {
+    const p3 = 0.5 + 0.5 * Math.sin(machT * 2.2);
+    fctx.strokeStyle = `rgba(255,226,150,${(0.18 + 0.34 * p3).toFixed(2)})`;
+    fctx.lineWidth = Math.max(2, L.r * 0.14);
+    fctx.beginPath(); fctx.arc(L.x, ly, L.r * (1.6 + 0.45 * p3), 0, 6.3); fctx.stroke();
+    /* and a hand-sized nudge downward, so the direction is never a guess */
+    fctx.fillStyle = `rgba(255,226,160,${(0.20 + 0.30 * p3).toFixed(2)})`;
+    fctx.beginPath();
+    const ay = ly + L.r * (2.2 + 0.5 * p3);
+    fctx.moveTo(L.x - L.r * 0.34, ay); fctx.lineTo(L.x + L.r * 0.34, ay);
+    fctx.lineTo(L.x, ay + L.r * 0.62); fctx.closePath(); fctx.fill();
   }
 
   /* the tray, and the coin in it */
@@ -5727,10 +6083,10 @@ function drawMachine(dt) {
   fctx.fill();
   fctx.strokeStyle = chrome; fctx.lineWidth = Math.max(2, G.w * 0.009);
   fctx.stroke();
-  if (machPhase === 1 || coinIn > 0) drawCoin(G);
+  drawCoin(G);
 
   /* the whole thing warms up once it has been paid */
-  if (machPhase >= 2) {
+  if (machPhase >= 1) {
     machLit = Math.min(1, machLit + dt * 0.8);
     fctx.save();
     fctx.globalCompositeOperation = "lighter";
@@ -5744,6 +6100,26 @@ function drawMachine(dt) {
   }
 
   if (armT >= 0) stepArm(dt, G);
+
+  /* the jar does not just sit there lit — it opens */
+  if (bloomT >= 0) {
+    bloomT += dt;
+    const j = JARS[machTarget];
+    const bx = armX, by = G.gy + G.gh * 0.30 - j.r * 1.1;
+    const u = Math.min(1, bloomT / 2.6);
+    const R2 = Math.pow(u, 2.2) * Math.hypot(W, H) * 1.1;
+    fctx.save();
+    fctx.globalCompositeOperation = "lighter";
+    const bg3 = fctx.createRadialGradient(bx, by, 0, bx, by, Math.max(1, R2));
+    bg3.addColorStop(0, `hsla(${j.hue},96%,88%,${(0.55 + 0.45 * u).toFixed(3)})`);
+    bg3.addColorStop(0.35, `hsla(${j.hue},92%,66%,${(0.42 * (1 - u * 0.3)).toFixed(3)})`);
+    bg3.addColorStop(1, "hsla(0,0%,0%,0)");
+    fctx.fillStyle = bg3;
+    fctx.fillRect(0, 0, W, H);
+    fctx.restore();
+    if (u >= 1) { fctx.fillStyle = `hsl(${j.hue},80%,92%)`; fctx.fillRect(0, 0, W, H); }
+    if (bloomT > 2.9 && !jellyOn) startJelly(j.hue);
+  }
 }
 
 function drawJar(x, y, r, j, t, glow) {
@@ -5818,12 +6194,7 @@ function drawCoin(G) {
   fctx.strokeStyle = "rgba(120,90,20,0.55)"; fctx.lineWidth = Math.max(1, r * 0.07);
   fctx.beginPath(); fctx.arc(0, 0, r * 0.66, 0, 6.3); fctx.stroke();
   fctx.restore();
-  if (machPhase === 1 && !coinGrab) {
-    const p = 0.5 + 0.5 * Math.sin(machT * 2.4);
-    fctx.strokeStyle = `rgba(255,226,150,${(0.14 + 0.30 * p).toFixed(2)})`;
-    fctx.lineWidth = 2;
-    fctx.beginPath(); fctx.arc(x, y, r * (1.5 + 0.45 * p), 0, 6.3); fctx.stroke();
-  }
+
 }
 
 /* ---------- the arm goes and gets one ---------- */
@@ -5852,15 +6223,30 @@ function stepArm(dt, G) {
 }
 let machTarget = 0;
 
-function pressButton() {
-  if (machPhase !== 2) return;
+function pullLever() {
+  if (machPhase !== 1) return;
   machPhase = 3; armT = 0; jarGlow = 0;
   const full = JARS.map((j, i) => j.full ? i : -1).filter(i => i >= 0);
   machTarget = full.length ? full[(rnd() * full.length) | 0] : 0;
   clunk(); whirr();
 }
 
-function jarOpen() { chord(); }
+function jarOpen() { chord(); bloomT = 0; }
+let bloomT = -1;
+
+function ratchet() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass";
+  bp.frequency.value = 1800 + Math.random() * 1400; bp.Q.value = 8;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(0.045, t0 + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.12);
+  s.connect(bp); bp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 0.14);
+}
 
 /* ---------- input ---------- */
 function coinHit(x, y) {
@@ -5868,60 +6254,37 @@ function coinHit(x, y) {
   const G = machGeom(), r = Math.max(11, G.w * 0.042);
   return Math.hypot(x - coinX, y - coinY) < Math.max(r * 2.4, 40 * UIS);
 }
+/* the whole length of the lever's travel is the target, not just where the
+   knob happens to be — otherwise it slides out from under the finger that
+   is pulling it, which is the same trap the chest pin fell into */
+function levHit(x, y) {
+  const G = machGeom(), L = G.lev;
+  return Math.abs(x - L.x) < Math.max(L.r * 2.8, 50 * UIS) &&
+         y > L.y0 - L.r * 2.8 && y < L.y1 + L.r * 2.6;
+}
+function levAdvance(v) {
+  if (machPhase !== 1) return;
+  const n = Math.max(levPull, Math.min(1, v));
+  if (n > levPull) { levPull = n; ratchet(); }
+  if (levPull >= 1) { levGrab = null; pullLever(); }
+}
 window.addEventListener("pointerdown", (e) => {
-  if (!machPhase) return;
-  const G = machGeom();
-  if (machPhase === 2 && Math.hypot(e.clientX - G.btn.x, e.clientY - G.btn.y) < G.btn.r * 1.7) {
-    pressButton();
-    if (e.cancelable) e.preventDefault();
-    return;
-  }
-  if (coinHit(e.clientX, e.clientY)) {
-    coinGrab = { dx: coinX - e.clientX, dy: coinY - e.clientY };
-    if (e.cancelable) e.preventDefault();
-    return;
-  }
-  /* tapping the slot with the coin still in the cup posts it — you should
-     not have to work out that this particular thing wants a drag */
-  if (machPhase === 1 &&
-      Math.abs(e.clientX - G.slot.x) < G.slot.w * 1.6 &&
-      Math.abs(e.clientY - G.slot.y) < G.h * 0.06) {
-    coinGrab = null; machPhase = 2;
-    const t0 = performance.now();
-    const slide = () => {
-      coinIn = Math.min(1, (performance.now() - t0) / 420);
-      if (coinIn < 1) requestAnimationFrame(slide); else coinDrop();
-    };
-    slide();
-    if (e.cancelable) e.preventDefault();
-  }
+  if (machPhase !== 1) return;
+  if (!levHit(e.clientX, e.clientY)) return;
+  levGrab = { y: e.clientY, p0: levPull };
+  levAdvance(levPull + 0.24);          /* taps work, same as everything else */
+  if (e.cancelable) e.preventDefault();
 }, { passive: false });
 window.addEventListener("pointermove", (e) => {
   if (!machPhase) return;
+  if (machPhase === 1) finCanvas.style.cursor = levHit(e.clientX, e.clientY) ? "grab" : "";
+  if (!levGrab) return;
   const G = machGeom();
-  if (machPhase === 1) {
-    finCanvas.style.cursor = coinHit(e.clientX, e.clientY) ? "grab" : "";
-  } else if (machPhase === 2) {
-    finCanvas.style.cursor =
-      Math.hypot(e.clientX - G.btn.x, e.clientY - G.btn.y) < G.btn.r * 1.7 ? "pointer" : "";
-  }
-  if (!coinGrab) return;
-  coinX = e.clientX + coinGrab.dx;
-  coinY = e.clientY + coinGrab.dy;
-  const S = G.slot;
-  if (Math.abs(coinX - S.x) < S.w * 0.9 && Math.abs(coinY - S.y) < G.h * 0.05) {
-    coinGrab = null;
-    machPhase = 2;
-    const t0 = performance.now();
-    const slide = () => {
-      coinIn = Math.min(1, (performance.now() - t0) / 420);
-      if (coinIn < 1) requestAnimationFrame(slide); else { coinDrop(); }
-    };
-    slide();
-  }
+  levAdvance(levGrab.p0 + (e.clientY - levGrab.y) / (G.lev.y1 - G.lev.y0));
   if (e.cancelable) e.preventDefault();
 }, { passive: false });
-window.addEventListener("pointerup", () => { coinGrab = null; });
+window.addEventListener("pointerup", () => { levGrab = null; });
+
 
 /* ---------- sound ---------- */
 function machHum() {
@@ -5991,6 +6354,231 @@ function chord() {
     o.connect(g); g.connect(BUS);
     o.start(t0 + i * 0.09); o.stop(t0 + 4.8);
   });
+}
+
+/* ================= inside the jar =================
+   Whatever was in it, this is it: deep water with things drifting in it,
+   lit from nowhere in particular. There is nothing to work out. Touch one
+   and it lights, and lighting them is the whole of it — when they are all
+   awake they rise together and take the light with them. */
+
+let jellyOn = false, jellyT = 0, jellies = [], motes = [], jellyHue = 200, jellyRise = 0, jellyLit = 0;
+
+function startJelly(hue) {
+  if (jellyOn) return;
+  jellyOn = true; jellyT = 0; jellyRise = 0; jellyLit = 0;
+  jellyHue = hue === undefined ? 200 : hue;
+  const W = window.innerWidth, H = window.innerHeight;
+  const N = W < 620 ? 6 : 9;
+  jellies = [];
+  for (let i = 0; i < N; i++) {
+    jellies.push({
+      x: W * (0.10 + rnd() * 0.80),
+      y: H * (0.12 + rnd() * 0.82),
+      r: Math.min(W, H) * (0.055 + rnd() * 0.055),
+      ph: rnd() * 6.3,
+      sp: 0.55 + rnd() * 0.45,
+      drift: (rnd() - 0.5) * 12,
+      hue: (jellyHue + (rnd() - 0.5) * 70 + 360) % 360,
+      lit: 0, flash: 0,
+      arms: 5 + ((rnd() * 4) | 0),
+      seed: rnd() * 100,
+    });
+  }
+  motes = [];
+  for (let i = 0; i < (W < 620 ? 60 : 120); i++)
+    motes.push({ x: rnd() * W, y: rnd() * H, r: 0.4 + rnd() * 1.5,
+                 v: 4 + rnd() * 14, ph: rnd() * 6.3 });
+  jellySwell();
+}
+
+function drawJelly(j, t) {
+  const c = fctx;
+  /* the bell breathes: it contracts and springs back, and everything
+     hanging off it lags behind by a beat */
+  const beat = Math.sin(t * j.sp * 1.9 + j.ph);
+  const squash = 1 + beat * 0.16;
+  const rw = j.r * (1.06 / squash), rh = j.r * 0.86 * squash;
+  const lag = Math.sin(t * j.sp * 1.9 + j.ph - 0.9);
+  const L = 68 + j.lit * 22, S = 62 + j.lit * 34;
+  const A = 0.30 + j.lit * 0.40 + j.flash * 0.5;
+
+  c.save();
+  c.translate(j.x, j.y);
+
+  /* tentacles first, so the bell sits over them */
+  c.strokeStyle = `hsla(${j.hue},${S}%,${L + 8}%,${(A * 0.55).toFixed(3)})`;
+  c.lineWidth = Math.max(1, j.r * 0.028);
+  c.lineCap = "round";
+  for (let k = 0; k < 11; k++) {
+    const u = (k / 10 - 0.5) * 1.7;
+    const bx = u * rw * 0.86;
+    c.beginPath();
+    c.moveTo(bx, rh * 0.55);
+    for (let s = 1; s <= 7; s++) {
+      const f = s / 7;
+      const sway = Math.sin(t * 1.5 + j.seed + k * 0.7 - f * 3.1) * j.r * 0.16 * f
+                 - lag * j.r * 0.10 * f;
+      c.lineTo(bx + sway + u * j.r * 0.10 * f, rh * 0.55 + f * j.r * (1.6 + 0.5 * Math.sin(j.seed + k)));
+    }
+    c.stroke();
+  }
+  /* four thicker oral arms, frilled */
+  c.strokeStyle = `hsla(${j.hue},${S + 8}%,${L + 12}%,${(A * 0.72).toFixed(3)})`;
+  c.lineWidth = Math.max(1.6, j.r * 0.075);
+  for (let k = 0; k < 4; k++) {
+    const u = (k / 3 - 0.5) * 0.9;
+    c.beginPath();
+    c.moveTo(u * rw * 0.4, rh * 0.4);
+    for (let s = 1; s <= 6; s++) {
+      const f = s / 6;
+      const sway = Math.sin(t * 1.15 + j.seed * 2 + k * 1.3 - f * 2.4) * j.r * 0.22 * f
+                 - lag * j.r * 0.16 * f;
+      c.lineTo(u * rw * 0.4 + sway, rh * 0.4 + f * j.r * 1.15);
+    }
+    c.stroke();
+  }
+
+  /* the bell: translucent, brighter at the crown, with a hard rim */
+  const g = c.createRadialGradient(0, -rh * 0.35, rh * 0.06, 0, rh * 0.1, rw * 1.25);
+  g.addColorStop(0, `hsla(${j.hue},${S}%,${Math.min(95, L + 26)}%,${(A * 0.95).toFixed(3)})`);
+  g.addColorStop(0.55, `hsla(${j.hue},${S}%,${L}%,${(A * 0.55).toFixed(3)})`);
+  g.addColorStop(1, `hsla(${(j.hue + 20) % 360},${S}%,${L - 18}%,0)`);
+  c.fillStyle = g;
+  c.beginPath();
+  c.ellipse(0, 0, rw, rh, 0, Math.PI, 0);
+  c.quadraticCurveTo(rw * 0.55, rh * 0.62, 0, rh * 0.44);
+  c.quadraticCurveTo(-rw * 0.55, rh * 0.62, -rw, 0);
+  c.closePath();
+  c.fill();
+  c.strokeStyle = `hsla(${j.hue},92%,${Math.min(94, L + 22)}%,${(A * 0.85).toFixed(3)})`;
+  c.lineWidth = Math.max(1.2, j.r * 0.035);
+  c.stroke();
+  /* the radial canals across the bell */
+  c.strokeStyle = `hsla(${j.hue},90%,${L + 16}%,${(A * 0.45).toFixed(3)})`;
+  c.lineWidth = Math.max(1, j.r * 0.022);
+  for (let k = 0; k < j.arms; k++) {
+    const u = (k / (j.arms - 1) - 0.5) * 1.55;
+    c.beginPath();
+    c.moveTo(u * rw * 0.9, rh * 0.30);
+    c.quadraticCurveTo(u * rw * 0.55, -rh * 0.35, u * rw * 0.24, -rh * 0.66);
+    c.stroke();
+  }
+  c.restore();
+
+  /* lit ones carry their own light */
+  if (j.lit > 0.02 || j.flash > 0.02) {
+    c.save();
+    c.globalCompositeOperation = "lighter";
+    const gl = c.createRadialGradient(j.x, j.y, 0, j.x, j.y, j.r * (3.2 + j.flash * 3));
+    gl.addColorStop(0, `hsla(${j.hue},95%,80%,${(0.18 * j.lit + 0.34 * j.flash).toFixed(3)})`);
+    gl.addColorStop(1, "hsla(0,0%,0%,0)");
+    c.fillStyle = gl;
+    c.fillRect(j.x - j.r * 6, j.y - j.r * 6, j.r * 12, j.r * 12);
+    c.restore();
+  }
+}
+
+function jellyFrame(dt) {
+  const W = window.innerWidth, H = window.innerHeight;
+  jellyT += dt;
+  hardClear(finCanvas, fctx);
+
+  /* the water */
+  const deep = fctx.createLinearGradient(0, 0, 0, H);
+  const lift = jellyRise;
+  deep.addColorStop(0, `hsl(${(jellyHue + 200) % 360},${46 + lift * 30}%,${7 + lift * 40}%)`);
+  deep.addColorStop(0.55, `hsl(${(jellyHue + 190) % 360},${52 + lift * 26}%,${11 + lift * 44}%)`);
+  deep.addColorStop(1, `hsl(${(jellyHue + 180) % 360},${58}%,${4 + lift * 34}%)`);
+  fctx.fillStyle = deep; fctx.fillRect(0, 0, W, H);
+
+  /* marine snow going the other way */
+  fctx.fillStyle = `rgba(210,232,255,${(0.20 + 0.2 * lift).toFixed(2)})`;
+  for (const m of motes) {
+    m.y -= m.v * dt;
+    if (m.y < -4) { m.y = H + 4; m.x = Math.random() * W; }
+    fctx.globalAlpha = 0.25 + 0.35 * Math.abs(Math.sin(jellyT * 0.6 + m.ph));
+    fctx.fillRect(m.x + Math.sin(jellyT * 0.4 + m.ph) * 6, m.y, m.r, m.r);
+  }
+  fctx.globalAlpha = 1;
+
+  let allLit = true;
+  for (const j of jellies) {
+    j.flash *= Math.exp(-2.4 * dt);
+    if (j.lit < 1 && j.lit > 0) j.lit = Math.min(1, j.lit + dt * 1.6);
+    if (j.lit < 0.99) allLit = false;
+    /* they always drift up a little; lit ones climb */
+    const climb = 9 + j.lit * 46 + jellyRise * 260;
+    j.y -= climb * dt;
+    j.x += (j.drift + Math.sin(jellyT * 0.4 + j.ph) * 7) * dt;
+    if (j.y < -j.r * 3.4) { j.y = H + j.r * 3.4; }
+    if (j.x < -j.r * 2) j.x = W + j.r * 2;
+    if (j.x > W + j.r * 2) j.x = -j.r * 2;
+    drawJelly(j, jellyT);
+  }
+  jellyLit = jellies.filter(j => j.lit > 0.5).length;
+
+  if (allLit) {
+    jellyRise = Math.min(1, jellyRise + dt * 0.22);
+    if (jellyRise > 0.35) {
+      fctx.save();
+      fctx.globalCompositeOperation = "lighter";
+      const f = (jellyRise - 0.35) / 0.65;
+      fctx.fillStyle = `hsla(${jellyHue},80%,86%,${(f * f * 0.9).toFixed(3)})`;
+      fctx.fillRect(0, 0, W, H);
+      fctx.restore();
+    }
+  }
+}
+
+function jellyTouch(x, y) {
+  if (!jellyOn) return;
+  let best = null, bd = 1e9;
+  for (const j of jellies) {
+    const d = Math.hypot(x - j.x, y - j.y) / (j.r * 2.2);
+    if (d < bd) { bd = d; best = j; }
+  }
+  if (!best || bd > 1.25) return;
+  best.flash = 1;
+  if (best.lit < 0.02) { best.lit = 0.02; jellyPing(best.hue); }
+  else jellyPing(best.hue, true);
+}
+window.addEventListener("pointerdown", (e) => {
+  if (!jellyOn) return;
+  jellyTouch(e.clientX, e.clientY);
+}, { passive: true });
+window.addEventListener("pointermove", (e) => {
+  if (!jellyOn) return;
+  finCanvas.style.cursor = "pointer";
+}, { passive: true });
+
+function jellyPing(hue, again) {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const SC = [261.6, 293.7, 329.6, 392, 440, 523.3, 587.3, 659.3];
+  const f = SC[Math.floor((hue / 360) * SC.length) % SC.length] * (again ? 2 : 1);
+  const o = ac.createOscillator(); o.type = "sine";
+  o.frequency.value = f;
+  const o2 = ac.createOscillator(); o2.type = "sine";
+  o2.frequency.value = f * 2.004;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(again ? 0.028 : 0.055, t0 + 0.03);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.4);
+  o.connect(g); o2.connect(g); g.connect(BUS);
+  o.start(t0); o.stop(t0 + 2.6);
+  o2.start(t0); o2.stop(t0 + 2.6);
+}
+function jellySwell() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noise(ac); s.loop = true;
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 340;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(0.045, t0 + 4);
+  s.connect(lp); lp.connect(g); g.connect(BUS);
+  s.start(t0);
 }
 
 function splatSound() {
