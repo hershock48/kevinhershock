@@ -4181,12 +4181,17 @@ function drawNight(dt) {
   const W = window.innerWidth, H = window.innerHeight;
   nightT += dt;
   if (jellyOn) { jellyFrame(dt); return; }
-  if (machPhase) {
-    drawMachine(dt);
-    if (whiteOut < 2.4) { whiteOut = Math.min(2.4, whiteOut + dt * 0.42);
+  if (winOn) {
+    windowFrame(dt);
+    /* the flood off the chest fades back through the glass */
+    if (whiteOut < 2.4) {
+      whiteOut = Math.min(2.4, whiteOut + dt * 0.42);
       const a = Math.max(0, Math.min(1, 1 - (whiteOut - 1) / 1.2));
-      if (a > 0) { fctx.fillStyle = `rgba(255,250,238,${a.toFixed(3)})`;
-        fctx.fillRect(0, 0, window.innerWidth, window.innerHeight); } }
+      if (a > 0) {
+        fctx.fillStyle = `rgba(255,250,238,${a.toFixed(3)})`;
+        fctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+      }
+    }
     return;
   }
   if (digPhase) { drawDig(dt); return; }   /* the chart said here */
@@ -5706,7 +5711,7 @@ function drawLift(dt, G) {
 
   /* it floods at the end, and then it fades back — into somewhere else */
   if (lidLift >= 0.995) whiteOut = Math.min(2.4, whiteOut + dt * 0.42);
-  if (whiteOut > 1.05 && !machPhase) startMachine();
+  if (whiteOut > 1.05 && !winOn && !jellyOn) startWindow();
   if (whiteOut > 0) {
     const a = whiteOut <= 1 ? whiteOut * whiteOut : Math.max(0, 1 - (whiteOut - 1) / 1.2);
     fctx.fillStyle = `rgba(255,250,238,${a.toFixed(3)})`;
@@ -5794,565 +5799,289 @@ function creak(v) {
   o.start(t0); o.stop(t0 + 0.45);
 }
 
-/* ================= the machine =================
-   The light out of the chest does not go anywhere. It arrives somewhere:
-   a room with one thing in it. A cabinet, glass-fronted, three shelves of
-   jars with something alive in each, a brass arm on rails, a slot, and a
-   button. The coin came up out of the chest with the light. Put it in.
+/* ================= the window =================
+   The light out of the chest resolves into a pane of glass with rain on
+   the far side of it and your breath on this one. There is nothing to
+   work out and nothing to press: put a finger on it and wipe. The rain
+   helps — every drop that runs cuts its own clear track down the glass.
+   Behind it, out of focus, something is moving. */
 
-   This is the hub the rest of the way runs through — the arm fetches, the
-   jar comes down, and whatever is in the jar is the next place. */
+let winOn = false, winT = 0, winClear = 0, winGone = 0, winWipe = null;
+let fogC = null, fogX = null, rainDrops = [], bokeh = [];
 
-let machPhase = 0;      /* 0 off  1 waiting  3 fetching  4 blooming */
-let machT = 0, coinX = 0, coinY = 0, coinGrab = null, coinIn = 0;
-let levPull = 0, levGrab = null;
-let armX = 0, armY = 0, armT = -1, heldJar = -1, jarGlow = 0, machLit = 0;
-let JARS = null;
-
-function machGeom() {
+function sizeFog() {
   const W = window.innerWidth, H = window.innerHeight;
-  const h = Math.min(H * 0.80, W * 0.60);
-  const w = h * 0.80;
-  return {
-    W, H, w, h,
-    x: W * 0.5 - w / 2, y: H * 0.5 - h / 2 + h * 0.02,
-    /* the glass, the slot, the button and the deck it all sits on */
-    gx: W * 0.5 - w * 0.39, gy: H * 0.5 - h / 2 + h * 0.115,
-    gw: w * 0.78, gh: h * 0.505,
-    slot: { x: W * 0.5 + w * 0.24, y: H * 0.5 + h * 0.10, w: w * 0.11, h: h * 0.016 },
-    btn: { x: W * 0.5 - w * 0.24, y: H * 0.5 + h * 0.11, r: Math.max(16, w * 0.062) },
-    /* one brass lever down the right flank — the only thing it wants */
-    lev: { x: W * 0.5 + w * 0.545, y0: H * 0.5 - h * 0.10, y1: H * 0.5 + h * 0.20,
-           r: Math.max(15, w * 0.055) },
-    deck: { y: H * 0.5 + h * 0.24 },
-    cup: { x: W * 0.5 + w * 0.255, y: H * 0.5 - h / 2 + h * 0.885 },
-  };
-}
-
-function buildJars() {
-  const G = machGeom();
-  JARS = [];
-  const cols = 5, rows = 3;
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      JARS.push({
-        x: G.gx + G.gw * ((c + 0.5) / cols),
-        y: G.gy + G.gh * ((r + 0.72) / rows),
-        r: G.gw / cols * 0.36,
-        hue: (RUN.hueShift + (r * cols + c) * 41) % 360,
-        ph: rnd() * 6.3,
-        sp: 0.5 + rnd() * 1.4,
-        /* a couple of them are empty — the machine has been used before */
-        full: rnd() > 0.18,
-      });
-    }
+  if (!fogC) {
+    fogC = document.createElement("canvas");
+    /* read back twice a second to see how clear it is — tell the browser so */
+    fogX = fogC.getContext("2d", { willReadFrequently: true });
+  }
+  fogC.width = W; fogC.height = H;
+  fogX.setTransform(1, 0, 0, 1, 0, 0);
+  /* breath on glass is not flat — it is a field of tiny beads */
+  fogX.clearRect(0, 0, W, H);
+  const g = fogX.createRadialGradient(W * 0.5, H * 0.44, 0, W * 0.5, H * 0.5, Math.max(W, H) * 0.72);
+  g.addColorStop(0, "rgba(222,234,240,0.68)");
+  g.addColorStop(1, "rgba(196,213,224,0.82)");
+  fogX.fillStyle = g;
+  fogX.fillRect(0, 0, W, H);
+  for (let i = 0; i < 4200; i++) {
+    const v = Math.random();
+    fogX.fillStyle = v > 0.5 ? `rgba(255,255,255,${(v * 0.22).toFixed(3)})`
+                             : `rgba(168,190,204,${((0.5 - v) * 0.26).toFixed(3)})`;
+    const r = 0.6 + Math.random() * 2.2;
+    fogX.beginPath();
+    fogX.arc(Math.random() * W, Math.random() * H, r, 0, 6.3);
+    fogX.fill();
   }
 }
 
-function startMachine() {
-  if (machPhase) return;
-  buildJars();
-  const G = machGeom();
-  machPhase = 1; machT = 0;
-  whiteOut = Math.max(whiteOut, 1.02);
-  coinX = G.cup.x; coinY = G.cup.y - G.h * 0.004;
-  armX = G.gx + G.gw * 0.5; armY = G.gy - G.gh * 0.06;
+function startWindow() {
+  if (winOn) return;
+  winOn = true; winT = 0; winClear = 0; winGone = 0;
+  sizeFog();
+  const W = window.innerWidth, H = window.innerHeight;
+  bokeh = [];
+  const N = W < 620 ? 20 : 32;
+  for (let i = 0; i < N; i++) {
+    bokeh.push({
+      x: rnd() * W, y: rnd() * H,
+      r: Math.min(W, H) * (0.045 + rnd() * 0.13),
+      hue: 168 + rnd() * 60,
+      a: 0.34 + rnd() * 0.46,
+      vx: (rnd() - 0.5) * 9, vy: -3 - rnd() * 9,
+      ph: rnd() * 6.3, sp: 0.3 + rnd() * 0.7,
+    });
+  }
+  rainDrops = [];
   finCanvas.style.cursor = "";
-  machHum();
+  rainOnGlass();
 }
 
-/* ---------- drawing ---------- */
-function drawMachine(dt) {
-  const G = machGeom(), W = G.W, H = G.H;
-  machT += dt;
-  if (!JARS) buildJars();
+function fogLeft() {
+  /* coarse sample — reading every pixel each frame is not worth it */
+  const W = fogC.width, H = fogC.height;
+  const step = 24;
+  const d = fogX.getImageData(0, 0, W, H).data;
+  let on = 0, n = 0;
+  for (let y = 0; y < H; y += step) {
+    for (let x = 0; x < W; x += step) {
+      n++;
+      if (d[(y * W + x) * 4 + 3] > 90) on++;
+    }
+  }
+  return n ? on / n : 1;
+}
+
+function wipeAt(x, y, r) {
+  if (!fogX) return;
+  fogX.save();
+  fogX.globalCompositeOperation = "destination-out";
+  const g = fogX.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, "rgba(0,0,0,1)");
+  g.addColorStop(0.45, "rgba(0,0,0,0.94)");
+  g.addColorStop(0.78, "rgba(0,0,0,0.42)");
+  g.addColorStop(1, "rgba(0,0,0,0)");
+  fogX.fillStyle = g;
+  fogX.fillRect(x - r, y - r, r * 2, r * 2);
+  fogX.restore();
+}
+
+function windowFrame(dt) {
+  const W = window.innerWidth, H = window.innerHeight;
+  winT += dt;
+  if (!fogC || fogC.width !== W || fogC.height !== H) sizeFog();
   hardClear(finCanvas, fctx);
 
-  /* the room: warm dark, one lamp somewhere above and behind us */
-  const room = fctx.createRadialGradient(W * 0.5, H * 0.34, 0, W * 0.5, H * 0.42, Math.max(W, H) * 0.78);
-  room.addColorStop(0, "#2a2118");
-  room.addColorStop(0.45, "#191310");
-  room.addColorStop(1, "#0b0908");
-  fctx.fillStyle = room; fctx.fillRect(0, 0, W, H);
+  /* ---- what is behind the glass: out of focus, and moving ---- */
+  const dark = fctx.createLinearGradient(0, 0, 0, H);
+  dark.addColorStop(0, "#0a1f2b");
+  dark.addColorStop(0.55, "#0d3040");
+  dark.addColorStop(1, "#061520");
+  fctx.fillStyle = dark; fctx.fillRect(0, 0, W, H);
+  fctx.save();
+  fctx.globalCompositeOperation = "lighter";
+  for (const b of bokeh) {
+    b.x += (b.vx + Math.sin(winT * b.sp + b.ph) * 6) * dt;
+    b.y += b.vy * dt;
+    if (b.y < -b.r * 2) { b.y = H + b.r * 2; b.x = Math.random() * W; }
+    if (b.x < -b.r) b.x = W + b.r;
+    if (b.x > W + b.r) b.x = -b.r;
+    /* they tighten up as the glass clears — the world coming into focus */
+    const focus = 0.35 + 0.65 * winGone;
+    const rr = b.r * (1.25 - 0.45 * winGone);
+    const g = fctx.createRadialGradient(b.x, b.y, rr * 0.05 * focus, b.x, b.y, rr);
+    const pulse = 0.85 + 0.15 * Math.sin(winT * b.sp * 1.7 + b.ph);
+    g.addColorStop(0, `hsla(${b.hue},78%,${68 + winGone * 14}%,${(b.a * pulse * (0.8 + 0.4 * winGone)).toFixed(3)})`);
+    g.addColorStop(0.42, `hsla(${b.hue},82%,58%,${(b.a * 0.50 * pulse).toFixed(3)})`);
+    g.addColorStop(1, "hsla(0,0%,0%,0)");
+    fctx.fillStyle = g;
+    fctx.fillRect(b.x - rr, b.y - rr, rr * 2, rr * 2);
+  }
+  fctx.restore();
 
-  /* the floor it stands on, and its reflection in the boards */
-  const fy = G.y + G.h;
-  const fl = fctx.createLinearGradient(0, fy - 4, 0, H);
-  fl.addColorStop(0, "#241b14");
-  fl.addColorStop(1, "#100c0a");
-  fctx.fillStyle = fl; fctx.fillRect(0, fy - 4, W, H - fy + 4);
-  fctx.fillStyle = "rgba(0,0,0,0.45)";
-  fctx.beginPath();
-  fctx.ellipse(W * 0.5, fy + 6, G.w * 0.62, G.h * 0.028, 0, 0, 6.3);
-  fctx.fill();
+  /* ---- rain on the far side, cutting its own tracks ---- */
+  if (rainDrops.length < (W < 620 ? 22 : 40) && Math.random() < 8 * dt) {
+    rainDrops.push({ x: Math.random() * W, y: -10,
+                     r: 2.2 + Math.random() * 5.5,
+                     v: 0, wob: (Math.random() - 0.5) * 22, ph: Math.random() * 6.3 });
+  }
+  for (let i = rainDrops.length - 1; i >= 0; i--) {
+    const d = rainDrops[i];
+    /* a bead only runs once it is heavy enough, then it accelerates and
+       picks up whatever it passes through */
+    d.v += (18 + d.r * 26) * dt;
+    d.v *= Math.exp(-1.6 * dt);
+    const dy = d.v * dt;
+    d.y += dy;
+    d.x += Math.sin(winT * 1.3 + d.ph) * d.wob * dt;
+    if (d.y > H + 20) { rainDrops.splice(i, 1); continue; }
+    if (dy > 0.4) { wipeAt(d.x, d.y, d.r * 0.72); d.r *= 0.9985; }
+  }
 
-  /* ---- the cabinet ---- */
-  const R = G.w * 0.10;
-  const body = (inset) => {
-    const x = G.x + inset, y = G.y + inset, w = G.w - inset * 2, h = G.h - inset * 2;
+  /* ---- the fog, and the clear glass under it ---- */
+  fctx.drawImage(fogC, 0, 0);
+
+  /* the beads themselves sit on the glass, catching what is behind them */
+  for (const d of rainDrops) {
+    const g = fctx.createRadialGradient(d.x - d.r * 0.3, d.y - d.r * 0.35, 0, d.x, d.y, d.r);
+    g.addColorStop(0, "rgba(255,255,255,0.55)");
+    g.addColorStop(0.5, "rgba(190,225,235,0.20)");
+    g.addColorStop(1, "rgba(120,170,190,0.30)");
+    fctx.fillStyle = g;
+    fctx.beginPath(); fctx.arc(d.x, d.y, d.r, 0, 6.3); fctx.fill();
+    fctx.strokeStyle = "rgba(255,255,255,0.35)";
+    fctx.lineWidth = Math.max(0.7, d.r * 0.14);
+    fctx.beginPath(); fctx.arc(d.x, d.y, d.r * 0.94, 2.4, 4.6); fctx.stroke();
+  }
+
+  /* the glass itself: a cold sheen across it, and a frame beyond the edges */
+  const sh = fctx.createLinearGradient(0, 0, W * 0.8, H);
+  sh.addColorStop(0, "rgba(255,255,255,0.05)");
+  sh.addColorStop(0.4, "rgba(255,255,255,0.01)");
+  sh.addColorStop(0.75, "rgba(255,255,255,0.04)");
+  sh.addColorStop(1, "rgba(255,255,255,0)");
+  fctx.fillStyle = sh; fctx.fillRect(0, 0, W, H);
+
+  /* ---- how clear is it ---- */
+  if (winT > 0.6 && (winT % 0.5) < dt) {
+    const left = fogLeft();
+    winClear = 1 - left;
+    if (winClear > 0.52 && !winGone) { winGone = 0.0001; clearSigh(); }
+  }
+  if (winGone > 0) {
+    /* the rest of it goes at once, like a held breath let go */
+    winGone = Math.min(1, winGone + dt * 0.5);
+    fogX.save();
+    fogX.globalCompositeOperation = "destination-out";
+    fogX.fillStyle = `rgba(0,0,0,${(dt * 3.4).toFixed(3)})`;
+    fogX.fillRect(0, 0, W, H);
+    fogX.restore();
+    if (winGone >= 1 && !jellyOn) { winOn = false; startJelly(196); }
+  }
+
+  /* a nudge, if they have not touched it */
+  if (winT > 4 && winClear < 0.04) {
+    const p = 0.5 + 0.5 * Math.sin(winT * 2.0);
+    const cx = W * 0.5, cy = H * 0.52;
+    fctx.strokeStyle = `rgba(255,255,255,${(0.10 + 0.16 * p).toFixed(3)})`;
+    fctx.lineWidth = Math.max(6, Math.min(W, H) * 0.018);
+    fctx.lineCap = "round";
     fctx.beginPath();
-    fctx.moveTo(x, y + h);
-    fctx.lineTo(x, y + R * 2.4);
-    fctx.quadraticCurveTo(x, y, x + w / 2, y);
-    fctx.quadraticCurveTo(x + w, y, x + w, y + R * 2.4);
-    fctx.lineTo(x + w, y + h);
-    fctx.closePath();
-  };
-  const lac = fctx.createLinearGradient(G.x, 0, G.x + G.w, 0);
-  lac.addColorStop(0, "#2b1a12");
-  lac.addColorStop(0.18, "#5c3a24");
-  lac.addColorStop(0.42, "#7a5231");
-  lac.addColorStop(0.72, "#4a2e1c");
-  lac.addColorStop(1, "#241610");
-  body(0); fctx.fillStyle = lac; fctx.fill();
-  /* chrome trim round the whole thing */
-  const chrome = fctx.createLinearGradient(G.x, 0, G.x + G.w, 0);
-  chrome.addColorStop(0, "#6f7378");
-  chrome.addColorStop(0.3, "#d8dce0");
-  chrome.addColorStop(0.5, "#f2f5f7");
-  chrome.addColorStop(0.72, "#9aa0a6");
-  chrome.addColorStop(1, "#5c6065");
-  fctx.strokeStyle = chrome; fctx.lineWidth = Math.max(3, G.w * 0.016);
-  body(G.w * 0.008); fctx.stroke();
-
-  /* the marquee across the crown, with bulbs behind it */
-  const my = G.y + G.h * 0.045, mh = G.h * 0.052;
-  const mg = fctx.createLinearGradient(0, my, 0, my + mh);
-  mg.addColorStop(0, "#ffd79a"); mg.addColorStop(0.5, "#f2a94e"); mg.addColorStop(1, "#b96f22");
-  fctx.save();
-  fctx.globalAlpha = 0.35 + 0.65 * machLit;
-  fctx.fillStyle = mg;
-  fctx.beginPath();
-  fctx.ellipse(G.x + G.w / 2, my + mh / 2, G.w * 0.34, mh * 0.62, 0, 0, 6.3);
-  fctx.fill();
-  for (let i = 0; i < 9; i++) {
-    const t = (i + 0.5) / 9;
-    const bx = G.x + G.w * (0.19 + t * 0.62);
-    const on = 0.35 + 0.65 * Math.max(0, Math.sin(machT * 3.4 - i * 0.7));
-    fctx.fillStyle = `rgba(255,236,190,${(on * (0.25 + 0.75 * machLit)).toFixed(2)})`;
-    fctx.beginPath(); fctx.arc(bx, my + mh / 2, mh * 0.20, 0, 6.3); fctx.fill();
-  }
-  fctx.restore();
-
-  /* a grille across the lower half, because something in there is humming */
-  const grY = G.y + G.h * 0.70, grH = G.h * 0.17, grW = G.w * 0.56;
-  fctx.fillStyle = "rgba(18,12,9,0.80)";
-  fctx.beginPath();
-  fctx.roundRect ? fctx.roundRect(G.x + G.w / 2 - grW / 2, grY, grW, grH, grH * 0.14)
-                 : fctx.rect(G.x + G.w / 2 - grW / 2, grY, grW, grH);
-  fctx.fill();
-  fctx.fillStyle = "rgba(150,120,88,0.30)";
-  const slots = 7;
-  for (let i = 0; i < slots; i++) {
-    const sy2 = grY + grH * ((i + 0.6) / slots);
-    fctx.fillRect(G.x + G.w / 2 - grW * 0.44, sy2, grW * 0.88, Math.max(1.5, grH * 0.045));
-  }
-  /* maker's plate and four screws, so it reads as built rather than drawn */
-  fctx.fillStyle = "rgba(190,170,140,0.22)";
-  fctx.fillRect(G.x + G.w * 0.36, G.y + G.h * 0.92, G.w * 0.28, G.h * 0.018);
-  fctx.fillStyle = "rgba(210,214,218,0.42)";
-  for (const [ux, uy] of [[0.055, 0.30], [0.945, 0.30], [0.055, 0.93], [0.945, 0.93]]) {
-    fctx.beginPath();
-    fctx.arc(G.x + G.w * ux, G.y + G.h * uy, Math.max(2, G.w * 0.011), 0, 6.3);
-    fctx.fill();
-  }
-  /* feet */
-  fctx.fillStyle = "#15100c";
-  fctx.fillRect(G.x + G.w * 0.07, G.y + G.h - 2, G.w * 0.13, G.h * 0.022);
-  fctx.fillRect(G.x + G.w * 0.80, G.y + G.h - 2, G.w * 0.13, G.h * 0.022);
-
-  /* ---- the glass, and what is behind it ---- */
-  fctx.save();
-  fctx.beginPath();
-  fctx.roundRect ? fctx.roundRect(G.gx, G.gy, G.gw, G.gh, G.gw * 0.05)
-                 : fctx.rect(G.gx, G.gy, G.gw, G.gh);
-  fctx.fillStyle = "#0a0d10"; fctx.fill();
-  fctx.save(); fctx.clip();
-
-  /* shelves */
-  fctx.fillStyle = "rgba(90,70,50,0.55)";
-  for (let r = 0; r < 3; r++) {
-    const y = G.gy + G.gh * ((r + 0.93) / 3);
-    fctx.fillRect(G.gx, y, G.gw, Math.max(2, G.gh * 0.012));
-  }
-
-  /* the jars */
-  for (let i = 0; i < JARS.length; i++) {
-    const j = JARS[i];
-    if (i === heldJar) continue;                    /* it is on the arm now */
-    drawJar(j.x, j.y, j.r, j, machT);
-  }
-
-  /* the arm: a rail across the top, a carriage, and a gripper on a cable */
-  fctx.strokeStyle = "#8d9298"; fctx.lineWidth = Math.max(2, G.gh * 0.012);
-  fctx.beginPath();
-  fctx.moveTo(G.gx, G.gy + G.gh * 0.05); fctx.lineTo(G.gx + G.gw, G.gy + G.gh * 0.05);
-  fctx.stroke();
-  fctx.strokeStyle = "rgba(200,206,212,0.85)"; fctx.lineWidth = Math.max(2, G.gh * 0.008);
-  fctx.beginPath(); fctx.moveTo(armX, G.gy + G.gh * 0.05); fctx.lineTo(armX, armY); fctx.stroke();
-  const cg = fctx.createLinearGradient(armX - G.gw * 0.04, 0, armX + G.gw * 0.04, 0);
-  cg.addColorStop(0, "#6d7278"); cg.addColorStop(0.5, "#cfd4d8"); cg.addColorStop(1, "#5f6469");
-  fctx.fillStyle = cg;
-  fctx.fillRect(armX - G.gw * 0.045, G.gy + G.gh * 0.02, G.gw * 0.09, G.gh * 0.055);
-  /* the gripper, and whatever it is holding */
-  fctx.strokeStyle = "#cdd3d9"; fctx.lineWidth = Math.max(2.5, G.gh * 0.016);
-  fctx.beginPath();
-  fctx.moveTo(armX - G.gw * 0.035, armY); fctx.lineTo(armX - G.gw * 0.022, armY + G.gh * 0.05);
-  fctx.moveTo(armX + G.gw * 0.035, armY); fctx.lineTo(armX + G.gw * 0.022, armY + G.gh * 0.05);
-  fctx.stroke();
-  if (heldJar >= 0) {
-    const j = JARS[heldJar];
-    drawJar(armX, armY + G.gh * 0.10, j.r, j, machT, jarGlow);
-  }
-
-  /* glass: a reflection down it, and the room behind you in it */
-  const gl = fctx.createLinearGradient(G.gx, G.gy, G.gx + G.gw * 0.8, G.gy + G.gh);
-  gl.addColorStop(0, "rgba(255,255,255,0.13)");
-  gl.addColorStop(0.32, "rgba(255,255,255,0.03)");
-  gl.addColorStop(0.55, "rgba(255,255,255,0.07)");
-  gl.addColorStop(1, "rgba(255,255,255,0)");
-  fctx.fillStyle = gl; fctx.fillRect(G.gx, G.gy, G.gw, G.gh);
-  fctx.restore();
-  fctx.strokeStyle = "rgba(200,206,212,0.5)";
-  fctx.lineWidth = Math.max(2, G.gw * 0.008);
-  fctx.stroke();
-  fctx.restore();
-
-  /* ---- the deck: slot, button, tray ---- */
-  const S = G.slot;
-  fctx.fillStyle = "#1a1512";
-  fctx.fillRect(S.x - S.w / 2, S.y - S.h / 2, S.w, S.h);
-  fctx.strokeStyle = chrome; fctx.lineWidth = Math.max(2, G.w * 0.010);
-  fctx.strokeRect(S.x - S.w / 2 - 2, S.y - S.h / 2 - 2, S.w + 4, S.h + 4);
-
-
-  const B = G.btn;
-  const lit = machPhase >= 1 ? 1 : 0;
-  const bp = 0.5 + 0.5 * Math.sin(machT * 2.6);
-  const bg = fctx.createRadialGradient(B.x - B.r * 0.3, B.y - B.r * 0.35, 0, B.x, B.y, B.r);
-  bg.addColorStop(0, lit ? "#ff9d8a" : "#7a4038");
-  bg.addColorStop(0.6, lit ? "#e0362c" : "#5e2b25");
-  bg.addColorStop(1, lit ? "#8d1a14" : "#3a1a16");
-  fctx.fillStyle = bg;
-  fctx.beginPath(); fctx.arc(B.x, B.y, B.r, 0, 6.3); fctx.fill();
-  fctx.strokeStyle = chrome; fctx.lineWidth = Math.max(2, B.r * 0.16);
-  fctx.stroke();
-  /* the lever: a brass rod with a ball on it, hinged at the bottom */
-  const L = G.lev;
-  const ly = L.y0 + (L.y1 - L.y0) * levPull;
-  fctx.strokeStyle = "rgba(20,14,10,0.5)"; fctx.lineWidth = L.r * 0.9;
-  fctx.beginPath(); fctx.moveTo(L.x, L.y1 + L.r * 0.4); fctx.lineTo(L.x, ly); fctx.stroke();
-  const rodg = fctx.createLinearGradient(L.x - L.r * 0.4, 0, L.x + L.r * 0.4, 0);
-  rodg.addColorStop(0, "#7a5a1c"); rodg.addColorStop(0.4, "#e8c464");
-  rodg.addColorStop(0.6, "#fff0b8"); rodg.addColorStop(1, "#6d4f18");
-  fctx.strokeStyle = rodg; fctx.lineWidth = L.r * 0.55;
-  fctx.beginPath(); fctx.moveTo(L.x, L.y1 + L.r * 0.4); fctx.lineTo(L.x, ly); fctx.stroke();
-  /* the pivot plate */
-  fctx.fillStyle = "rgba(40,28,18,0.85)";
-  fctx.beginPath(); fctx.ellipse(L.x, L.y1 + L.r * 0.5, L.r * 0.95, L.r * 0.5, 0, 0, 6.3); fctx.fill();
-  /* the knob */
-  const kg = fctx.createRadialGradient(L.x - L.r * 0.34, ly - L.r * 0.4, 0, L.x, ly, L.r);
-  kg.addColorStop(0, "#fff6d2"); kg.addColorStop(0.45, "#e7c05a");
-  kg.addColorStop(1, "#7c5a18");
-  fctx.fillStyle = kg;
-  fctx.beginPath(); fctx.arc(L.x, ly, L.r, 0, 6.3); fctx.fill();
-  fctx.strokeStyle = "rgba(60,42,10,0.55)"; fctx.lineWidth = Math.max(1, L.r * 0.12);
-  fctx.stroke();
-  if (machPhase === 1) {
-    const p3 = 0.5 + 0.5 * Math.sin(machT * 2.2);
-    fctx.strokeStyle = `rgba(255,226,150,${(0.18 + 0.34 * p3).toFixed(2)})`;
-    fctx.lineWidth = Math.max(2, L.r * 0.14);
-    fctx.beginPath(); fctx.arc(L.x, ly, L.r * (1.6 + 0.45 * p3), 0, 6.3); fctx.stroke();
-    /* and a hand-sized nudge downward, so the direction is never a guess */
-    fctx.fillStyle = `rgba(255,226,160,${(0.20 + 0.30 * p3).toFixed(2)})`;
-    fctx.beginPath();
-    const ay = ly + L.r * (2.2 + 0.5 * p3);
-    fctx.moveTo(L.x - L.r * 0.34, ay); fctx.lineTo(L.x + L.r * 0.34, ay);
-    fctx.lineTo(L.x, ay + L.r * 0.62); fctx.closePath(); fctx.fill();
-  }
-
-  /* the tray, and the coin in it */
-  const cupX = G.cup.x, cupY = G.cup.y;
-  const cup = fctx.createRadialGradient(cupX, cupY - G.h * 0.006, 0, cupX, cupY, G.w * 0.115);
-  cup.addColorStop(0, "#0a0806");
-  cup.addColorStop(0.7, "#1c1512");
-  cup.addColorStop(1, "#2a201a");
-  fctx.fillStyle = cup;
-  fctx.beginPath();
-  fctx.ellipse(cupX, cupY, G.w * 0.115, G.h * 0.021, 0, 0, 6.3);
-  fctx.fill();
-  fctx.strokeStyle = chrome; fctx.lineWidth = Math.max(2, G.w * 0.009);
-  fctx.stroke();
-  drawCoin(G);
-
-  /* the whole thing warms up once it has been paid */
-  if (machPhase >= 1) {
-    machLit = Math.min(1, machLit + dt * 0.8);
-    fctx.save();
-    fctx.globalCompositeOperation = "lighter";
-    const hg = fctx.createRadialGradient(W * 0.5, G.gy + G.gh * 0.5, 0,
-                                         W * 0.5, G.gy + G.gh * 0.5, G.w * 1.5);
-    hg.addColorStop(0, `rgba(255,196,120,${(0.16 * machLit).toFixed(3)})`);
-    hg.addColorStop(1, "rgba(255,160,90,0)");
-    fctx.fillStyle = hg;
-    fctx.fillRect(0, 0, W, H);
-    fctx.restore();
-  }
-
-  if (armT >= 0) stepArm(dt, G);
-
-  /* the jar does not just sit there lit — it opens */
-  if (bloomT >= 0) {
-    bloomT += dt;
-    const j = JARS[machTarget];
-    const bx = armX, by = G.gy + G.gh * 0.30 - j.r * 1.1;
-    const u = Math.min(1, bloomT / 2.6);
-    const R2 = Math.pow(u, 2.2) * Math.hypot(W, H) * 1.1;
-    fctx.save();
-    fctx.globalCompositeOperation = "lighter";
-    const bg3 = fctx.createRadialGradient(bx, by, 0, bx, by, Math.max(1, R2));
-    bg3.addColorStop(0, `hsla(${j.hue},96%,88%,${(0.55 + 0.45 * u).toFixed(3)})`);
-    bg3.addColorStop(0.35, `hsla(${j.hue},92%,66%,${(0.42 * (1 - u * 0.3)).toFixed(3)})`);
-    bg3.addColorStop(1, "hsla(0,0%,0%,0)");
-    fctx.fillStyle = bg3;
-    fctx.fillRect(0, 0, W, H);
-    fctx.restore();
-    if (u >= 1) { fctx.fillStyle = `hsl(${j.hue},80%,92%)`; fctx.fillRect(0, 0, W, H); }
-    if (bloomT > 2.9 && !jellyOn) startJelly(j.hue);
+    const sweep = Math.min(W, H) * 0.16;
+    fctx.moveTo(cx - sweep, cy + Math.sin(winT * 2.0) * sweep * 0.25);
+    fctx.quadraticCurveTo(cx, cy - sweep * 0.35,
+                          cx + sweep, cy + Math.sin(winT * 2.0 + 1) * sweep * 0.25);
+    fctx.stroke();
   }
 }
 
-function drawJar(x, y, r, j, t, glow) {
-  const bob = Math.sin(t * j.sp + j.ph) * r * 0.06;
-  const h = r * 2.5;
-  /* glass body */
-  fctx.save();
-  fctx.beginPath();
-  fctx.roundRect ? fctx.roundRect(x - r, y - h + bob, r * 2, h, r * 0.35)
-                 : fctx.rect(x - r, y - h + bob, r * 2, h);
-  const jg = fctx.createLinearGradient(x - r, 0, x + r, 0);
-  jg.addColorStop(0, "rgba(180,210,205,0.30)");
-  jg.addColorStop(0.35, "rgba(226,246,240,0.16)");
-  jg.addColorStop(1, "rgba(120,150,148,0.34)");
-  fctx.fillStyle = jg; fctx.fill();
-  if (j.full) {
-    fctx.save(); fctx.clip();
-    const a = 0.55 + (glow || 0) * 0.45;
-    const cg = fctx.createRadialGradient(x, y - h * 0.35 + bob, 0, x, y - h * 0.35 + bob, r * 1.5);
-    cg.addColorStop(0, `hsla(${j.hue},92%,${62 + (glow || 0) * 22}%,${a})`);
-    cg.addColorStop(0.6, `hsla(${(j.hue + 40) % 360},88%,46%,${a * 0.6})`);
-    cg.addColorStop(1, "hsla(0,0%,0%,0)");
-    fctx.fillStyle = cg;
-    fctx.fillRect(x - r, y - h + bob, r * 2, h);
-    /* something turning over in there */
-    fctx.fillStyle = `hsla(${(j.hue + 180) % 360},95%,80%,${0.5 + (glow || 0) * 0.5})`;
-    for (let k = 0; k < 4; k++) {
-      const a2 = t * j.sp * 1.7 + k * 1.6 + j.ph;
-      fctx.beginPath();
-      fctx.arc(x + Math.cos(a2) * r * 0.42, y - h * 0.4 + Math.sin(a2 * 1.3) * h * 0.22 + bob,
-               r * 0.10, 0, 6.3);
-      fctx.fill();
-    }
-    fctx.restore();
-  }
-  /* lid and highlight */
-  fctx.fillStyle = "#8a8f95";
-  fctx.fillRect(x - r * 1.06, y - h + bob - r * 0.20, r * 2.12, r * 0.24);
-  fctx.fillStyle = "rgba(255,255,255,0.42)";
-  fctx.fillRect(x - r * 0.72, y - h * 0.88 + bob, r * 0.16, h * 0.62);
-  fctx.restore();
-  if (glow > 0.02) {
-    fctx.save();
-    fctx.globalCompositeOperation = "lighter";
-    const g2 = fctx.createRadialGradient(x, y - h * 0.4 + bob, 0, x, y - h * 0.4 + bob, r * 6 * glow);
-    g2.addColorStop(0, `hsla(${j.hue},95%,72%,${0.45 * glow})`);
-    g2.addColorStop(1, "hsla(0,0%,0%,0)");
-    fctx.fillStyle = g2;
-    fctx.fillRect(x - r * 6, y - h - r * 6, r * 12, h + r * 12);
-    fctx.restore();
-  }
-}
-
-function drawCoin(G) {
-  const r = Math.max(11, G.w * 0.042);
-  const x = coinIn > 0 ? G.slot.x : coinX;
-  const y = coinIn > 0 ? G.slot.y - r * (1 - coinIn) * 3 : coinY;
-  const sq = coinIn > 0 ? Math.max(0.06, 1 - coinIn) : 1;
-  fctx.save();
-  fctx.translate(x, y);
-  fctx.scale(sq, 1);
-  const cg = fctx.createLinearGradient(-r, -r, r, r);
-  cg.addColorStop(0, "#8a6a22");
-  cg.addColorStop(0.35, "#f0d068");
-  cg.addColorStop(0.55, "#fff3bd");
-  cg.addColorStop(0.8, "#c9a138");
-  cg.addColorStop(1, "#6f5318");
-  fctx.fillStyle = cg;
-  fctx.beginPath(); fctx.arc(0, 0, r, 0, 6.3); fctx.fill();
-  fctx.strokeStyle = "rgba(90,66,14,0.7)"; fctx.lineWidth = Math.max(1, r * 0.10);
-  fctx.stroke();
-  fctx.strokeStyle = "rgba(120,90,20,0.55)"; fctx.lineWidth = Math.max(1, r * 0.07);
-  fctx.beginPath(); fctx.arc(0, 0, r * 0.66, 0, 6.3); fctx.stroke();
-  fctx.restore();
-
-}
-
-/* ---------- the arm goes and gets one ---------- */
-function stepArm(dt, G) {
-  armT += dt;
-  const j = JARS[machTarget];
-  const restY = G.gy - G.gh * 0.06;
-  if (armT < 1.4) {                                   /* track across */
-    const u = sstep(0, 1.4, armT);
-    armX = G.gx + G.gw * 0.5 + (j.x - (G.gx + G.gw * 0.5)) * u;
-    armY = restY;
-  } else if (armT < 2.4) {                            /* reach down */
-    armY = restY + (j.y - j.r * 2.5 - restY) * sstep(1.4, 2.4, armT);
-    armX = j.x;
-  } else if (armT < 2.9) {                            /* grip */
-    heldJar = machTarget;
-    armY = j.y - j.r * 2.5;
-  } else if (armT < 4.0) {                            /* lift and centre it */
-    const u = sstep(2.9, 4.0, armT);
-    armX = j.x + (G.gx + G.gw * 0.5 - j.x) * u;
-    armY = (j.y - j.r * 2.5) + (G.gy + G.gh * 0.30 - (j.y - j.r * 2.5)) * u;
-  } else {
-    jarGlow = Math.min(1, jarGlow + dt * 0.42);
-    if (jarGlow > 0.99 && machPhase === 3) { machPhase = 4; jarOpen(); }
-  }
-}
-let machTarget = 0;
-
-function pullLever() {
-  if (machPhase !== 1) return;
-  machPhase = 3; armT = 0; jarGlow = 0;
-  const full = JARS.map((j, i) => j.full ? i : -1).filter(i => i >= 0);
-  machTarget = full.length ? full[(rnd() * full.length) | 0] : 0;
-  clunk(); whirr();
-}
-
-function jarOpen() { chord(); bloomT = 0; }
-let bloomT = -1;
-
-function ratchet() {
-  const ac = audio(); if (!ac) return;
-  const t0 = ac.currentTime;
-  const s = ac.createBufferSource(); s.buffer = noise(ac);
-  const bp = ac.createBiquadFilter(); bp.type = "bandpass";
-  bp.frequency.value = 1800 + Math.random() * 1400; bp.Q.value = 8;
-  const g = ac.createGain();
-  g.gain.setValueAtTime(0.0001, t0);
-  g.gain.exponentialRampToValueAtTime(0.045, t0 + 0.012);
-  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.12);
-  s.connect(bp); bp.connect(g); g.connect(BUS);
-  s.start(t0); s.stop(t0 + 0.14);
-}
-
-/* ---------- input ---------- */
-function coinHit(x, y) {
-  if (machPhase !== 1) return false;
-  const G = machGeom(), r = Math.max(11, G.w * 0.042);
-  return Math.hypot(x - coinX, y - coinY) < Math.max(r * 2.4, 40 * UIS);
-}
-/* the whole length of the lever's travel is the target, not just where the
-   knob happens to be — otherwise it slides out from under the finger that
-   is pulling it, which is the same trap the chest pin fell into */
-function levHit(x, y) {
-  const G = machGeom(), L = G.lev;
-  return Math.abs(x - L.x) < Math.max(L.r * 2.8, 50 * UIS) &&
-         y > L.y0 - L.r * 2.8 && y < L.y1 + L.r * 2.6;
-}
-function levAdvance(v) {
-  if (machPhase !== 1) return;
-  const n = Math.max(levPull, Math.min(1, v));
-  if (n > levPull) { levPull = n; ratchet(); }
-  if (levPull >= 1) { levGrab = null; pullLever(); }
-}
+/* --- wiping --- */
+function winBrush() { return Math.max(26, Math.min(window.innerWidth, window.innerHeight) * 0.075); }
 window.addEventListener("pointerdown", (e) => {
-  if (machPhase !== 1) return;
-  if (!levHit(e.clientX, e.clientY)) return;
-  levGrab = { y: e.clientY, p0: levPull };
-  levAdvance(levPull + 0.24);          /* taps work, same as everything else */
+  if (!winOn || winGone) return;
+  winWipe = { x: e.clientX, y: e.clientY };
+  wipeAt(e.clientX, e.clientY, winBrush());
+  squeak(0.4);
   if (e.cancelable) e.preventDefault();
 }, { passive: false });
 window.addEventListener("pointermove", (e) => {
-  if (!machPhase) return;
-  if (machPhase === 1) finCanvas.style.cursor = levHit(e.clientX, e.clientY) ? "grab" : "";
-  if (!levGrab) return;
-  const G = machGeom();
-  levAdvance(levGrab.p0 + (e.clientY - levGrab.y) / (G.lev.y1 - G.lev.y0));
+  if (!winOn || winGone) return;
+  finCanvas.style.cursor = "cell";
+  if (!winWipe) return;
+  /* interpolate, or a fast swipe leaves gaps */
+  const dx = e.clientX - winWipe.x, dy = e.clientY - winWipe.y;
+  const D = Math.hypot(dx, dy), step = winBrush() * 0.34;
+  const n = Math.max(1, Math.ceil(D / step));
+  for (let i = 1; i <= n; i++)
+    wipeAt(winWipe.x + dx * i / n, winWipe.y + dy * i / n, winBrush());
+  winWipe = { x: e.clientX, y: e.clientY };
+  squeak(Math.min(1, D / 90));
   if (e.cancelable) e.preventDefault();
 }, { passive: false });
-window.addEventListener("pointerup", () => { levGrab = null; });
+window.addEventListener("pointerup", () => { winWipe = null; });
 
-
-/* ---------- sound ---------- */
-function machHum() {
-  const ac = audio(); if (!ac) return;
-  const o = ac.createOscillator(); o.type = "sawtooth";
-  o.frequency.value = 51;
-  const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 190;
+/* --- sound --- */
+let rainBed = null;
+function rainOnGlass() {
+  const ac = audio(); if (!ac || rainBed) return;
+  const s = ac.createBufferSource(); s.buffer = noise(ac); s.loop = true;
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass";
+  bp.frequency.value = 2600; bp.Q.value = 0.5;
   const g = ac.createGain();
   g.gain.setValueAtTime(0.0001, ac.currentTime);
-  g.gain.linearRampToValueAtTime(0.030, ac.currentTime + 2.5);
-  o.connect(lp); lp.connect(g); g.connect(BUS);
-  o.start();
+  g.gain.linearRampToValueAtTime(0.038, ac.currentTime + 2.5);
+  s.connect(bp); bp.connect(g); g.connect(BUS);
+  s.start();
+  rainBed = { s, g };
+  /* the odd fat drop hitting the pane */
+  const tick = () => {
+    if (!winOn) return;
+    const ac2 = audio(); if (!ac2) return;
+    const t0 = ac2.currentTime;
+    const o = ac2.createOscillator(); o.type = "sine";
+    o.frequency.setValueAtTime(900 + Math.random() * 1600, t0);
+    o.frequency.exponentialRampToValueAtTime(300, t0 + 0.06);
+    const gg = ac2.createGain();
+    gg.gain.setValueAtTime(0.020, t0);
+    gg.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.09);
+    o.connect(gg); gg.connect(BUS);
+    o.start(t0); o.stop(t0 + 0.1);
+    setTimeout(tick, 300 + Math.random() * 1600);
+  };
+  setTimeout(tick, 800);
 }
-function coinDrop() {
-  const ac = audio(); if (!ac) return;
+let lastSq = 0;
+function squeak(v) {
+  const ac = audio(); if (!ac || v < 0.05) return;
   const t0 = ac.currentTime;
-  [1420, 990, 2380].forEach((f, i) => {
-    const o = ac.createOscillator(); o.type = "triangle";
-    o.frequency.setValueAtTime(f, t0 + i * 0.055);
-    o.frequency.exponentialRampToValueAtTime(f * 0.82, t0 + i * 0.055 + 0.4);
-    const g = ac.createGain();
-    g.gain.setValueAtTime(0.10 / (i + 1), t0 + i * 0.055);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + i * 0.055 + 0.55);
-    o.connect(g); g.connect(BUS);
-    o.start(t0 + i * 0.055); o.stop(t0 + i * 0.055 + 0.6);
-  });
-}
-function clunk() {
-  const ac = audio(); if (!ac) return;
-  const t0 = ac.currentTime;
+  if (t0 - lastSq < 0.07) return;
+  lastSq = t0;
   const o = ac.createOscillator(); o.type = "sine";
-  o.frequency.setValueAtTime(150, t0);
-  o.frequency.exponentialRampToValueAtTime(52, t0 + 0.16);
-  const g = ac.createGain();
-  g.gain.setValueAtTime(0.18, t0);
-  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.26);
-  o.connect(g); g.connect(BUS);
-  o.start(t0); o.stop(t0 + 0.28);
-}
-function whirr() {
-  const ac = audio(); if (!ac) return;
-  const t0 = ac.currentTime;
-  const o = ac.createOscillator(); o.type = "square";
-  o.frequency.setValueAtTime(58, t0);
-  o.frequency.linearRampToValueAtTime(74, t0 + 1.4);
-  o.frequency.linearRampToValueAtTime(46, t0 + 4.0);
+  o.frequency.setValueAtTime(560 + v * 900, t0);
+  o.frequency.exponentialRampToValueAtTime(420 + v * 500, t0 + 0.12);
   const bp = ac.createBiquadFilter(); bp.type = "bandpass";
-  bp.frequency.value = 700; bp.Q.value = 3.5;
+  bp.frequency.value = 1400 + v * 1800; bp.Q.value = 5;
   const g = ac.createGain();
   g.gain.setValueAtTime(0.0001, t0);
-  g.gain.linearRampToValueAtTime(0.045, t0 + 0.2);
-  g.gain.setValueAtTime(0.045, t0 + 3.6);
-  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 4.3);
+  g.gain.exponentialRampToValueAtTime(0.016 * (0.3 + v), t0 + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
   o.connect(bp); bp.connect(g); g.connect(BUS);
-  o.start(t0); o.stop(t0 + 4.4);
+  o.start(t0); o.stop(t0 + 0.18);
 }
-function chord() {
+function clearSigh() {
   const ac = audio(); if (!ac) return;
   const t0 = ac.currentTime;
-  [174.6, 261.6, 349.2, 523.3].forEach((f, i) => {
-    const o = ac.createOscillator(); o.type = i > 1 ? "sine" : "triangle";
+  if (rainBed) rainBed.g.gain.setTargetAtTime(0.012, t0, 1.2);
+  [196, 261.6, 329.6, 392, 523.3].forEach((f, i) => {
+    const o = ac.createOscillator(); o.type = i > 2 ? "sine" : "triangle";
     o.frequency.value = f;
     const g = ac.createGain();
-    g.gain.setValueAtTime(0.0001, t0 + i * 0.09);
-    g.gain.exponentialRampToValueAtTime(0.05, t0 + i * 0.09 + 0.25);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 4.5);
+    g.gain.setValueAtTime(0.0001, t0 + i * 0.11);
+    g.gain.exponentialRampToValueAtTime(0.048, t0 + i * 0.11 + 0.4);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 5.0);
     o.connect(g); g.connect(BUS);
-    o.start(t0 + i * 0.09); o.stop(t0 + 4.8);
+    o.start(t0 + i * 0.11); o.stop(t0 + 5.2);
   });
 }
 
