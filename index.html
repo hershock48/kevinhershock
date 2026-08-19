@@ -368,16 +368,35 @@
 <canvas id="goo"></canvas>
 <div id="tap">
   <svg width="140" height="120" viewBox="0 0 140 120">
-    <rect x="63" y="0" width="14" height="48" rx="2" fill="#8d9296"/>
-    <rect x="63" y="0" width="4" height="48" fill="#b9bec4"/>
-    <rect x="55" y="44" width="30" height="26" rx="6" fill="#7d8288"/>
-    <rect x="58" y="47" width="6" height="20" rx="3" fill="#9aa0a5"/>
-    <rect x="66" y="36" width="8" height="10" rx="2" fill="#5f6468"/>
-    <rect x="63" y="68" width="14" height="16" fill="#6b7075"/>
-    <rect x="60" y="82" width="20" height="9" rx="3" fill="#54585c"/>
+    <defs>
+      <linearGradient id="brass" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#6d5220"/>
+        <stop offset="0.22" stop-color="#c8a24e"/>
+        <stop offset="0.42" stop-color="#f4dc9a"/>
+        <stop offset="0.62" stop-color="#b98f3c"/>
+        <stop offset="1" stop-color="#5b4319"/>
+      </linearGradient>
+      <linearGradient id="brassDim" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#4f3a16"/>
+        <stop offset="0.35" stop-color="#a98637"/>
+        <stop offset="0.6" stop-color="#d8bb6b"/>
+        <stop offset="1" stop-color="#3f2f11"/>
+      </linearGradient>
+    </defs>
+    <rect x="62" y="0" width="16" height="48" rx="2" fill="url(#brass)"/>
+    <rect x="59" y="10" width="22" height="6" rx="2" fill="url(#brassDim)"/>
+    <rect x="54" y="42" width="32" height="28" rx="7" fill="url(#brass)"/>
+    <rect x="57" y="46" width="5" height="21" rx="2.5" fill="#fff0c0" opacity="0.45"/>
+    <rect x="66" y="35" width="8" height="10" rx="2" fill="#7c5f24"/>
+    <rect x="62" y="68" width="16" height="16" fill="url(#brassDim)"/>
+    <rect x="58" y="81" width="24" height="10" rx="3" fill="url(#brass)"/>
+    <rect x="58" y="81" width="24" height="3" rx="1.5" fill="#fff2c8" opacity="0.35"/>
+    <path d="M56 44 Q62 58 58 68" stroke="#6f8f5e" stroke-width="2.4" fill="none" opacity="0.35"/>
+    <path d="M84 46 Q80 58 83 66" stroke="#6f8f5e" stroke-width="2" fill="none" opacity="0.28"/>
     <g id="tapWheel" transform="translate(70 40)">
       <circle r="30" fill="rgba(0,0,0,0)"/>
-      <circle r="20" fill="none" stroke="#c0392b" stroke-width="7"/>
+      <circle r="20" fill="none" stroke="#b8402f" stroke-width="7"/>
+      <circle r="20" fill="none" stroke="#ffb9a4" stroke-width="2" opacity="0.35"/>
       <line x1="-20" y1="0" x2="20" y2="0" stroke="#c0392b" stroke-width="5" stroke-linecap="round"/>
       <line x1="0" y1="-20" x2="0" y2="20" stroke="#c0392b" stroke-width="5" stroke-linecap="round"/>
       <circle r="6" fill="#96281b"/>
@@ -1121,6 +1140,12 @@ function frame(now) {
   prevT = now;
 
   if (poolOn) poolFrame(dt);
+  /* a transition can be in flight with no scene behind it — between the
+     torn paper and the ink, there is nothing else running */
+  if (travelOnly) {
+    hardClear(finCanvas, fctx);
+    if (!travelFrame(dt)) travelOnly = false;
+  }
 
   if (!exploded) {
     if (now - lastPump > IDLE_MS && target > 0) {
@@ -2296,7 +2321,7 @@ function swellSound() {
 const tapEl = document.getElementById("tap");
 const wheelEl = document.getElementById("tapWheel");
 let tapShown = false, tapRot = 0, valveFlow = 0, lastSqueakRot = 0, dripT = 1.2;
-let wT = 0, wFlow = 0, frontY = null, frontV = 0, wLanded = false;
+let wT = 0, wFlow = 0, frontY = null, frontV = 0, wLanded = false, wMotes = [], wLastT = 0;
 let breakY = null, breakV = 0, wasFlowing = false;
 let vol = 0, slosh = 0, sloshV = 0;
 let wDrops = [], wFoam = [], wBub = [], wNucl = [];
@@ -2709,6 +2734,58 @@ function waterDraw() {
     }
     ctx.restore();
 
+    /* caustics — the surface is not flat, so the light coming through it
+       is not even. This is the single thing that stops a body of water
+       looking like a coloured rectangle. */
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(0, H);
+    for (let x = 0; x <= W; x += 8) ctx.lineTo(x, surfaceY(x, level, agit));
+    ctx.lineTo(W, H); ctx.closePath(); ctx.clip();
+    ctx.globalCompositeOperation = "lighter";
+    const bands = W < 620 ? 4 : 9;
+    for (let i = 0; i < bands; i++) {
+      const d = (i + 0.5) / bands;
+      const y = level + (H - level) * d * d;
+      const a = 0.075 * (1 - d) * (1 - d);
+      if (a < 0.004) continue;
+      ctx.strokeStyle = `rgba(206,240,255,${a.toFixed(3)})`;
+      ctx.lineWidth = 1 + (1 - d) * 3.4;
+      ctx.beginPath();
+      for (let x = 0; x <= W; x += 16) {
+        const yy = y
+          + Math.sin(x * 0.011 + wT * (0.9 + i * 0.13) + i) * (6 + (1 - d) * 16)
+          + Math.sin(x * 0.027 - wT * (0.6 + i * 0.09)) * (3 + (1 - d) * 7);
+        x === 0 ? ctx.moveTo(x, yy) : ctx.lineTo(x, yy);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    /* motes turning over in the shafts */
+    if (!wMotes.length) {
+      for (let i = 0; i < (W < 620 ? 30 : 80); i++)
+        wMotes.push({ x: Math.random() * W, d: Math.random(),
+                      r: 0.5 + Math.random() * 1.5, ph: Math.random() * 6.3,
+                      sp: 0.25 + Math.random() * 0.7 });
+    }
+    const mdt = Math.max(0, Math.min(0.1, wT - wLastT));
+    wLastT = wT;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(0, H);
+    for (let x = 0; x <= W; x += 8) ctx.lineTo(x, surfaceY(x, level, agit));
+    ctx.lineTo(W, H); ctx.closePath(); ctx.clip();
+    for (const m of wMotes) {
+      const my = level + (H - level) * m.d;
+      const mx = m.x + Math.sin(wT * m.sp + m.ph) * 14;
+      ctx.fillStyle = `rgba(226,246,255,${(0.10 + 0.24 * Math.abs(Math.sin(wT * 0.7 + m.ph))).toFixed(3)})`;
+      ctx.beginPath(); ctx.arc(mx, my + Math.sin(wT * 0.35 + m.ph) * 8, m.r, 0, 6.3); ctx.fill();
+      m.d -= mdt * 0.006 * m.sp;
+      if (m.d < 0) { m.d = 1; m.x = Math.random() * W; }
+    }
+    ctx.restore();
+
     /* a bright band of refraction just under the surface */
     if (W >= 620) {
     ctx.save();
@@ -3022,7 +3099,12 @@ function updateScrew(dt) {
       corkPopSound();
       drainOpen = true;
       startGurgle();
-      activateGoo();
+      /* the transition needs a canvas to live on, and nothing else is
+         running at this moment — so hand it the finale one */
+      finCanvas.style.display = "block";
+      sizeFinale();
+      passThrough(() => activateGoo(), { dur: 1.4 });
+      travelOnly = true;
       /* unplugged — the corkscrew rises up and away with its prize */
       screwEl.style.transition = "top 1.4s ease-in, opacity 0.6s ease 1.3s";
       screwEl.style.top = (screwTargetY - 390 * UIS) + "px";
@@ -3224,9 +3306,15 @@ function finishGoo() {
     }));
     setTimeout(() => pc.remove(), 2800);
   }
-  gooCanvas.style.display = "none";
   gooActive = false;
-  setTimeout(startFinale, 2300);   // once the shreds have fallen
+  /* you do not cut to the next room, you go through the hole you just made */
+  setTimeout(() => {
+    finCanvas.style.display = "block";
+    sizeFinale();
+    passThrough(() => { gooCanvas.style.display = "none"; startFinale(); },
+                { src: gooCanvas, dur: 1.5, up: true });
+    travelOnly = true;
+  }, 1500);
 }
 
 function ripSound() {
@@ -5897,6 +5985,7 @@ function creak(v) {
    underneath. Used at every hard change, so travel has a grammar and the
    whole thing feels like it is going somewhere rather than jumping. */
 let travC = null, travX = null, travT = -1, travDur = 1.5, travDone = null;
+let travelOnly = false;
 
 function passThrough(after, opts) {
   const W = window.innerWidth, H = window.innerHeight;
@@ -5904,7 +5993,8 @@ function passThrough(after, opts) {
   travC.width = W; travC.height = H;
   travX.setTransform(1, 0, 0, 1, 0, 0);
   travX.clearRect(0, 0, W, H);
-  try { travX.drawImage(finCanvas, 0, 0, W, H); } catch (e) {}
+  const src = (opts && opts.src) || finCanvas;
+  try { travX.drawImage(src, 0, 0, W, H); } catch (e) {}
   travT = 0;
   travDur = (opts && opts.dur) || 1.5;
   travDone = after || null;
@@ -6149,7 +6239,9 @@ function windowFrame(dt) {
     fogX.fillStyle = `rgba(0,0,0,${(dt * 3.4).toFixed(3)})`;
     fogX.fillRect(0, 0, W, H);
     fogX.restore();
-    if (winGone >= 1 && !jellyOn) { winOn = false; startJelly(196); }
+    if (winGone >= 1 && !jellyOn && travT < 0) {
+      passThrough(() => { winOn = false; startJelly(196); }, { dur: 1.5 });
+    }
   }
 
   /* a nudge, if they have not touched it */
