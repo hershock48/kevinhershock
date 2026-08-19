@@ -107,6 +107,30 @@
     display: none;
     background: #fdfdfb;   /* the paper, so the canvas only clears */
   }
+  #cord {
+    position: fixed;
+    top: 0;
+    right: 16%;
+    z-index: 14;
+    display: none;
+    cursor: grab;
+    touch-action: none;
+    transform: translateY(-120%);
+    transition: transform 1.4s cubic-bezier(.22,1.2,.36,1);
+  }
+  #cord.on { transform: translateY(0); }
+  #cord.grabbing { cursor: grabbing; }
+  #cord svg { overflow: visible; filter: drop-shadow(0 5px 12px rgba(0,0,0,0.55)); }
+  /* it hangs in a room full of lasers — it has to move to be seen */
+  #cordSwing {
+    transform-origin: 30px -240px;
+    animation: cordsway 3.2s ease-in-out infinite;
+  }
+  @keyframes cordsway {
+    0%, 100% { transform: rotate(-1.3deg); }
+    50%      { transform: rotate(1.3deg); }
+  }
+  #cord.grabbing #cordSwing { animation: none; }
   #vignette {
     position: fixed;
     inset: 0;
@@ -355,6 +379,17 @@
   </svg>
 </div>
 <canvas id="finale"></canvas>
+<div id="cord">
+  <svg width="60" height="300" viewBox="0 0 60 300">
+    <g id="cordSwing">
+      <line x1="30" y1="-700" x2="30" y2="232" stroke="#f2ece0" stroke-width="4" stroke-linecap="round"/>
+      <line x1="30" y1="-700" x2="30" y2="232" stroke="#6f6a5e" stroke-width="1.6" stroke-linecap="round" opacity="0.45"/>
+      <ellipse cx="30" cy="256" rx="15" ry="24" fill="#c98f45" stroke="#71512a" stroke-width="2.5"/>
+      <ellipse cx="24.5" cy="245" rx="5" ry="8" fill="#e8bd7d" opacity="0.95"/>
+      <ellipse cx="30" cy="234" rx="7" ry="4" fill="#8a6531"/>
+    </g>
+  </svg>
+</div>
 <div id="flash"></div>
 <div id="vignette"></div>
 <div id="grain"></div>
@@ -3049,7 +3084,9 @@ const sstep = (a, b, t) => { const x = Math.max(0, Math.min(1, (t-a)/(b-a))); re
 
 function finaleFrame(dt) {
   if (!finActive) return;
+  if (nightPhase) { drawNight(dt); return; }   // the party is over
   fT += dt;
+  if (fT > 15.5) showCord();
   const W = window.innerWidth, H = window.innerHeight;
   const cx = W / 2, cy = H * 0.46;
 
@@ -3216,6 +3253,211 @@ function finaleFrame(dt) {
   }
 }
 
+/* ================= lights out =================
+   A pull cord drops into the party. Yank it and the whole thing dies —
+   music, lasers, spiral, all of it — and what's left is a night sky with
+   the balloon you inflated at the very beginning, drawn in stars. */
+const cordEl = document.getElementById("cord");
+let cordShown = false, cordPull = 0, cordDrag = null;
+let nightPhase = 0, nightT = 0, stars = [], shooters = [], nightPad = null;
+
+const CONST_BODY = [
+  [0,-1.00],[0.55,-0.82],[0.86,-0.34],[0.78,0.20],[0.40,0.62],[0,0.80],
+  [-0.40,0.62],[-0.78,0.20],[-0.86,-0.34],[-0.55,-0.82],
+];
+const CONST_TAIL = [[0,0.80],[0.10,1.02],[-0.10,1.28],[0.14,1.54],[-0.02,1.80]];
+
+function showCord() {
+  if (cordShown) return;
+  cordShown = true;
+  cordEl.style.display = "block";
+  requestAnimationFrame(() => cordEl.classList.add("on"));
+}
+cordEl.addEventListener("pointerdown", (e) => {
+  if (nightPhase) return;
+  e.preventDefault();
+  cordEl.setPointerCapture(e.pointerId);
+  cordEl.classList.add("grabbing");
+  cordDrag = { y0: e.clientY };
+});
+cordEl.addEventListener("pointermove", (e) => {
+  if (!cordDrag || nightPhase) return;
+  cordPull = Math.max(0, Math.min(160, e.clientY - cordDrag.y0));
+  cordEl.style.transition = "none";
+  cordEl.style.transform = `translateY(${cordPull}px)`;
+});
+function releaseCord() {
+  if (!cordDrag) return;
+  cordDrag = null;
+  cordEl.classList.remove("grabbing");
+  cordEl.style.transition = "transform 0.4s cubic-bezier(.3,1.7,.5,1)";
+  cordEl.style.transform = "translateY(0)";
+  if (cordPull > 58) lightsOut();
+  cordPull = 0;
+}
+cordEl.addEventListener("pointerup", releaseCord);
+cordEl.addEventListener("pointercancel", releaseCord);
+
+function switchClick() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass";
+  bp.frequency.value = 2600; bp.Q.value = 2.2;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.5, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.045);
+  s.connect(bp); bp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 0.05);
+  const o = ac.createOscillator(); o.type = "sine";
+  o.frequency.setValueAtTime(70, t0 + 0.01);
+  o.frequency.exponentialRampToValueAtTime(34, t0 + 0.3);
+  const g2 = ac.createGain();
+  g2.gain.setValueAtTime(0.3, t0 + 0.01);
+  g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.34);
+  o.connect(g2); g2.connect(BUS); o.start(t0 + 0.01); o.stop(t0 + 0.36);
+}
+function startNightPad() {
+  const ac = audio(); if (!ac || nightPad) return;
+  const g = ac.createGain(); g.gain.value = 0;
+  g.gain.setTargetAtTime(0.035, ac.currentTime, 2.5);
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 420;
+  lp.connect(g); g.connect(BUS);
+  const oscs = [55, 82.4, 110.5].map((f, i) => {
+    const o = ac.createOscillator();
+    o.type = i === 2 ? "triangle" : "sine";
+    o.frequency.value = f * (1 + (i - 1) * 0.002);
+    o.connect(lp); o.start();
+    return o;
+  });
+  nightPad = { oscs, g };
+}
+function chime(n) {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const SC = [523.3, 587.3, 659.3, 784, 880, 1046.5];
+  const o = ac.createOscillator(); o.type = "sine";
+  o.frequency.value = SC[n % SC.length] * (n > 5 ? 2 : 1);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(0.055, t0 + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.6);
+  o.connect(g); g.connect(BUS);
+  o.start(t0); o.stop(t0 + 1.7);
+}
+
+function lightsOut() {
+  if (nightPhase) return;
+  nightPhase = 1; nightT = 0;
+  inv = 0;
+  finCanvas.style.filter = "none";
+  finCanvas.style.background = "#05060a";
+  switchClick();
+  cordEl.style.transition = "opacity 0.5s ease";
+  cordEl.style.opacity = "0";
+  setTimeout(() => { cordEl.style.display = "none"; }, 600);
+
+  const W = window.innerWidth, H = window.innerHeight;
+  stars = [];
+  const N = Math.round(Math.max(120, Math.min(420, (W * H) / 2600)));
+  for (let i = 0; i < N; i++) {
+    stars.push({ x: Math.random() * W, y: Math.random() * H,
+                 r: 0.4 + Math.random() * 1.6,
+                 tw: 0.35 + Math.random() * 2.1, ph: Math.random() * 6.3,
+                 b: 0.22 + Math.random() * 0.78 });
+  }
+  shooters = [];
+  setTimeout(startNightPad, 1200);
+}
+
+let lastSeg = -1;
+function drawNight(dt) {
+  const W = window.innerWidth, H = window.innerHeight;
+  nightT += dt;
+  hardClear(finCanvas, fctx);
+  fctx.fillStyle = "#05060a";
+  fctx.fillRect(0, 0, W, H);
+
+  const app = Math.min(1, nightT / 3.0);
+  fctx.fillStyle = "#eaf2ff";
+  for (const s of stars) {
+    const tw = 0.55 + 0.45 * Math.sin(nightT * s.tw + s.ph);
+    fctx.globalAlpha = app * s.b * tw;
+    fctx.beginPath(); fctx.arc(s.x, s.y, s.r, 0, 6.3); fctx.fill();
+  }
+  fctx.globalAlpha = 1;
+
+  /* the balloon, in stars */
+  const S = Math.min(W, H) * 0.22;
+  const cx = W / 2, cy = H * 0.44;
+  const P = p => [cx + p[0] * S, cy + p[1] * S];
+  const segs = [];
+  for (let i = 0; i < CONST_BODY.length; i++) {
+    segs.push([P(CONST_BODY[i]), P(CONST_BODY[(i + 1) % CONST_BODY.length])]);
+  }
+  for (let i = 0; i < CONST_TAIL.length - 1; i++) {
+    segs.push([P(CONST_TAIL[i]), P(CONST_TAIL[i + 1])]);
+  }
+  const rev = Math.max(0, Math.min(segs.length, (nightT - 2.4) / 5.2 * segs.length));
+  const done = Math.floor(rev);
+  if (done > lastSeg && done > 0 && done <= segs.length) { lastSeg = done; chime(done - 1); }
+
+  fctx.strokeStyle = "rgba(150,190,255,0.55)";
+  fctx.lineWidth = 1.3;
+  fctx.lineCap = "round";
+  fctx.beginPath();
+  for (let i = 0; i < Math.min(done, segs.length); i++) {
+    fctx.moveTo(segs[i][0][0], segs[i][0][1]);
+    fctx.lineTo(segs[i][1][0], segs[i][1][1]);
+  }
+  if (done < segs.length) {
+    const f = rev - done, s = segs[done];
+    if (f > 0) {
+      fctx.moveTo(s[0][0], s[0][1]);
+      fctx.lineTo(s[0][0] + (s[1][0] - s[0][0]) * f, s[0][1] + (s[1][1] - s[0][1]) * f);
+    }
+  }
+  fctx.stroke();
+
+  /* the joints are stars themselves, brighter */
+  const nodes = CONST_BODY.concat(CONST_TAIL.slice(1));
+  const shown = Math.min(nodes.length, Math.ceil(rev) + 1);
+  for (let i = 0; i < shown; i++) {
+    const [x, y] = P(nodes[i]);
+    const pulse = 0.75 + 0.25 * Math.sin(nightT * 1.6 + i);
+    fctx.globalAlpha = Math.min(1, app * pulse);
+    const g = fctx.createRadialGradient(x, y, 0, x, y, 9);
+    g.addColorStop(0, "rgba(255,255,255,0.95)");
+    g.addColorStop(0.35, "rgba(175,210,255,0.55)");
+    g.addColorStop(1, "rgba(140,180,255,0)");
+    fctx.fillStyle = g;
+    fctx.fillRect(x - 9, y - 9, 18, 18);
+    fctx.fillStyle = "#ffffff";
+    fctx.beginPath(); fctx.arc(x, y, 1.7, 0, 6.3); fctx.fill();
+  }
+  fctx.globalAlpha = 1;
+
+  /* the very occasional shooting star */
+  if (nightT > 5 && Math.random() < 0.11 * dt) {
+    shooters.push({ x: Math.random() * W, y: Math.random() * H * 0.5,
+                    vx: -160 - Math.random() * 220, vy: 70 + Math.random() * 110, life: 1 });
+  }
+  for (let i = shooters.length - 1; i >= 0; i--) {
+    const sh = shooters[i];
+    sh.life -= dt * 0.85;
+    if (sh.life <= 0) { shooters.splice(i, 1); continue; }
+    sh.x += sh.vx * dt; sh.y += sh.vy * dt;
+    const g = fctx.createLinearGradient(sh.x, sh.y, sh.x - sh.vx * 0.16, sh.y - sh.vy * 0.16);
+    g.addColorStop(0, `rgba(255,255,255,${0.85 * sh.life})`);
+    g.addColorStop(1, "rgba(255,255,255,0)");
+    fctx.strokeStyle = g; fctx.lineWidth = 1.8;
+    fctx.beginPath();
+    fctx.moveTo(sh.x, sh.y);
+    fctx.lineTo(sh.x - sh.vx * 0.16, sh.y - sh.vy * 0.16);
+    fctx.stroke();
+  }
+}
+
 function splatSound() {
   const ac = audio(); if (!ac) return;
   const t0 = ac.currentTime;
@@ -3262,7 +3504,8 @@ function applyUIScale() {
   UIS = uiScaleValue();
   /* the tap runs bigger than the other props — it has to be spotted at the
      very edge of a screen full of colour, and gripped with a thumb */
-  const sizes = [[tapEl, 238, 204], [chestEl, 200, 200], [keyEl, 58, 28], [corkEl, 34, 42], [screwEl, 160, 160]];
+  const sizes = [[tapEl, 238, 204], [chestEl, 200, 200], [keyEl, 58, 28],
+                 [corkEl, 34, 42], [screwEl, 160, 160], [cordEl, 60, 300]];
   for (const [el, w, h] of sizes) {
     const svg = el.querySelector("svg");
     svg.setAttribute("width", Math.round(w * UIS));
