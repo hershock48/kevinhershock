@@ -3035,50 +3035,141 @@ function capsule(x1, y1, x2, y2, w, col) {
   fctx.beginPath(); fctx.moveTo(x1, y1); fctx.lineTo(x2, y2); fctx.stroke();
 }
 
-function drawBaby(cx, cy, s, beat, skin, diaper) {
-  const sway = Math.sin(beat * Math.PI);
-  const bob = Math.abs(Math.sin(beat * Math.PI)) * 0.10 * s;
-  const twist = sway * 0.16;
-  fctx.save();
-  fctx.translate(cx + sway * 0.22 * s, cy - bob);
-  fctx.rotate(twist * 0.35);
-  const hipY = -0.42 * s, shY = -1.02 * s;
-  // legs — alternating step
-  const l1 = Math.sin(beat * Math.PI), l2 = -l1;
-  capsule(-0.16*s, hipY, -0.22*s - l1*0.16*s, hipY + 0.42*s, 0.20*s, skin);
-  capsule(-0.22*s - l1*0.16*s, hipY + 0.42*s, -0.26*s - l1*0.26*s, hipY + 0.78*s, 0.17*s, skin);
-  capsule( 0.16*s, hipY,  0.22*s - l2*0.16*s, hipY + 0.42*s, 0.20*s, skin);
-  capsule( 0.22*s - l2*0.16*s, hipY + 0.42*s, 0.26*s - l2*0.26*s, hipY + 0.78*s, 0.17*s, skin);
-  // body
-  fctx.fillStyle = skin;
-  fctx.beginPath(); fctx.ellipse(0, -0.72*s, 0.40*s, 0.44*s, 0, 0, 6.3); fctx.fill();
-  // diaper
-  fctx.fillStyle = diaper;
-  fctx.beginPath(); fctx.ellipse(0, -0.40*s, 0.36*s, 0.26*s, 0, 0, 6.3); fctx.fill();
-  // arms — the cha-cha
-  const a1 = Math.sin(beat * Math.PI + 0.6), a2 = Math.sin(beat * Math.PI + Math.PI + 0.6);
-  capsule(-0.34*s, shY, -0.62*s, shY - a1*0.30*s, 0.17*s, skin);
-  capsule(-0.62*s, shY - a1*0.30*s, -0.80*s, shY - a1*0.58*s - 0.08*s, 0.15*s, skin);
-  capsule( 0.34*s, shY,  0.62*s, shY - a2*0.30*s, 0.17*s, skin);
-  capsule( 0.62*s, shY - a2*0.30*s,  0.80*s, shY - a2*0.58*s - 0.08*s, 0.15*s, skin);
-  // head
-  fctx.fillStyle = skin;
-  fctx.beginPath(); fctx.ellipse(0, -1.52*s, 0.46*s, 0.43*s, sway*0.1, 0, 6.3); fctx.fill();
-  fctx.beginPath(); fctx.ellipse(-0.45*s, -1.50*s, 0.09*s, 0.11*s, 0, 0, 6.3); fctx.fill();
-  fctx.beginPath(); fctx.ellipse( 0.45*s, -1.50*s, 0.09*s, 0.11*s, 0, 0, 6.3); fctx.fill();
-  // face
-  const dark = "#3a2a1c";
-  fctx.fillStyle = dark;
-  fctx.beginPath(); fctx.ellipse(-0.15*s, -1.56*s, 0.045*s, 0.055*s, 0, 0, 6.3); fctx.fill();
-  fctx.beginPath(); fctx.ellipse( 0.15*s, -1.56*s, 0.045*s, 0.055*s, 0, 0, 6.3); fctx.fill();
-  fctx.strokeStyle = dark; fctx.lineWidth = 0.035*s; fctx.lineCap = "round";
-  fctx.beginPath(); fctx.arc(0, -1.44*s, 0.13*s, 0.25, Math.PI - 0.25); fctx.stroke();
-  // one curl of hair
+/* a limb with the same three-layer treatment as the balloons:
+   dark rim, body, highlight offset toward the light */
+function limb(x1, y1, x2, y2, w, base, dark, light) {
+  fctx.lineCap = "round";
+  fctx.strokeStyle = dark; fctx.lineWidth = w;
+  fctx.beginPath(); fctx.moveTo(x1, y1); fctx.lineTo(x2, y2); fctx.stroke();
+  fctx.strokeStyle = base; fctx.lineWidth = w * 0.82;
+  fctx.beginPath(); fctx.moveTo(x1, y1); fctx.lineTo(x2, y2); fctx.stroke();
+  fctx.strokeStyle = light; fctx.lineWidth = w * 0.3;
   fctx.beginPath();
-  fctx.arc(0, -1.92*s, 0.10*s, Math.PI*0.9, Math.PI*2.3);
+  fctx.moveTo(x1 - w * 0.16, y1 - w * 0.18);
+  fctx.lineTo(x2 - w * 0.16, y2 - w * 0.18);
+  fctx.stroke();
+}
+function ball(x, y, r, base, dark, light) {
+  const g = fctx.createRadialGradient(x - r * 0.38, y - r * 0.42, r * 0.05, x, y, r * 1.08);
+  g.addColorStop(0, light);
+  g.addColorStop(0.55, base);
+  g.addColorStop(1, dark);
+  fctx.fillStyle = g;
+  fctx.beginPath(); fctx.arc(x, y, r, 0, 6.3); fctx.fill();
+}
+
+/* The 1996 baby: chunky, rendered, and doing the cha-cha. Weight shifts
+   on every beat, arms pump on the off-beat, knees bend under the weight,
+   and every eight beats it turns all the way around. */
+function drawBaby2(cx, cy, s, beat, skin, diaper) {
+  const dark = "#c2895c", light = "#ffe4c8";
+  const dDark = "#d6d2c8", dLight = "#ffffff";
+  const p = beat * Math.PI;                       // two-beat sway
+  const sway = Math.sin(p);
+  const bounce = Math.abs(Math.sin(p * 2));
+  const hip = sway * 0.17;
+  const shoulder = -sway * 0.12;
+
+  /* the turn: one beat in every eight, squash through zero and come back */
+  const cyc = (beat % 8) / 8;
+  let sx = 1, facing = 1;
+  if (cyc > 0.78) {
+    const t = (cyc - 0.78) / 0.22;
+    sx = Math.cos(t * Math.PI * 2);
+    facing = sx >= 0 ? 1 : -1;
+    sx = Math.max(0.08, Math.abs(sx)) * (sx < 0 ? -1 : 1);
+  }
+
+  fctx.save();
+  fctx.translate(cx + sway * 0.16 * s, cy - bounce * 0.08 * s);
+  fctx.scale(sx, 1);
+
+  /* ---- legs (behind) ---- */
+  const knee = k => Math.max(0, k > 0 ? Math.sin(p) : -Math.sin(p));
+  for (const side of [-1, 1]) {
+    const lift = Math.max(0, side * sway) * 0.14 * s;
+    const hx = side * 0.16 * s, hy = -0.44 * s;      // hips sit up inside the nappy
+    const kx = hx + side * 0.05 * s, ky = hy + 0.44 * s - lift;
+    const fx2 = kx + side * 0.02 * s, fy = hy + 0.84 * s - lift * 1.4;
+    limb(hx, hy, kx, ky, 0.30 * s, skin, dark, light);
+    limb(kx, ky, fx2, fy, 0.25 * s, skin, dark, light);
+    ball(fx2 + side * 0.02 * s, fy + 0.02 * s, 0.16 * s, skin, dark, light);
+  }
+
+  /* ---- nappy ---- */
+  fctx.save();
+  fctx.rotate(hip * 0.5);
+  const dg = fctx.createLinearGradient(-0.4 * s, -0.6 * s, 0.4 * s, -0.1 * s);
+  dg.addColorStop(0, dLight); dg.addColorStop(1, dDark);
+  fctx.fillStyle = dg;
+  fctx.beginPath();
+  fctx.ellipse(0, -0.38 * s, 0.47 * s, 0.35 * s, 0, 0, 6.3);
+  fctx.fill();
+  fctx.restore();
+
+  /* ---- torso ---- */
+  fctx.save();
+  fctx.rotate(shoulder * 0.5);
+  const bg = fctx.createRadialGradient(-0.18 * s, -1.0 * s, 0.04 * s, 0, -0.78 * s, 0.62 * s);
+  bg.addColorStop(0, light); bg.addColorStop(0.55, skin); bg.addColorStop(1, dark);
+  fctx.fillStyle = bg;
+  fctx.beginPath();
+  fctx.ellipse(0, -0.80 * s, 0.44 * s, 0.52 * s, 0, 0, 6.3);
+  fctx.fill();
+  /* belly button, because it is a baby */
+  fctx.fillStyle = "rgba(150,100,65,0.45)";
+  fctx.beginPath(); fctx.ellipse(0.02 * s, -0.60 * s, 0.035 * s, 0.05 * s, 0, 0, 6.3); fctx.fill();
+  fctx.restore();
+
+  /* ---- arms: elbows bent, pumping on alternate beats ---- */
+  for (const side of [-1, 1]) {
+    const a = Math.sin(p + (side > 0 ? Math.PI : 0));
+    const sxx = side * 0.40 * s, sy = -1.06 * s;
+    const ex = sxx + side * 0.30 * s, ey = sy + 0.20 * s - a * 0.20 * s;
+    const hx2 = ex + side * 0.12 * s, hy2 = ey - 0.34 * s - a * 0.26 * s;
+    limb(sxx, sy, ex, ey, 0.24 * s, skin, dark, light);
+    limb(ex, ey, hx2, hy2, 0.20 * s, skin, dark, light);
+    ball(hx2, hy2, 0.135 * s, skin, dark, light);
+  }
+
+  /* ---- head ---- */
+  fctx.save();
+  fctx.translate(0, -1.62 * s);
+  fctx.rotate(sway * 0.13);
+  ball(-0.50 * s, 0.04 * s, 0.145 * s, skin, dark, light);   // ears
+  ball( 0.50 * s, 0.04 * s, 0.145 * s, skin, dark, light);
+  ball(0, 0, 0.54 * s, skin, dark, light);
+  if (facing > 0) {
+    const eo = 0.19 * s, ey2 = -0.05 * s;
+    fctx.fillStyle = "#ffffff";
+    fctx.beginPath(); fctx.ellipse(-eo, ey2, 0.085 * s, 0.10 * s, 0, 0, 6.3); fctx.fill();
+    fctx.beginPath(); fctx.ellipse( eo, ey2, 0.085 * s, 0.10 * s, 0, 0, 6.3); fctx.fill();
+    fctx.fillStyle = "#3a2a1c";
+    const look = sway * 0.03 * s;
+    fctx.beginPath(); fctx.arc(-eo + look, ey2 + 0.01 * s, 0.048 * s, 0, 6.3); fctx.fill();
+    fctx.beginPath(); fctx.arc( eo + look, ey2 + 0.01 * s, 0.048 * s, 0, 6.3); fctx.fill();
+    fctx.fillStyle = "rgba(226,140,120,0.5)";                 // cheeks
+    fctx.beginPath(); fctx.ellipse(-0.30 * s, 0.14 * s, 0.10 * s, 0.07 * s, 0, 0, 6.3); fctx.fill();
+    fctx.beginPath(); fctx.ellipse( 0.30 * s, 0.14 * s, 0.10 * s, 0.07 * s, 0, 0, 6.3); fctx.fill();
+    fctx.strokeStyle = "#3a2a1c"; fctx.lineWidth = 0.04 * s; fctx.lineCap = "round";
+    fctx.beginPath();
+    fctx.arc(0, 0.10 * s, 0.17 * s, 0.35, Math.PI - 0.35);
+    fctx.stroke();
+  } else {
+    fctx.fillStyle = "rgba(150,100,65,0.30)";                 // back of the head
+    fctx.beginPath(); fctx.ellipse(0, 0.02 * s, 0.34 * s, 0.30 * s, 0, 0, 6.3); fctx.fill();
+  }
+  /* the tuft */
+  fctx.strokeStyle = dark; fctx.lineWidth = 0.055 * s; fctx.lineCap = "round";
+  fctx.beginPath();
+  fctx.moveTo(0.02 * s, -0.52 * s);
+  fctx.quadraticCurveTo(0.16 * s, -0.78 * s, -0.06 * s, -0.80 * s);
   fctx.stroke();
   fctx.restore();
+
+  fctx.restore();
 }
+
 
 const sstep = (a, b, t) => { const x = Math.max(0, Math.min(1, (t-a)/(b-a))); return x*x*(3-2*x); };
 
@@ -3223,7 +3314,8 @@ function finaleFrame(dt) {
     fctx.beginPath();
     fctx.ellipse(W/2, feet + 2, s*0.8, s*0.15, 0, 0, 6.3); fctx.fill();
     /* anchor so the FEET land on the floor, not the hips */
-    drawBaby(W/2, feet - s * 0.36, s, beat, "#f0c39a", "#fdfdfd");
+    /* anchored so the soles land on the floor line */
+    drawBaby2(W/2, feet - s * 0.56, s, beat, "#f0c39a", "#fdfdfd");
     fctx.restore();
   }
 
@@ -3261,11 +3353,31 @@ const cordEl = document.getElementById("cord");
 let cordShown = false, cordPull = 0, cordDrag = null;
 let nightPhase = 0, nightT = 0, stars = [], shooters = [], nightPad = null;
 
-const CONST_BODY = [
-  [0,-1.00],[0.55,-0.82],[0.86,-0.34],[0.78,0.20],[0.40,0.62],[0,0.80],
-  [-0.40,0.62],[-0.78,0.20],[-0.86,-0.34],[-0.55,-0.82],
-];
-const CONST_TAIL = [[0,0.80],[0.10,1.02],[-0.10,1.28],[0.14,1.54],[-0.02,1.80]];
+/* Orion, from the real thing: right ascension and declination projected
+   flat (east to the left, north up) and normalised. Betelgeuse runs warm,
+   Rigel runs blue — because they do. */
+const ORION = {
+  stars: [
+    { p: [-0.03, -0.99], m: 0.62, c: "#dfe9ff" },  // 0 Meissa — the head
+    { p: [-0.53, -0.74], m: 1.00, c: "#ffb489" },  // 1 Betelgeuse
+    { p: [ 0.23, -0.64], m: 0.84, c: "#dbe6ff" },  // 2 Bellatrix
+    { p: [-0.17,  0.19], m: 0.90, c: "#d6e4ff" },  // 3 Alnitak  )
+    { p: [-0.06,  0.12], m: 0.95, c: "#dcebff" },  // 4 Alnilam  } the belt
+    { p: [ 0.05,  0.03], m: 0.88, c: "#d6e4ff" },  // 5 Mintaka  )
+    { p: [-0.34,  0.97], m: 0.80, c: "#dbe6ff" },  // 6 Saiph
+    { p: [ 0.49,  0.82], m: 1.00, c: "#cfe0ff" },  // 7 Rigel
+    { p: [-0.05,  0.44], m: 0.46, c: "#ffd9e6" },  // 8 sword
+    { p: [-0.08,  0.66], m: 0.50, c: "#e6d9ff" },  // 9 sword tip
+  ],
+  edges: [
+    [1, 0], [0, 2],           // head to both shoulders
+    [1, 2],                   // across the shoulders
+    [1, 3], [2, 5],           // torso down to the belt
+    [3, 4], [4, 5],           // the belt itself
+    [3, 6], [5, 7],           // the legs
+    [4, 8], [8, 9],           // the sword
+  ],
+};
 
 function showCord() {
   if (cordShown) return;
@@ -3387,53 +3499,60 @@ function drawNight(dt) {
   }
   fctx.globalAlpha = 1;
 
-  /* the balloon, in stars */
-  const S = Math.min(W, H) * 0.22;
-  const cx = W / 2, cy = H * 0.44;
-  const P = p => [cx + p[0] * S, cy + p[1] * S];
-  const segs = [];
-  for (let i = 0; i < CONST_BODY.length; i++) {
-    segs.push([P(CONST_BODY[i]), P(CONST_BODY[(i + 1) % CONST_BODY.length])]);
-  }
-  for (let i = 0; i < CONST_TAIL.length - 1; i++) {
-    segs.push([P(CONST_TAIL[i]), P(CONST_TAIL[i + 1])]);
-  }
-  const rev = Math.max(0, Math.min(segs.length, (nightT - 2.4) / 5.2 * segs.length));
+  /* Orion */
+  const S = Math.min(W * 0.46, H * 0.40);
+  const cx = W / 2, cy = H * 0.46;
+  const P = i => [cx + ORION.stars[i].p[0] * S, cy + ORION.stars[i].p[1] * S];
+  const E = ORION.edges;
+  const rev = Math.max(0, Math.min(E.length, (nightT - 2.4) / 6.0 * E.length));
   const done = Math.floor(rev);
-  if (done > lastSeg && done > 0 && done <= segs.length) { lastSeg = done; chime(done - 1); }
+  if (done > lastSeg && done > 0 && done <= E.length) { lastSeg = done; chime(done - 1); }
 
-  fctx.strokeStyle = "rgba(150,190,255,0.55)";
+  fctx.strokeStyle = "rgba(150,190,255,0.5)";
   fctx.lineWidth = 1.3;
   fctx.lineCap = "round";
   fctx.beginPath();
-  for (let i = 0; i < Math.min(done, segs.length); i++) {
-    fctx.moveTo(segs[i][0][0], segs[i][0][1]);
-    fctx.lineTo(segs[i][1][0], segs[i][1][1]);
+  for (let i = 0; i < Math.min(done, E.length); i++) {
+    const a = P(E[i][0]), b = P(E[i][1]);
+    fctx.moveTo(a[0], a[1]); fctx.lineTo(b[0], b[1]);
   }
-  if (done < segs.length) {
-    const f = rev - done, s = segs[done];
+  if (done < E.length) {
+    const f = rev - done, a = P(E[done][0]), b = P(E[done][1]);
     if (f > 0) {
-      fctx.moveTo(s[0][0], s[0][1]);
-      fctx.lineTo(s[0][0] + (s[1][0] - s[0][0]) * f, s[0][1] + (s[1][1] - s[0][1]) * f);
+      fctx.moveTo(a[0], a[1]);
+      fctx.lineTo(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f);
     }
   }
   fctx.stroke();
 
-  /* the joints are stars themselves, brighter */
-  const nodes = CONST_BODY.concat(CONST_TAIL.slice(1));
-  const shown = Math.min(nodes.length, Math.ceil(rev) + 1);
-  for (let i = 0; i < shown; i++) {
-    const [x, y] = P(nodes[i]);
-    const pulse = 0.75 + 0.25 * Math.sin(nightT * 1.6 + i);
-    fctx.globalAlpha = Math.min(1, app * pulse);
-    const g = fctx.createRadialGradient(x, y, 0, x, y, 9);
-    g.addColorStop(0, "rgba(255,255,255,0.95)");
-    g.addColorStop(0.35, "rgba(175,210,255,0.55)");
-    g.addColorStop(1, "rgba(140,180,255,0)");
+  /* the stars of Orion, each its own colour and magnitude */
+  const lit = new Set();
+  for (let i = 0; i < Math.min(done + 1, E.length); i++) { lit.add(E[i][0]); lit.add(E[i][1]); }
+  for (let i = 0; i < ORION.stars.length; i++) {
+    if (!lit.has(i)) continue;
+    const st = ORION.stars[i];
+    const [x, y] = P(i);
+    const pulse = 0.8 + 0.2 * Math.sin(nightT * 1.5 + i * 1.7);
+    const R = (5 + st.m * 12) * pulse;
+    fctx.globalAlpha = Math.min(1, app);
+    const g = fctx.createRadialGradient(x, y, 0, x, y, R);
+    g.addColorStop(0, "rgba(255,255,255,0.98)");
+    g.addColorStop(0.22, st.c);
+    g.addColorStop(1, "rgba(120,160,255,0)");
     fctx.fillStyle = g;
-    fctx.fillRect(x - 9, y - 9, 18, 18);
+    fctx.fillRect(x - R, y - R, R * 2, R * 2);
+    /* the brightest ones throw diffraction spikes */
+    if (st.m > 0.85) {
+      const L = R * 2.1 * pulse;
+      fctx.strokeStyle = `rgba(255,255,255,${0.32 * app})`;
+      fctx.lineWidth = 1;
+      fctx.beginPath();
+      fctx.moveTo(x - L, y); fctx.lineTo(x + L, y);
+      fctx.moveTo(x, y - L); fctx.lineTo(x, y + L);
+      fctx.stroke();
+    }
     fctx.fillStyle = "#ffffff";
-    fctx.beginPath(); fctx.arc(x, y, 1.7, 0, 6.3); fctx.fill();
+    fctx.beginPath(); fctx.arc(x, y, 1.5 + st.m * 1.2, 0, 6.3); fctx.fill();
   }
   fctx.globalAlpha = 1;
 
