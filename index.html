@@ -4350,6 +4350,7 @@ let lastSeg = -1;
 function drawNight(dt) {
   const W = window.innerWidth, H = window.innerHeight;
   nightT += dt;
+  if (surfOn) { surfaceFrame(dt); return; }
   if (jellyOn) { jellyFrame(dt); travelFrame(dt); return; }
   if (winOn) {
     windowFrame(dt);
@@ -6513,6 +6514,7 @@ function jellyFrame(dt) {
 
   if (allLit) {
     jellyRise = Math.min(1, jellyRise + dt * 0.22);
+    if (jellyRise > 0.72 && !surfOn) { jellyOn = false; startSurface(); return; }
     if (jellyRise > 0.35) {
       fctx.save();
       fctx.globalCompositeOperation = "lighter";
@@ -6572,6 +6574,446 @@ function jellySwell() {
   g.gain.linearRampToValueAtTime(0.045, t0 + 4);
   s.connect(lp); lp.connect(g); g.connect(BUS);
   s.start(t0);
+}
+
+/* ================= the surface =================
+   The jellyfish took the light up with them and you went too. This is
+   what breaking through looks like from underneath: the underside of the
+   surface sweeps down past you, water sheets off the lens, and the world
+   un-muffles — the low-pass that has been on everything since you went
+   under opens all the way up as your head clears.
+
+   Above it: a still lake at night with mist lying on it, a far shore, and
+   paper lanterns adrift on the black water, unlit. Touch one and it
+   catches. Light them all and they go up together, and you go with them. */
+
+let surfOn = false, surfT = 0, breach = 0, lanterns = [], lampRise = 0;
+let lakeStars = [], mistBands = [], shoreLine = null, lensDrops = [];
+
+function startSurface() {
+  if (surfOn) return;
+  surfOn = true; surfT = 0; breach = 0; lampRise = 0;
+  const W = window.innerWidth, H = window.innerHeight;
+  const hz = H * 0.42;
+
+  lakeStars = [];
+  for (let i = 0; i < (W < 620 ? 90 : 170); i++)
+    lakeStars.push({ x: rnd() * W, y: rnd() * hz * 0.94,
+                     r: 0.4 + rnd() * 1.3, b: 0.25 + rnd() * 0.75,
+                     tw: 0.4 + rnd() * 1.8, ph: rnd() * 6.3 });
+
+  /* a far shore: conifers, in silhouette, at the size distance makes them */
+  shoreLine = [];
+  let x = -30;
+  while (x < W + 30) {
+    const hgt = hz * (0.035 + Math.pow(rnd(), 1.6) * 0.09);
+    const wid = hgt * (0.34 + rnd() * 0.26);
+    shoreLine.push({ x, h: hgt, w: wid });
+    x += wid * (0.55 + rnd() * 0.7);
+  }
+
+  mistBands = [];
+  for (let i = 0; i < 5; i++)
+    mistBands.push({ y: hz + (H - hz) * (0.02 + i * 0.055 + rnd() * 0.03),
+                     h: (H - hz) * (0.02 + rnd() * 0.035),
+                     sp: (4 + rnd() * 11) * (rnd() < 0.5 ? -1 : 1),
+                     x: rnd() * W, a: 0.06 + rnd() * 0.10, bobp: rnd() * 6.3 });
+
+  lanterns = [];
+  const N = W < 620 ? 5 : 7;
+  for (let i = 0; i < N; i++) {
+    const d = 0.10 + (i / N) * 0.72 + rnd() * 0.10;      /* how near the shore */
+    lanterns.push({
+      d,
+      x: W * (0.07 + (i + rnd() * 0.75) / N * 0.86),
+      s: Math.min(W, H) * (0.030 + d * 0.055),
+      lit: 0, flick: rnd() * 6.3,
+      drift: (rnd() - 0.5) * 5,
+      bob: rnd() * 6.3,
+      hue: 34 + rnd() * 14,
+    });
+  }
+  lanterns.sort((a, b) => a.d - b.d);
+
+  lensDrops = [];
+  for (let i = 0; i < 22; i++)
+    lensDrops.push({ x: rnd() * W, y: rnd() * H * 0.5, r: 3 + rnd() * 11,
+                     v: 40 + rnd() * 160, wob: rnd() * 6.3 });
+
+  bed("sea");
+  surfaceBreak();
+}
+
+const lakeHZ = () => window.innerHeight * 0.42;
+
+function lanternY(l) {
+  const H = window.innerHeight, hz = lakeHZ();
+  return hz + (H - hz) * (0.10 + l.d * 0.72)
+       + Math.sin(surfT * 0.7 + l.bob) * 2.2
+       - lampRise * (H * 0.9) * (0.55 + l.d * 0.6);
+}
+
+function drawLantern(l, x, y, s, alpha) {
+  const c = fctx;
+  const lit = l.lit;
+  const flame = 0.72 + 0.28 * Math.sin(surfT * 9 + l.flick)
+                     + 0.12 * Math.sin(surfT * 23 + l.flick * 2);
+  c.save();
+  c.globalAlpha = alpha === undefined ? 1 : alpha;
+
+  /* the paper: a soft-shouldered cylinder, warm from inside when it is lit */
+  const paper = c.createLinearGradient(x - s, 0, x + s, 0);
+  const L = 62 + lit * 26 * flame;
+  const S = 12 + lit * 62;
+  paper.addColorStop(0, `hsla(${l.hue},${S}%,${L * 0.44}%,${0.86})`);
+  paper.addColorStop(0.34, `hsla(${l.hue},${S}%,${L}%,${0.94})`);
+  paper.addColorStop(0.62, `hsla(${l.hue},${S}%,${L * 0.86}%,${0.92})`);
+  paper.addColorStop(1, `hsla(${l.hue},${S}%,${L * 0.38}%,${0.86})`);
+  c.fillStyle = paper;
+  c.beginPath();
+  c.moveTo(x - s * 0.80, y - s * 0.22);
+  c.bezierCurveTo(x - s * 1.00, y - s * 1.20, x - s * 0.74, y - s * 1.98, x, y - s * 2.05);
+  c.bezierCurveTo(x + s * 0.74, y - s * 1.98, x + s * 1.00, y - s * 1.20, x + s * 0.80, y - s * 0.22);
+  c.quadraticCurveTo(x, y + s * 0.10, x - s * 0.80, y - s * 0.22);
+  c.closePath();
+  c.fill();
+  /* the ribs of it */
+  c.strokeStyle = `hsla(${l.hue},${S}%,${L * 0.55}%,0.34)`;
+  c.lineWidth = Math.max(0.8, s * 0.035);
+  for (let k = -2; k <= 2; k++) {
+    const u = k / 2.4;
+    c.beginPath();
+    c.moveTo(x + u * s * 0.76, y - s * 0.24);
+    c.quadraticCurveTo(x + u * s * 0.90, y - s * 1.10, x + u * s * 0.30, y - s * 1.94);
+    c.stroke();
+  }
+  /* bamboo hoop and the little basket under it */
+  c.strokeStyle = "rgba(96,72,42,0.85)";
+  c.lineWidth = Math.max(1, s * 0.06);
+  c.beginPath();
+  c.ellipse(x, y - s * 0.20, s * 0.87, s * 0.15, 0, 0, 6.3);
+  c.stroke();
+  c.strokeStyle = "rgba(70,52,30,0.7)";
+  c.lineWidth = Math.max(0.8, s * 0.04);
+  c.beginPath();
+  c.moveTo(x - s * 0.5, y - s * 0.18); c.lineTo(x, y + s * 0.10);
+  c.moveTo(x + s * 0.5, y - s * 0.18); c.lineTo(x, y + s * 0.10);
+  c.stroke();
+
+  if (lit > 0.02) {
+    /* the flame itself, small and never still */
+    c.save();
+    c.globalCompositeOperation = "lighter";
+    const fy = y - s * 0.62;
+    const fg = c.createRadialGradient(x, fy, 0, x, fy, s * 0.55 * flame);
+    fg.addColorStop(0, `rgba(255,246,214,${(0.95 * lit).toFixed(3)})`);
+    fg.addColorStop(0.4, `rgba(255,196,96,${(0.60 * lit).toFixed(3)})`);
+    fg.addColorStop(1, "rgba(255,150,50,0)");
+    c.fillStyle = fg;
+    c.fillRect(x - s, fy - s, s * 2, s * 2);
+    /* and the light it throws */
+    const gg = c.createRadialGradient(x, y - s * 0.6, 0, x, y - s * 0.6, s * (5 + flame));
+    gg.addColorStop(0, `rgba(255,206,130,${(0.24 * lit).toFixed(3)})`);
+    gg.addColorStop(0.45, `rgba(255,170,80,${(0.09 * lit).toFixed(3)})`);
+    gg.addColorStop(1, "rgba(255,150,60,0)");
+    c.fillStyle = gg;
+    c.fillRect(x - s * 6, y - s * 6.6, s * 12, s * 12);
+    c.restore();
+  } else if (surfT > 3.5) {
+    /* unlit ones ask, quietly */
+    const p = 0.5 + 0.5 * Math.sin(surfT * 1.8 + l.bob);
+    c.strokeStyle = `rgba(240,232,214,${(0.07 + 0.10 * p).toFixed(3)})`;
+    c.lineWidth = Math.max(1, s * 0.05);
+    c.beginPath();
+    c.ellipse(x, y - s * 0.55, s * (1.5 + 0.30 * p), s * (1.5 + 0.30 * p), 0, 0, 6.3);
+    c.stroke();
+  }
+  c.restore();
+}
+
+function surfaceFrame(dt) {
+  const W = window.innerWidth, H = window.innerHeight, hz = lakeHZ();
+  surfT += dt;
+  hardClear(finCanvas, fctx);
+
+  /* ---- the sky, and the far side of the water ---- */
+  const sky = fctx.createLinearGradient(0, 0, 0, hz);
+  sky.addColorStop(0, "#070b1c");
+  sky.addColorStop(0.62, "#0d1730");
+  sky.addColorStop(1, "#22283f");
+  fctx.fillStyle = sky; fctx.fillRect(0, 0, W, hz + 1);
+
+  fctx.fillStyle = "#eef4ff";
+  for (const s of lakeStars) {
+    fctx.globalAlpha = s.b * (0.55 + 0.45 * Math.sin(surfT * s.tw + s.ph)) * (1 - lampRise * 0.5);
+    fctx.beginPath(); fctx.arc(s.x, s.y, s.r, 0, 6.3); fctx.fill();
+  }
+  fctx.globalAlpha = 1;
+
+  /* a warm sit of light behind the trees, so the shore reads as far away */
+  const glow = fctx.createLinearGradient(0, hz - H * 0.12, 0, hz);
+  glow.addColorStop(0, "rgba(90,74,64,0)");
+  glow.addColorStop(1, "rgba(148,116,86,0.22)");
+  fctx.fillStyle = glow; fctx.fillRect(0, hz - H * 0.12, W, H * 0.12);
+
+  fctx.fillStyle = "#05070f";
+  for (const t of shoreLine) {
+    fctx.beginPath();
+    fctx.moveTo(t.x - t.w, hz + 1);
+    fctx.lineTo(t.x, hz - t.h);
+    fctx.lineTo(t.x + t.w, hz + 1);
+    fctx.closePath(); fctx.fill();
+  }
+  fctx.fillRect(0, hz - 1, W, 3);
+
+  /* ---- the lake ---- */
+  const lake = fctx.createLinearGradient(0, hz, 0, H);
+  lake.addColorStop(0, "#0a1020");
+  lake.addColorStop(0.4, "#070c18");
+  lake.addColorStop(1, "#03050c");
+  fctx.fillStyle = lake; fctx.fillRect(0, hz, W, H - hz);
+
+  /* reflections: the lantern light smeared straight down and broken up by
+     the ripple, which is the whole reason to put them on water */
+  fctx.save();
+  fctx.beginPath(); fctx.rect(0, hz, W, H - hz); fctx.clip();
+  fctx.globalCompositeOperation = "lighter";
+  for (const l of lanterns) {
+    if (l.lit < 0.02) continue;
+    const y = lanternY(l);
+    const base = Math.max(y, hz);
+    const len = (H - base) * (0.5 + l.lit * 0.5);
+    const rows = 46;
+    for (let i = 0; i < rows; i++) {
+      const f = i / (rows - 1);
+      const ry = base + f * len;
+      /* the column wanders and narrows as the ripple pulls it apart */
+      const wob = Math.sin(surfT * 1.7 + f * 13 + l.bob) * l.s * 0.30 * (0.25 + f)
+                + Math.sin(surfT * 2.9 - f * 21 + l.bob * 2) * l.s * 0.16 * f;
+      const a = 0.115 * l.lit * Math.pow(1 - f, 1.7)
+              * (0.55 + 0.45 * Math.abs(Math.sin(surfT * 2.2 + f * 17 + l.bob)));
+      if (a < 0.003) continue;
+      fctx.fillStyle = `rgba(255,${(190 - f * 46) | 0},${(104 - f * 34) | 0},${a.toFixed(3)})`;
+      const rw = l.s * (0.85 - f * 0.42) * (0.7 + 0.3 * Math.sin(surfT * 1.3 + f * 9));
+      fctx.fillRect(l.x + wob - rw, ry, rw * 2, len / rows + 1.2);
+    }
+  }
+  fctx.restore();
+
+  /* the ring each one sits in */
+  for (const l of lanterns) {
+    const y = lanternY(l);
+    if (y < hz || lampRise > 0.02) continue;
+    fctx.strokeStyle = `rgba(190,206,230,${(0.05 + 0.10 * l.lit).toFixed(3)})`;
+    fctx.lineWidth = 1;
+    for (let k = 0; k < 2; k++) {
+      const rr = l.s * (1.2 + k * 0.9 + (surfT * 0.35 + k * 0.5) % 1.6);
+      fctx.beginPath();
+      fctx.ellipse(l.x, y + l.s * 0.06, rr, rr * 0.20, 0, 0, 6.3);
+      fctx.stroke();
+    }
+  }
+
+  /* ---- the lanterns ---- */
+  for (const l of lanterns) {
+    if (l.lit > 0 && l.lit < 1) l.lit = Math.min(1, l.lit + dt * 1.1);
+    l.x += (l.drift + Math.sin(surfT * 0.3 + l.bob) * 3) * dt;
+    if (l.x < -l.s * 3) l.x = W + l.s * 3;
+    if (l.x > W + l.s * 3) l.x = -l.s * 3;
+    drawLantern(l, l.x, lanternY(l), l.s);
+  }
+
+  /* ---- mist, lying on the water and drifting ---- */
+  fctx.save();
+  for (const m of mistBands) {
+    m.x += m.sp * dt;
+    if (m.x > W * 1.4) m.x = -W * 0.4;
+    if (m.x < -W * 0.4) m.x = W * 1.4;
+    /* a band has to fade both ways — along its length and across it — so
+       it is drawn as thin rows with a horizontal gradient and a vertical
+       falloff on the alpha */
+    const gx = fctx.createLinearGradient(m.x - W * 0.55, 0, m.x + W * 0.75, 0);
+    gx.addColorStop(0, "rgba(206,220,236,0)");
+    gx.addColorStop(0.35, "rgba(210,224,238,0.75)");
+    gx.addColorStop(0.62, "rgba(206,220,236,1)");
+    gx.addColorStop(1, "rgba(206,220,236,0)");
+    fctx.fillStyle = gx;
+    const rows = 9;
+    for (let k = 0; k < rows; k++) {
+      const f = (k + 0.5) / rows;
+      const yy = m.y - m.h + f * m.h * 2;
+      fctx.globalAlpha = m.a * (1 - lampRise) * Math.sin(f * Math.PI)
+                       * (0.75 + 0.25 * Math.sin(surfT * 0.4 + k + m.bobp));
+      fctx.fillRect(m.x - W * 0.55, yy, W * 1.3, m.h * 2 / rows + 1);
+    }
+    fctx.globalAlpha = 1;
+  }
+  fctx.restore();
+
+  /* ---- still coming up through it ---- */
+  if (breach < 1) {
+    breach = Math.min(1, breach + dt * 0.42);
+    setUnderwater(1 - breach);
+    const sy = -H * 0.15 + breach * (H * 1.25);
+    /* everything below the line is still under */
+    fctx.save();
+    fctx.beginPath();
+    fctx.moveTo(0, H + 2);
+    fctx.lineTo(0, sy);
+    for (let x = 0; x <= W; x += 12)
+      fctx.lineTo(x, sy + Math.sin(x * 0.017 + surfT * 3.1) * 10
+                       + Math.sin(x * 0.045 - surfT * 2.2) * 4);
+    fctx.lineTo(W, H + 2);
+    fctx.closePath();
+    fctx.clip();
+    const uw = fctx.createLinearGradient(0, sy, 0, H);
+    uw.addColorStop(0, "rgba(70,150,170,0.86)");
+    uw.addColorStop(0.5, "rgba(20,70,104,0.94)");
+    uw.addColorStop(1, "rgba(4,26,48,0.98)");
+    fctx.fillStyle = uw; fctx.fillRect(0, sy - 4, W, H - sy + 8);
+    /* the underside of the surface, mirrored and bright */
+    fctx.globalCompositeOperation = "lighter";
+    fctx.fillStyle = "rgba(200,244,255,0.30)";
+    fctx.fillRect(0, sy, W, 10);
+    fctx.restore();
+    /* the meniscus itself */
+    fctx.strokeStyle = `rgba(226,250,255,${(0.55 * (1 - breach * 0.4)).toFixed(2)})`;
+    fctx.lineWidth = 2.4;
+    fctx.beginPath();
+    for (let x = 0; x <= W; x += 12) {
+      const yy = sy + Math.sin(x * 0.017 + surfT * 3.1) * 10
+                    + Math.sin(x * 0.045 - surfT * 2.2) * 4;
+      x === 0 ? fctx.moveTo(x, yy) : fctx.lineTo(x, yy);
+    }
+    fctx.stroke();
+  } else if (lensDrops.length) {
+    /* water still running off the glass for a moment after */
+    fctx.save();
+    for (let i = lensDrops.length - 1; i >= 0; i--) {
+      const d = lensDrops[i];
+      d.y += d.v * dt; d.v += 260 * dt;
+      if (d.y > H + 20) { lensDrops.splice(i, 1); continue; }
+      const g = fctx.createRadialGradient(d.x - d.r * 0.3, d.y - d.r * 0.3, 0, d.x, d.y, d.r);
+      g.addColorStop(0, "rgba(235,250,255,0.30)");
+      g.addColorStop(0.7, "rgba(190,220,240,0.10)");
+      g.addColorStop(1, "rgba(180,210,235,0)");
+      fctx.fillStyle = g;
+      fctx.beginPath();
+      fctx.ellipse(d.x + Math.sin(d.wob + surfT * 4) * 2, d.y, d.r * 0.8, d.r * 1.25, 0, 0, 6.3);
+      fctx.fill();
+    }
+    fctx.restore();
+  }
+
+  /* ---- all lit: up they go, and you with them ---- */
+  if (lanterns.length && lanterns.every(l => l.lit > 0.98)) {
+    lampRise = Math.min(1, lampRise + dt * 0.10);
+    if (lampRise > 0.55 && travT < 0 && !surfHanded) {
+      surfHanded = true;
+      passThrough(() => { surfOn = false; }, { dur: 2.0, up: true });
+    }
+  }
+  travelFrame(dt);
+}
+let surfHanded = false;
+
+/* --- touching one --- */
+window.addEventListener("pointerdown", (e) => {
+  if (!surfOn || breach < 0.5 || lampRise > 0) return;
+  let best = null, bd = 1e9;
+  for (const l of lanterns) {
+    const y = lanternY(l);
+    const d = Math.hypot(e.clientX - l.x, e.clientY - (y - l.s * 0.6)) / (l.s * 2.4);
+    if (d < bd) { bd = d; best = l; }
+  }
+  if (!best || bd > 1.2) return;
+  if (best.lit > 0.01) return;
+  best.lit = 0.02;
+  lanternCatch(best.x, best.hue);
+}, { passive: true });
+window.addEventListener("pointermove", (e) => {
+  if (!surfOn || breach < 0.5) return;
+  let near = false;
+  for (const l of lanterns) {
+    if (l.lit > 0.01) continue;
+    const y = lanternY(l);
+    if (Math.hypot(e.clientX - l.x, e.clientY - (y - l.s * 0.6)) < l.s * 2.4) near = true;
+  }
+  finCanvas.style.cursor = near ? "pointer" : "";
+}, { passive: true });
+
+/* --- sound --- */
+function surfaceBreak() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  /* the rush of coming up */
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 0.7;
+  bp.frequency.setValueAtTime(280, t0);
+  bp.frequency.exponentialRampToValueAtTime(3200, t0 + 1.6);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(0.10, t0 + 0.9);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.6);
+  s.connect(bp); bp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 2.7);
+  /* and the drips off it afterwards, scattered across the stereo field */
+  for (let i = 0; i < 14; i++) {
+    const t = t0 + 1.5 + Math.random() * 2.4;
+    const o = ac.createOscillator(); o.type = "sine";
+    const f = 900 + Math.random() * 1800;
+    o.frequency.setValueAtTime(f, t);
+    o.frequency.exponentialRampToValueAtTime(f * 0.55, t + 0.09);
+    const dg = ac.createGain();
+    dg.gain.setValueAtTime(0.030 + Math.random() * 0.020, t);
+    dg.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+    o.connect(dg); dg.connect(at(Math.random() * window.innerWidth) || BUS);
+    o.start(t); o.stop(t + 0.18);
+  }
+  /* a wide, slow pad underneath the whole scene */
+  [82.4, 123.5, 164.8, 246.9].forEach((f, i) => {
+    const o = ac.createOscillator(); o.type = i > 1 ? "sine" : "triangle";
+    o.frequency.value = f;
+    const lfo = ac.createOscillator(); lfo.type = "sine";
+    lfo.frequency.value = 0.06 + i * 0.017;
+    const lg = ac.createGain(); lg.gain.value = 0.9;
+    lfo.connect(lg); lg.connect(o.detune); lfo.start(t0);
+    const pg = ac.createGain();
+    pg.gain.setValueAtTime(0.0001, t0);
+    pg.gain.linearRampToValueAtTime(0.020, t0 + 6 + i);
+    o.connect(pg); pg.connect(BUS);
+    o.start(t0);
+  });
+}
+
+function lanternCatch(px, hue) {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const dest = at(px) || BUS;
+  /* paper taking: a short bright crackle */
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  s.playbackRate.value = 0.8 + Math.random() * 0.5;
+  const hp = ac.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 2600;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(0.055, t0 + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.6);
+  s.connect(hp); hp.connect(g); g.connect(dest);
+  s.start(t0); s.stop(t0 + 0.65);
+  /* and a warm note off it, from a scale that cannot go wrong */
+  const SC = [174.6, 220, 261.6, 329.6, 392, 440, 523.3];
+  const n = Math.floor(((hue - 34) / 14) * SC.length) % SC.length;
+  const o = ac.createOscillator(); o.type = "sine";
+  o.frequency.value = SC[(n + SC.length) % SC.length] * 2;
+  const o2 = ac.createOscillator(); o2.type = "sine";
+  o2.frequency.value = SC[(n + SC.length) % SC.length];
+  const g2 = ac.createGain();
+  g2.gain.setValueAtTime(0.0001, t0);
+  g2.gain.exponentialRampToValueAtTime(0.045, t0 + 0.10);
+  g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.6);
+  o.connect(g2); o2.connect(g2); g2.connect(dest);
+  o.start(t0); o.stop(t0 + 3.8);
+  o2.start(t0); o2.stop(t0 + 3.8);
 }
 
 function splatSound() {
