@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="build" content="2026-08-19T22:49Z">
+<meta name="build" content="2026-08-20T03:34Z">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Kevin Hershock</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎈</text></svg>">
@@ -136,6 +136,17 @@
     50%      { transform: rotate(1.3deg); }
   }
   #cord.grabbing #cordSwing { animation: none; }
+  /* If it has hung there a while unpulled, it tugs itself — the one gesture
+     that says "down", made by the thing that wants it. */
+  #cord.nudge { animation: cordtug 4.2s ease-in-out infinite; }
+  @keyframes cordtug {
+    0%, 62%, 100% { transform: translateY(0); }
+    70%           { transform: translateY(30px); }
+    78%           { transform: translateY(6px); }
+    84%           { transform: translateY(17px); }
+    92%           { transform: translateY(0); }
+  }
+  #cord.grabbing { animation: none; }
   #vignette {
     position: fixed;
     inset: 0;
@@ -143,6 +154,30 @@
     z-index: 40;
     background: radial-gradient(ellipse at 50% 44%, rgba(38,26,14,0) 52%, rgba(38,26,14,0.16) 100%);
   }
+  /* The only control on the site. It has to be reachable — this is mostly
+     sound — without ever being part of the picture, so it sits quiet in the
+     corner and comes up when you go near it. */
+  #mute {
+    position: fixed;
+    right: 14px; bottom: 14px;
+    width: 40px; height: 40px;
+    z-index: 60;
+    border: 0; padding: 0; margin: 0;
+    background: none;
+    color: #6d6a63;
+    opacity: 0.16;
+    cursor: pointer;
+    transition: opacity 0.5s ease, color 0.5s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #mute svg { display: block; margin: auto; overflow: visible; }
+  #mute svg path { fill: none; stroke: currentColor; stroke-width: 1.7;
+                   stroke-linecap: round; stroke-linejoin: round; }
+  #mute #spk { fill: currentColor; stroke-width: 1.2; }
+  #mute:hover, #mute:focus-visible { opacity: 0.75; outline: none; }
+  #mute.off { opacity: 0.55; }
+  @media (hover: none) { #mute { opacity: 0.34; } }
+
   #grain {
     position: fixed;
     inset: -80px;
@@ -263,6 +298,15 @@
   @keyframes broombob {
     0%, 100% { margin-top: 0; }
     50% { margin-top: 10px; }
+  }
+  /* the desktop hint: it sweeps the air until you take over */
+  #broom.hint {
+    opacity: 0.72;
+    animation: broomhint 2.4s ease-in-out infinite;
+  }
+  @keyframes broomhint {
+    0%, 100% { transform: translate(-30%, -80%) translateX(-90px) rotate(-11deg); }
+    50%      { transform: translate(-30%, -80%) translateX(90px) rotate(11deg); }
   }
   #cork {
     position: fixed;
@@ -493,6 +537,7 @@
 <div id="flash"></div>
 <div id="vignette"></div>
 <div id="grain"></div>
+<button id="mute" aria-label="sound off" title="sound"><svg viewBox="0 0 24 24" width="20" height="20"><path id="spk" d="M4 9.5h3.6L12 5.6v12.8L7.6 14.5H4z"/><g id="waves"><path d="M15.4 9.1a4 4 0 0 1 0 5.8"/><path d="M17.9 6.6a7.6 7.6 0 0 1 0 10.8"/></g><g id="xout" style="display:none"><path d="M16 9.6l5 4.8M21 9.6l-5 4.8"/></g></svg></button>
 
 <script>
 "use strict";
@@ -529,8 +574,9 @@ function shade(hex, amt) {
 /* ================= state ================= */
 const PUMP_STEP = 0.085;
 const EXPLODE_AT = 1.8;        // strain limit — burst
-const IDLE_MS = 950;
-const DECAY_PER_S = 0.30;
+let pumpIdle = 0;
+const IDLE_MS = 2600;      /* long enough to look at it before it sags */
+const DECAY_PER_S = 0.14;  /* and it sags gently, it does not empty */
 
 let target = 0;
 let inf = 0;
@@ -812,6 +858,40 @@ function buildPump(svg, NS, base, firstLetter, shadowGroup) {
    small-room reverb so everything shares the same space. */
 let AC = null, noiseBuf = null, BUS = null, GLP = null, REVG = null;
 let hissNode = null, swellNode = null;
+
+/* ---- the one control ----
+   Sound is most of this, so muting it has to be one press and has to stick.
+   The bus gain is eased rather than switched, because a hard cut on a room
+   tone is a click, and a click is the opposite of the whole idea. */
+const KEEP = (() => { try { return window.localStorage; } catch (e) { return null; } })();
+let MUTED = KEEP && KEEP.getItem("kh.muted") === "1";
+function setMuted(v) {
+  MUTED = v;
+  try { if (KEEP) KEEP.setItem("kh.muted", v ? "1" : "0"); } catch (e) {}
+  const b = document.getElementById("mute");
+  if (b) {
+    b.classList.toggle("off", v);
+    b.setAttribute("aria-label", v ? "sound on" : "sound off");
+    const w = b.querySelector("#waves"), x = b.querySelector("#xout");
+    if (w) w.style.display = v ? "none" : "";
+    if (x) x.style.display = v ? "" : "none";
+  }
+  if (BUS && AC) {
+    try { BUS.gain.setTargetAtTime(v ? 0.0001 : 0.9, AC.currentTime, 0.09); } catch (e) {}
+  }
+}
+document.addEventListener("DOMContentLoaded", () => {
+  const b = document.getElementById("mute");
+  if (!b) return;
+  setMuted(MUTED);
+  const flip = (e) => { e.stopPropagation(); e.preventDefault(); setMuted(!MUTED); };
+  b.addEventListener("pointerdown", flip);
+  b.addEventListener("click", (e) => { e.stopPropagation(); });
+  /* m works too, because people reach for it */
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "m" || e.key === "M") setMuted(!MUTED);
+  });
+});
 function audio() {
   try {
     if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)();
@@ -846,6 +926,7 @@ function audio() {
       rev.buffer = ir;
       REVG = AC.createGain(); REVG.gain.value = 0.20;
       BUS.connect(rev); rev.connect(REVG); REVG.connect(GLP);
+      if (MUTED) BUS.gain.value = 0.0001;
     }
     return AC;
   } catch (e) { return null; }
@@ -1027,7 +1108,10 @@ function updateDrone(over) {
     drone.lp.frequency.setTargetAtTime(550 + over * 1500, t, 0.1);
     drone.g.gain.setTargetAtTime(0.022 + over * 0.115, t, 0.12);
   } else if (drone) {
+    /* and when it is over it is over — a stopped oscillator, not a silent one */
     drone.g.gain.setTargetAtTime(0, t, 0.12);
+    const d = drone; drone = null;
+    setTimeout(() => { try { d.osc.stop(); } catch (e) {} }, 900);
   }
 }
 function squeakSound() {
@@ -1164,7 +1248,8 @@ function frame(now) {
      torn paper and the ink, there is nothing else running */
   if (travelOnly) {
     hardClear(finCanvas, fctx);
-    if (!travelFrame(dt)) {
+    const carrying = natFrame(dt);
+    if (!carrying && travelOnly) {
       travelOnly = false;
       if (!finActive) finCanvas.style.display = "none";
     }
@@ -1307,7 +1392,18 @@ function renderLetters(now) {
 function renderPump(dt) {
   if (!pumpPlunger) return;
   pumpPressT = Math.max(0, pumpPressT - dt * 5);
-  const down = Math.sin(Math.min(1, pumpPressT) * Math.PI) * pumpPlunger.travel;
+  let down = Math.sin(Math.min(1, pumpPressT) * Math.PI) * pumpPlunger.travel;
+  /* Nothing on this screen says what to do, and the first thing a visitor
+     sees is a still picture. So if they have not touched it, the handle
+     starts breathing on its own — small, slow, and impossible to read as
+     anything but "press me". */
+  pumpIdle = (performance.now() - lastPump > 2600) ? pumpIdle + dt : 0;
+  if (pumpIdle > 0.6 && pumpPressT <= 0.02) {
+    const w = Math.min(1, (pumpIdle - 0.6) / 1.4);
+    const beat = (pumpIdle * 0.72) % 1;
+    down += Math.sin(Math.min(1, beat / 0.34) * Math.PI)
+            * pumpPlunger.travel * 0.24 * w * (beat < 0.34 ? 1 : 0);
+  }
   pumpPlunger.el.setAttribute("transform", `translate(0 ${down})`);
 
   if (hoseInfo && hoseInfo.len) {
@@ -1376,7 +1472,22 @@ const BROOM_CURSOR = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org
 function enableSweep() {
   if (sweepMode || sweepDone) return;
   sweepMode = true;
+  sweepDist = 0;
   glueActive = false;          // done collecting — the stragglers just fall
+  /* On a phone a broom appears in your hand and that is the whole hint. On a
+     desktop the cursor quietly becomes a broom, which nobody notices if they
+     are not moving the mouse — so after a while, put the broom on screen
+     there too, bobbing, until they start sweeping. */
+  if (!TOUCHY) {
+    setTimeout(() => {
+      if (sweepMode && sweepDist < 60) {
+        broomEl.style.left = (window.innerWidth * 0.5) + "px";
+        broomEl.style.top = (window.innerHeight * 0.62) + "px";
+        broomEl.style.display = "block";
+        broomEl.classList.add("hint");
+      }
+    }, 4200);
+  }
   if (TOUCHY) {
     /* no cursor on a phone: hand them a visible broom instead */
     broomEl.style.left = (window.innerWidth / 2) + "px";
@@ -1406,9 +1517,7 @@ function sweepSwish(dist) {
 }
 
 /* sweep the glitter off the writing */
-window.addEventListener("pointermove", (e) => {
-  if (!sweepMode || !glueCtx) return;
-  const x = e.clientX, y = e.clientY;
+function sweepStroke(x, y) {
   if (lastSweep) {
     const dx = x - lastSweep.x, dy = y - lastSweep.y;
     const dist = Math.hypot(dx, dy);
@@ -1465,9 +1574,26 @@ window.addEventListener("pointermove", (e) => {
         setTimeout(showDot, 900);               // ...and then, a dot
       }
       sweepSwish(dist);
+      if (broomEl.classList.contains("hint") && sweepDist > 60) {
+        broomEl.classList.remove("hint");
+        if (!TOUCHY) broomEl.style.display = "none";
+      }
     }
   }
   lastSweep = { x, y };
+}
+window.addEventListener("pointermove", (e) => {
+  if (!sweepMode || !glueCtx) return;
+  sweepStroke(e.clientX, e.clientY);
+});
+/* A broom you can only drag does nothing when you press it, and a thing
+   that does nothing when pressed reads as broken. A tap sweeps a patch. */
+window.addEventListener("pointerdown", (e) => {
+  if (!sweepMode || !glueCtx) return;
+  lastSweep = { x: e.clientX - 26, y: e.clientY - 8 };
+  sweepStroke(e.clientX, e.clientY);
+  lastSweep = { x: e.clientX + 26, y: e.clientY + 8 };
+  sweepStroke(e.clientX, e.clientY);
 });
 /* every stuck flake is also a tracked point, so "swept clean" means
    what the eye sees — no invisible leftovers, no premature dot */
@@ -2431,7 +2557,17 @@ tapEl.addEventListener("pointerdown", (e) => {
     cx: r.left + r.width / 2, cy: r.top + r.height / 2,
     last: Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)),
   };
+  /* Every pull on this site advances on a tap. A wheel you can only turn by
+     circling it is a wheel that does nothing at all when you click it, and a
+     thing that does nothing when clicked reads as broken. */
+  if (screwState === "none") turnWheel(132);
 });
+function turnWheel(deg) {
+  tapRot = Math.max(0, Math.min(1080, tapRot + deg));
+  wheelEl.setAttribute("transform", `translate(70 40) rotate(${tapRot})`);
+  valveFlow = Math.max(0, Math.min(1, (tapRot - 90) / 990));
+  if (Math.abs(tapRot - lastSqueakRot) > 130) { lastSqueakRot = tapRot; tapSqueak(); }
+}
 tapEl.addEventListener("pointermove", (e) => {
   if (!wheelDrag || screwState !== "none") return;   // the tap retired when the corkscrew took over
   const a = Math.atan2(e.clientY - wheelDrag.cy, e.clientX - wheelDrag.cx);
@@ -2439,10 +2575,7 @@ tapEl.addEventListener("pointermove", (e) => {
   if (d > Math.PI) d -= Math.PI * 2;
   if (d < -Math.PI) d += Math.PI * 2;
   wheelDrag.last = a;
-  tapRot = Math.max(0, Math.min(1080, tapRot + d * 57.2958));
-  wheelEl.setAttribute("transform", `translate(70 40) rotate(${tapRot})`);
-  valveFlow = Math.max(0, Math.min(1, (tapRot - 90) / 990));
-  if (Math.abs(tapRot - lastSqueakRot) > 130) { lastSqueakRot = tapRot; tapSqueak(); }
+  turnWheel(d * 57.2958);
 });
 const endDrag = () => { wheelDrag = null; wheelEl.classList.remove("grabbing"); };
 tapEl.addEventListener("pointerup", endDrag);
@@ -2501,6 +2634,7 @@ function ensureWaterSound() {
   src.connect(bp); bp.connect(g); g.connect(BUS);
   src.start();
   waterSnd = { src, bp, g };
+  hold("water", { gain: g, src });
 }
 
 function waterStep(dt) {
@@ -2604,7 +2738,9 @@ function waterStep(dt) {
         finCanvas.style.background = "transparent";
         finCanvas.style.display = "block";
         sizeFinale();
-        passThrough(() => activateGoo(), { dur: 1.4 });
+        /* you do not cut away from a drain, you go down it */
+        release("water", 1.6); waterSnd = null;
+        natRun("drain", () => activateGoo(), 2.9, { travel: true });
         travelOnly = true;
       }, 900);
     }
@@ -3158,7 +3294,13 @@ screwEl.addEventListener("pointerdown", (e) => {
     cx: r.left + r.width / 2, cy: r.top + r.height / 2,
     last: Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)),
   };
+  twistScrew(96);                     /* a tap is a turn, same as everything else */
 });
+function twistScrew(deg) {
+  const before = extractDeg;
+  extractDeg = Math.min(720, extractDeg + Math.abs(deg));
+  if (((before / 150) | 0) !== ((extractDeg / 150) | 0)) tapSqueak();
+}
 screwEl.addEventListener("pointermove", (e) => {
   if (!screwDrag || screwState !== "in") return;
   const a = Math.atan2(e.clientY - screwDrag.cy, e.clientX - screwDrag.cx);
@@ -3166,9 +3308,7 @@ screwEl.addEventListener("pointermove", (e) => {
   if (d > Math.PI) d -= Math.PI * 2;
   if (d < -Math.PI) d += Math.PI * 2;
   screwDrag.last = a;
-  const before = extractDeg;
-  extractDeg = Math.min(720, extractDeg + Math.abs(d) * 57.2958);
-  if (((before / 150) | 0) !== ((extractDeg / 150) | 0)) tapSqueak();
+  twistScrew(d * 57.2958);
 });
 const endScrewDrag = () => { screwDrag = null; screwWheelEl.classList.remove("grabbing"); };
 screwEl.addEventListener("pointerup", endScrewDrag);
@@ -3179,6 +3319,7 @@ screwEl.addEventListener("pointercancel", endScrewDrag);
    and it gushes out from under your finger — like those gel shoes. */
 const gooCanvas = document.getElementById("goo");
 const gtx = gooCanvas.getContext("2d");
+let gooIdle = 0;
 let gooActive = false, gooBlobs = [], gooGush = [], gooSpecks = [], lastSquelch = 0;
 let tearCanvas = null, tearCtx = null, gooFringes = [], gooStrands = [], gooScraps = [], gooSmears = [], gooFinished = false, dotWhitened = false, ripCount = 0;
 
@@ -3256,7 +3397,7 @@ function makeRip(x, y) {
   if (!dotWhitened) { dotWhitened = true; dotEl.style.background = "#fdfdfb"; }
   const N = 16;
   /* every tear weakens the sheet — later ones open wider */
-  ripCount++;
+  ripCount++; gooIdle = 0;
   const base = (58 + Math.random() * 58) * (1 + ripCount * 0.09);
   const pts = [];
   for (let i = 0; i < N; i++) {
@@ -3337,13 +3478,14 @@ function finishGoo() {
     setTimeout(() => pc.remove(), 2800);
   }
   gooActive = false;
-  /* you do not cut to the next room, you go through the hole you just made */
+  /* what was holding the sheet up is still there, and it runs — down the
+     frame, darkening as it goes, until it is the ink of the next scene */
   setTimeout(() => {
     finCanvas.style.background = "transparent";
     finCanvas.style.display = "block";
     sizeFinale();
-    passThrough(() => { gooCanvas.style.display = "none"; startFinale(); },
-                { src: gooCanvas, dur: 1.5, up: true });
+    natRun("drip", () => { gooCanvas.style.display = "none"; startFinale(); },
+           2.8, { travel: true });
     travelOnly = true;
   }, 1500);
 }
@@ -3532,6 +3674,32 @@ function gooFrame(dt) {
   gtx.fillStyle = sheen;
   gtx.fillRect(-W, -60, W * 2, 120);
   gtx.restore();
+
+  /* Nothing here says the sheet can be torn. If they have not tried, the
+     surface starts to give on its own — a seam opening and healing, in the
+     middle of the frame, where they are already looking. */
+  gooIdle += dt;
+  if (ripCount === 0 && gooIdle > 4.5) {
+    const p = (gooIdle - 4.5) % 3.2;
+    const a = Math.sin(Math.min(1, p / 1.6) * Math.PI) * Math.min(1, (gooIdle - 4.5) / 2.5);
+    if (a > 0.01) {
+      const cx = W * 0.5, cy = H * 0.47, len = Math.min(W, H) * 0.13 * (0.4 + 0.6 * a);
+      gtx.save();
+      gtx.globalCompositeOperation = "lighter";
+      gtx.strokeStyle = `rgba(255,255,255,${(a * 0.5).toFixed(3)})`;
+      gtx.lineWidth = 2.2 + a * 3.4;
+      gtx.lineCap = "round";
+      gtx.beginPath();
+      for (let i = 0; i <= 12; i++) {
+        const t = i / 12;
+        const x = cx + (t - 0.5) * 2 * len;
+        const y = cy + Math.sin(t * 9 + gooIdle) * len * 0.09 * a;
+        i ? gtx.lineTo(x, y) : gtx.moveTo(x, y);
+      }
+      gtx.stroke();
+      gtx.restore();
+    }
+  }
 
 
 
@@ -4146,6 +4314,7 @@ function finaleFrame(dt) {
    A pull cord drops out of the storm. Yank it and the whole thing dies —
    rain, wind, thunder, all of it — and what is left is a clear night sky. */
 const cordEl = document.getElementById("cord");
+let cordNudgeT = 0;
 let cordShown = false, cordPull = 0, cordDrag = null;
 let nightPhase = 0, nightT = 0, stars = [], shooters = [], nightPad = null;
 
@@ -4279,17 +4448,30 @@ function showCord() {
   cordShown = true;
   cordEl.style.display = "block";
   requestAnimationFrame(() => cordEl.classList.add("on"));
+  /* give them a moment to find it themselves before showing them */
+  cordNudgeT = setTimeout(() => {
+    if (!nightPhase && !cordDrag) cordEl.classList.add("nudge");
+  }, 5200);
+}
+function stopCordNudge() {
+  clearTimeout(cordNudgeT);
+  cordEl.classList.remove("nudge");
 }
 cordEl.addEventListener("pointerdown", (e) => {
   if (nightPhase) return;
   e.preventDefault();
   cordEl.setPointerCapture(e.pointerId);
   cordEl.classList.add("grabbing");
+  stopCordNudge();
   cordDrag = { y0: e.clientY };
+  /* a tap on a light pull is a pull — it snaps down and comes back */
+  cordPull = 74;
+  cordEl.style.transition = "transform 0.10s ease-out";
+  cordEl.style.transform = "translateY(74px)";
 });
 cordEl.addEventListener("pointermove", (e) => {
   if (!cordDrag || nightPhase) return;
-  cordPull = Math.max(0, Math.min(160, e.clientY - cordDrag.y0));
+  cordPull = Math.max(0, Math.min(160, Math.max(74, e.clientY - cordDrag.y0)));
   cordEl.style.transition = "none";
   cordEl.style.transform = `translateY(${cordPull}px)`;
 });
@@ -4338,6 +4520,8 @@ function startNightPad() {
     return o;
   });
   nightPad = { oscs, g };
+  hold("night", { gain: g });
+  for (const o of oscs) hold("night", { src: o });
 }
 function chime(n, px) {
   const ac = audio(); if (!ac) return;
@@ -4387,10 +4571,9 @@ function drawNight(dt) {
   if (woodOn) { woodFrame(dt); return; }
   if (beaconOn) { beaconFrame(dt); return; }
   if (surfOn) { surfaceFrame(dt); return; }
-  if (jellyOn) { jellyFrame(dt); travelFrame(dt); return; }
+  if (jellyOn) { jellyFrame(dt); natFrame(dt); return; }
   if (winOn) {
     windowFrame(dt);
-    travelFrame(dt);
     /* the flood off the chest fades back through the glass */
     if (whiteOut < 2.4) {
       whiteOut = Math.min(2.4, whiteOut + dt * 0.42);
@@ -4402,7 +4585,7 @@ function drawNight(dt) {
     }
     return;
   }
-  if (digPhase) { drawDig(dt); travelFrame(dt); return; }   /* the chart said here */
+  if (digPhase) { drawDig(dt); natFrame(dt); return; }   /* the chart said here */
   if (chartT >= 0) drawChart(dt);
   if (dawnPhase) dawnIdle += dt;
   hardClear(finCanvas, fctx);
@@ -4506,7 +4689,7 @@ function drawNight(dt) {
     fctx.stroke();
   }
 
-  travelFrame(dt);
+  natFrame(dt);
 }
 
 /* ================= dawn: the last scene =================
@@ -5275,9 +5458,14 @@ function chartClick(e) {
   if (Math.hypot(px - g.X.x, py - g.X.y) > g.W * 0.09) return;
   e.stopPropagation();
   const el = botEl(), sc = document.getElementById("scrim");
-  if (el) el.classList.remove("on");
-  if (sc) sc.classList.remove("on");
-  passThrough(() => startDig(), { dur: 1.6 });
+  /* grab the paper before it goes, because the sand is made out of it */
+  const src = chartC;
+  release("night", 2.2); nightPad = null;      /* the night ends at the beach */
+  natRun("sand", () => startDig(), 3.2, { src, at: 0.88 });
+  setTimeout(() => {
+    if (el) el.classList.remove("on");
+    if (sc) sc.classList.remove("on");
+  }, 60);
 }
 
 /* ================= the dig =================
@@ -6014,100 +6202,11 @@ function creak(v) {
 }
 
 
-/* ================= going through =================
-   A cut between two scenes is a cut. This is the other thing: the scene
-   you are leaving is grabbed as it stands, then pushed past you — scaled
-   up out of the frame in a stack of copies so it smears radially, the way
-   things do when you move through them — while the next one comes up
-   underneath. Used at every hard change, so travel has a grammar and the
-   whole thing feels like it is going somewhere rather than jumping. */
-let travC = null, travX = null, travT = -1, travDur = 1.5, travDone = null;
+/* ================= carrying a transition on its own =================
+   Sometimes there is no scene running to draw a transition over — between
+   the torn sheet and the ink there is nothing else on screen — so the
+   finale canvas is borrowed to carry it, and handed back afterwards. */
 let travelOnly = false;
-
-function passThrough(after, opts) {
-  const W = window.innerWidth, H = window.innerHeight;
-  if (!travC) { travC = document.createElement("canvas"); travX = travC.getContext("2d"); }
-  travC.width = W; travC.height = H;
-  travX.setTransform(1, 0, 0, 1, 0, 0);
-  travX.clearRect(0, 0, W, H);
-  const src = (opts && opts.src) || finCanvas;
-  try { travX.drawImage(src, 0, 0, W, H); } catch (e) {}
-  travT = 0;
-  travDur = (opts && opts.dur) || 1.5;
-  travDone = after || null;
-  whoosh((opts && opts.up) ? 1 : -1);
-  /* watchdog: if the frame loop is not running — a backgrounded tab, a
-     throttled one — the hand-off still has to happen. */
-  if (travDone) {
-    const guard = travDone;
-    setTimeout(() => {
-      if (travDone === guard) {
-        travT = -1; travDone = null; travelOnly = false;
-        if (!finActive) finCanvas.style.display = "none";
-        guard();
-      }
-    }, travDur * 1000 + 2500);
-  }
-}
-
-function travelFrame(dt) {
-  if (travT < 0) return false;
-  travT += dt;
-  const W = window.innerWidth, H = window.innerHeight;
-  const u = Math.min(1, travT / travDur);
-  const e = u * u * (3 - 2 * u);
-  /* dim what is underneath first, or the smear washes out against a bright
-     scene and reads as a streak instead of as motion */
-  fctx.fillStyle = `rgba(6,7,12,${(Math.sin(u * Math.PI) * 0.88).toFixed(3)})`;
-  fctx.fillRect(0, 0, W, H);
-  fctx.save();
-  fctx.globalCompositeOperation = "lighter";
-  /* eight copies, each a little larger and dimmer: a radial smear for the
-     price of eight drawImage calls */
-  const N = 8;
-  for (let i = 0; i < N; i++) {
-    const f = i / (N - 1);
-    const s = 1 + e * (1.9 + f * 2.6);
-    const a = Math.sin(u * Math.PI) * (0.21 - f * 0.022);
-    if (a <= 0.002) continue;
-    fctx.globalAlpha = a;
-    fctx.drawImage(travC, W / 2 - W * s / 2, H / 2 - H * s / 2, W * s, H * s);
-  }
-  fctx.restore();
-  fctx.globalAlpha = 1;
-  if (u >= 1) {
-    travT = -1;
-    if (travDone) { const f = travDone; travDone = null; f(); }
-    return false;
-  }
-  return true;
-}
-
-function whoosh(dir) {
-  const ac = audio(); if (!ac) return;
-  const t0 = ac.currentTime;
-  const s = ac.createBufferSource(); s.buffer = noise(ac); s.loop = true;
-  const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 0.85;
-  const a = dir > 0 ? 240 : 2400, b = dir > 0 ? 2600 : 200;
-  bp.frequency.setValueAtTime(a, t0);
-  bp.frequency.exponentialRampToValueAtTime(b, t0 + 1.5);
-  const g = ac.createGain();
-  g.gain.setValueAtTime(0.0001, t0);
-  g.gain.linearRampToValueAtTime(0.075, t0 + 0.45);
-  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.0);
-  s.connect(bp); bp.connect(g); g.connect(BUS);
-  s.start(t0); s.stop(t0 + 2.1);
-  /* a low body under it so it has weight */
-  const o = ac.createOscillator(); o.type = "sine";
-  o.frequency.setValueAtTime(dir > 0 ? 48 : 128, t0);
-  o.frequency.exponentialRampToValueAtTime(dir > 0 ? 132 : 42, t0 + 1.4);
-  const g2 = ac.createGain();
-  g2.gain.setValueAtTime(0.0001, t0);
-  g2.gain.linearRampToValueAtTime(0.055, t0 + 0.4);
-  g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.8);
-  o.connect(g2); g2.connect(BUS);
-  o.start(t0); o.stop(t0 + 1.9);
-}
 
 /* ================= the window =================
    The light out of the chest resolves into a pane of glass with rain on
@@ -6289,8 +6388,9 @@ function windowFrame(dt) {
     fogX.fillStyle = `rgba(0,0,0,${(dt * 3.4).toFixed(3)})`;
     fogX.fillRect(0, 0, W, H);
     fogX.restore();
-    if (winGone >= 1 && !jellyOn && travT < 0 && !nat) {
-      natRun("frost", () => { winOn = false; startJelly(196); }, 3.0);
+    if (winGone >= 1 && !jellyOn && !nat) {
+      release("window", 1.8); rainBed = null;
+      natRun("frost", () => { winOn = false; startJelly(196); }, 3.4, { at: 0.66 });
     }
   }
 
@@ -6350,6 +6450,7 @@ function rainOnGlass() {
   s.connect(bp); bp.connect(g); g.connect(BUS);
   s.start();
   rainBed = { s, g };
+  hold("window", { gain: g, src: s });
   /* the odd fat drop hitting the pane */
   const tick = () => {
     if (!winOn) return;
@@ -6959,12 +7060,11 @@ function surfaceFrame(dt) {
   /* ---- all lit: up they go, and you with them ---- */
   if (lanterns.length && lanterns.every(l => l.lit > 0.98)) {
     lampRise = Math.min(1, lampRise + dt * 0.10);
-    if (lampRise > 0.55 && travT < 0 && !surfHanded) {
+    if (lampRise > 0.55 && !nat && !surfHanded) {
       surfHanded = true;
-      release("lake"); natRun("cloud", () => { surfOn = false; startBeacon(); }, 3.4);
+      release("lake"); natRun("cloud", () => { surfOn = false; startBeacon(); }, 3.8, { at: 0.62 });
     }
   }
-  travelFrame(dt);
   natFrame(dt);
 }
 let surfHanded = false;
@@ -7320,9 +7420,8 @@ function beaconFrame(dt) {
   /* three passes, and then the fourth one comes round and takes you */
   if (sweeps >= 2 && !beacHanded && Math.cos(beamA) > 0.86) {
     beacHanded = true;
-    release("beacon"); natRun("cloud", () => { beaconOn = false; startWood(); }, 3.2);
+    release("beacon"); natRun("rain", () => { beaconOn = false; startWood(); }, 3.8, { at: 0.56 });
   }
-  travelFrame(dt);
   natFrame(dt);
 }
 
@@ -7453,6 +7552,8 @@ function beaconWind() {
   g.gain.linearRampToValueAtTime(0.038, t0 + 5);
   s.connect(bp); bp.connect(g); g.connect(BUS);
   s.start(t0);
+  hold("beacon", { gain: g, src: s });
+  hold("beacon", { src: lfo });
 }
 
 /* ================= transitions that are things =================
@@ -7461,18 +7562,69 @@ function beaconWind() {
    a tree. Each one belongs to the two scenes it joins. */
 
 let nat = null;   /* { kind, t, dur, after, seeds } */
+let natC = null, natX = null;
 
-function natRun(kind, after, dur) {
-  nat = { kind, t: 0, dur: dur || 2.6, after: after || null, seeds: null };
+/* Some of these need the outgoing scene as pixels — the chart has to
+   become the sand it turns into, so the grains have to be the chart's own
+   grains. Grab it once, at the start, off whatever canvas was drawing it. */
+function natCapture(src) {
+  const W = window.innerWidth, H = window.innerHeight;
+  if (!natC) {
+    natC = document.createElement("canvas");
+    natX = natC.getContext("2d", { willReadFrequently: true });
+  }
+  natC.width = W; natC.height = H;
+  natX.setTransform(1, 0, 0, 1, 0, 0);
+  natX.clearRect(0, 0, W, H);
+  if (src) {
+    /* put it back exactly where the eye last saw it, or the grains start
+       from the wrong place and the join reads as a cut after all */
+    let r = null;
+    try { r = src.getBoundingClientRect(); } catch (e) {}
+    try {
+      if (r && r.width > 4 && r.height > 4) natX.drawImage(src, r.left, r.top, r.width, r.height);
+      else natX.drawImage(src, 0, 0, W, H);
+    } catch (e) {}
+  }
+  return natC;
+}
+
+function natRun(kind, after, dur, opts) {
+  const o = opts || {};
+  /* The swap has to happen while the weather is thickest, or the audience
+     sees the join. `at` is the point in the transition where the next scene
+     is put up behind it; the rest of the effect then clears off the new one. */
+  nat = { kind, t: 0, dur: dur || 2.6, after: after || null, seeds: null,
+          travel: !!o.travel, cap: null, at: o.at === undefined ? 1 : o.at,
+          fired: false };
+  if (o.src !== undefined) nat.cap = natCapture(o.src);
   if (kind === "frost") frostSound();
   else if (kind === "cloud") cloudSound();
   else if (kind === "leaf") leafSound();
   else if (kind === "wash") washSound();
+  else if (kind === "drain") drainSound();
+  else if (kind === "drip") dripSound();
+  else if (kind === "sand") sandSound();
+  else if (kind === "rain") rainSound();
   if (after) {
     const guard = after;
     setTimeout(() => {
-      if (nat && nat.after === guard) { nat = null; guard(); }
+      if (nat && nat.after === guard) {
+        const already = nat.fired;
+        natEnd();
+        if (!already) guard();
+      }
     }, (dur || 2.6) * 1000 + 2500);
+  }
+}
+
+/* one exit, so the borrowed canvas always gets handed back */
+function natEnd() {
+  const wasTravel = nat && nat.travel;
+  nat = null;
+  if (wasTravel) {
+    travelOnly = false;
+    if (!finActive) finCanvas.style.display = "none";
   }
 }
 
@@ -7632,13 +7784,354 @@ function natFrame(dt) {
     fctx.fillRect(0, 0, W, H);
   }
 
-  if (u >= 1) {
-    const f = nat.after; nat = null;
-    if (f) f();
-    return false;
+  /* --- drain: you go down after the water, looking back up at the light ---
+     The basin has just emptied. Rather than cutting away from that, the
+     camera follows the last of it down the plughole and turns to look back:
+     the room you were in is a coin of daylight overhead, the throat of the
+     pipe slides past you in rings, and the coin closes. It can only join
+     these two scenes, because only one of them has a drain in it. */
+  else if (nat.kind === "drain") {
+    const M = Math.min(W, H), cx = W / 2, cy = H * 0.5;
+    fctx.fillStyle = "#04060a";
+    fctx.fillRect(0, 0, W, H);
+    fctx.save();
+    fctx.translate(cx, cy);
+    /* The throat is a surface, not a set of hoops — so it is drawn as filled
+       bands from the outside in, each one a little brighter than the last,
+       because the only light down here is the hole you came in through. */
+    const N = 34, RMAX = M * 1.9;
+    const bands = [];
+    for (let i = 0; i < N; i++) {
+      let p = (i / N - u * 2.15) % 1; if (p < 0) p += 1;
+      bands.push(p);
+    }
+    bands.sort((a, b) => b - a);            // far ones first, near ones over them
+    for (const p of bands) {
+      const r = RMAX * Math.pow(p, 1.7);
+      if (r < 1.5) continue;
+      const lit = Math.pow(1 - p, 2.1);      // nearer the light = brighter
+      const tw = p * 3.4 + u * 1.2;
+      /* wet porcelain, warming toward the daylight above */
+      const R = 12 + 190 * lit, G = 20 + 202 * lit, B = 28 + 196 * lit;
+      fctx.save();
+      fctx.rotate(tw);
+      fctx.scale(1, 0.86);
+      fctx.fillStyle = `rgb(${R | 0},${G | 0},${B | 0})`;
+      fctx.beginPath(); fctx.arc(0, 0, r, 0, 6.3); fctx.fill();
+      /* the seam where one length of pipe meets the next */
+      fctx.strokeStyle = `rgba(0,0,0,${(0.30 + 0.30 * (1 - lit)).toFixed(3)})`;
+      fctx.lineWidth = Math.max(1, M * 0.006);
+      fctx.beginPath(); fctx.arc(0, 0, r, 0, 6.3); fctx.stroke();
+      /* and a wet highlight running down one side of it */
+      fctx.strokeStyle = `rgba(236,250,255,${(0.10 + 0.34 * lit).toFixed(3)})`;
+      fctx.lineWidth = Math.max(1.2, M * 0.010 * (0.5 + lit));
+      fctx.beginPath(); fctx.arc(0, 0, r * 0.97, -1.75, -0.55); fctx.stroke();
+      fctx.strokeStyle = `rgba(150,196,214,${(0.06 + 0.16 * lit).toFixed(3)})`;
+      fctx.beginPath(); fctx.arc(0, 0, r * 0.97, 1.5, 2.5); fctx.stroke();
+      fctx.restore();
+    }
+    /* the last threads of water, still going round on the way down */
+    fctx.globalCompositeOperation = "lighter";
+    for (let i = 0; i < 40; i++) {
+      let p = (i / 40 - u * 1.75 + 0.11) % 1; if (p < 0) p += 1;
+      const r = RMAX * Math.pow(p, 1.7);
+      const a0 = i * 1.13 + p * 6.0 + u * 2.4;
+      fctx.save();
+      fctx.scale(1, 0.86);
+      fctx.strokeStyle = `rgba(214,240,252,${(0.34 * Math.pow(1 - p, 1.2)).toFixed(3)})`;
+      fctx.lineWidth = Math.max(0.8, M * 0.005);
+      fctx.beginPath(); fctx.arc(0, 0, r, a0, a0 + 1.05); fctx.stroke();
+      fctx.restore();
+    }
+    /* and the room you left, overhead, closing */
+    const cr = M * 0.20 * Math.pow(1 - u, 1.15);
+    if (cr > 0.4) {
+      const g = fctx.createRadialGradient(0, 0, 0, 0, 0, cr * 4.2);
+      g.addColorStop(0, "rgba(255,252,240,0.90)");
+      g.addColorStop(0.18, "rgba(226,244,252,0.44)");
+      g.addColorStop(1, "rgba(150,200,220,0)");
+      fctx.fillStyle = g;
+      fctx.beginPath(); fctx.arc(0, 0, cr * 4.2, 0, 6.3); fctx.fill();
+      fctx.globalCompositeOperation = "source-over";
+      fctx.fillStyle = "rgba(255,253,246,0.94)";
+      fctx.beginPath(); fctx.ellipse(0, 0, cr, cr * 0.86, 0, 0, 6.3); fctx.fill();
+    }
+    fctx.globalCompositeOperation = "source-over";
+    fctx.restore();
+    /* the corners go, so the pipe closes in on you */
+    const vg = fctx.createRadialGradient(cx, cy, M * 0.18, cx, cy, M * 0.95);
+    vg.addColorStop(0, "rgba(0,0,0,0)");
+    vg.addColorStop(1, `rgba(0,0,0,${(0.55 + 0.35 * u).toFixed(2)})`);
+    fctx.fillStyle = vg;
+    fctx.fillRect(0, 0, W, H);
   }
+
+  /* --- drip: the gel that is left runs down and becomes the ink ---
+     You tore the sheet; this is what was holding it. The remaining goo
+     hangs, stretches, and runs down over the frame, and on the way down it
+     stops being gel and starts being ink — which is the next scene's
+     material. Same substance, different meaning. */
+  else if (nat.kind === "drip") {
+    if (!nat.seeds) {
+      nat.seeds = [];
+      const N = Math.max(16, Math.round(W / 46));
+      for (let i = 0; i < N; i++)
+        nat.seeds.push({ x: (i + 0.5 + (Math.random() - 0.5) * 0.6) / N * W,
+                         w: W / N * (0.5 + Math.random() * 0.75),
+                         sp: 0.7 + Math.random() * 1.5,
+                         de: Math.random() * 0.34,
+                         wob: Math.random() * 6.3 });
+      /* a few that let go entirely */
+      nat.drops = [];
+      for (let i = 0; i < 14; i++)
+        nat.drops.push({ x: Math.random() * W, y: -H * Math.random() * 0.4,
+                         r: M0(W, H) * (0.008 + Math.random() * 0.016),
+                         sp: 0.9 + Math.random() * 1.4, de: Math.random() * 0.5 });
+    }
+    /* gel stops being gel on the way down: green at the start, ink by the end */
+    const ink = Math.pow(u, 0.85);
+    const mix = (a, b) => `${(a + (b - a) * ink) | 0}`;
+    const body = `rgb(${mix(96, 20)},${mix(190, 23)},${mix(148, 30)})`;
+    const lip  = `rgb(${mix(178, 44)},${mix(238, 52)},${mix(202, 60)})`;
+    const deep = `rgb(${mix(30, 8)},${mix(74, 10)},${mix(56, 14)})`;
+    /* it is one sheet, not a row of bars — so the sheet sags between the runs */
+    const lead = [];
+    for (const s of nat.seeds) {
+      const t = Math.max(0, (u - s.de) / (1 - s.de));
+      lead.push(t <= 0 ? 0 : Math.min(H * 1.3, H * 1.4 * Math.pow(t, 1.4) * s.sp));
+    }
+    const sagAt = (x) => {
+      let y = H * 0.02 + H * 0.10 * u;
+      for (let i = 0; i < nat.seeds.length; i++) {
+        const s = nat.seeds[i];
+        const d = (x - s.x) / (s.w * 2.1);
+        y = Math.max(y, lead[i] * 0.34 * Math.exp(-d * d));
+      }
+      return y;
+    };
+    fctx.fillStyle = body;
+    fctx.beginPath();
+    fctx.moveTo(0, 0);
+    fctx.lineTo(W, 0);
+    for (let x = W; x >= 0; x -= 14) fctx.lineTo(x, sagAt(x));
+    fctx.closePath();
+    fctx.fill();
+    for (let i = 0; i < nat.seeds.length; i++) {
+      const s = nat.seeds[i], L = lead[i];
+      if (L <= 1) continue;
+      /* a run is a tapering column with a fat bead on the end of it */
+      const wob = Math.sin(s.wob + u * 7) * s.w * 0.14;
+      const wTop = s.w, wBot = s.w * (0.34 + 0.16 * Math.sin(s.wob * 3));
+      const g = fctx.createLinearGradient(s.x - wTop, 0, s.x + wTop, 0);
+      g.addColorStop(0, deep);
+      g.addColorStop(0.34, lip);
+      g.addColorStop(0.62, body);
+      g.addColorStop(1, deep);
+      fctx.fillStyle = g;
+      fctx.beginPath();
+      fctx.moveTo(s.x - wTop / 2, 0);
+      fctx.lineTo(s.x + wTop / 2, 0);
+      fctx.quadraticCurveTo(s.x + wTop * 0.42 + wob, L * 0.6,
+                            s.x + wBot + wob, L - wBot * 0.6);
+      fctx.quadraticCurveTo(s.x + wob, L + wBot * 1.15,
+                            s.x - wBot + wob, L - wBot * 0.6);
+      fctx.quadraticCurveTo(s.x - wTop * 0.42 + wob, L * 0.6, s.x - wTop / 2, 0);
+      fctx.closePath();
+      fctx.fill();
+      /* the bead on the end is rounder and catches more light than the run */
+      const bg = fctx.createRadialGradient(s.x - wBot * 0.35 + wob, L - wBot * 0.3, 0,
+                                           s.x + wob, L, wBot * 1.5);
+      bg.addColorStop(0, lip);
+      bg.addColorStop(1, body);
+      fctx.fillStyle = bg;
+      fctx.beginPath();
+      fctx.ellipse(s.x + wob, L - wBot * 0.15, wBot * 1.02, wBot * 1.3, 0, 0, 6.3);
+      fctx.fill();
+    }
+    for (const d of nat.drops) {
+      const t = Math.max(0, (u - d.de) / (1 - d.de));
+      if (t <= 0) continue;
+      const y = d.y + H * 1.5 * t * t * d.sp;
+      if (y > H + d.r * 3) continue;
+      fctx.fillStyle = `rgba(${(40 + 90 * (1 - u)) | 0},${(120 + 110 * (1 - u)) | 0},${(90 + 80 * (1 - u)) | 0},0.9)`;
+      fctx.beginPath();
+      fctx.ellipse(d.x, y, d.r * 0.85, d.r * (1.15 + t * 0.7), 0, 0, 6.3);
+      fctx.fill();
+    }
+    /* it closes over into ink */
+    const shut = Math.max(0, (u - 0.66) / 0.34);
+    if (shut > 0) {
+      fctx.fillStyle = `rgba(14,16,22,${(shut * shut).toFixed(3)})`;
+      fctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  /* --- sand: the chart stops being paper ---
+     The map is drawn on paper and the beach is made of grains, so the map
+     comes apart into grains and they fall and heap up, and the heap is the
+     beach you dig in. The red X ends up as flecks in the sand. */
+  else if (nat.kind === "sand") {
+    if (!nat.seeds) {
+      const cell = Math.max(6, Math.round(Math.min(W, H) / 82));
+      const cols = Math.ceil(W / cell), rows = Math.ceil(H / cell);
+      nat.cell = cell; nat.cols = cols;
+      nat.heap = new Float32Array(cols).fill(H);
+      nat.seeds = [];
+      let img = null;
+      if (nat.cap) { try { img = natX.getImageData(0, 0, W, H); } catch (e) {} }
+      for (let ry = 0; ry < rows; ry++) {
+        for (let rx = 0; rx < cols; rx++) {
+          const px = rx * cell + cell * 0.5, py = ry * cell + cell * 0.5;
+          let r = 226, g = 208, b = 172, a = 255;
+          if (img) {
+            const o = ((py | 0) * W + (px | 0)) * 4;
+            a = img.data[o + 3];
+            if (a > 12) { r = img.data[o]; g = img.data[o + 1]; b = img.data[o + 2]; }
+          }
+          if (a <= 12) continue;
+          /* sand is never one colour; scatter what we sampled a little */
+          const j = 0.86 + Math.random() * 0.28;
+          nat.seeds.push({ x: px, y: py,
+                           /* they fan out on the way down, so what lands is a
+                              beach and not a cone */
+                           vx: (Math.random() - 0.5) * W * 0.62,
+                           vy: 0, col: rx,
+                           rep: 0.5 + Math.random() * 0.45,
+                           /* the top of the page lets go first, so it pours */
+                           de: (ry / rows) * 0.46 + Math.random() * 0.22,
+                           c: `rgb(${Math.min(255, r * j) | 0},${Math.min(255, g * j) | 0},${Math.min(255, b * j) | 0})` });
+        }
+      }
+      /* daylight coming up behind the paper */
+      nat.sky = true;
+    }
+    const cell = nat.cell;
+    /* the beach's own sky, arriving as the paper leaves */
+    const sky = fctx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, "#8fc3dd");
+    sky.addColorStop(0.55, "#cfe3e6");
+    sky.addColorStop(1, "#e8d9b6");
+    fctx.globalAlpha = Math.min(1, u * 1.5);
+    fctx.fillStyle = sky;
+    fctx.fillRect(0, 0, W, H);
+    fctx.globalAlpha = 1;
+    for (const p of nat.seeds) {
+      if (u < p.de) {
+        /* still page: sits where it was drawn */
+        fctx.fillStyle = p.c;
+        fctx.fillRect(p.x - cell * 0.5, p.y - cell * 0.5, cell + 0.6, cell + 0.6);
+        continue;
+      }
+      if (p.done) {
+        fctx.fillStyle = p.c;
+        fctx.fillRect(p.x - cell * 0.5, p.y - cell * 0.5, cell + 0.6, cell + 0.6);
+        continue;
+      }
+      p.vy += 980 * dt;
+      p.vx *= Math.exp(-1.1 * dt);
+      p.y += p.vy * dt;
+      p.x += p.vx * dt;
+      let c = Math.max(0, Math.min(nat.cols - 1, (p.x / cell) | 0));
+      if (p.y >= nat.heap[c] - cell * 0.5) {
+        /* Dry sand will not stand steeper than about thirty degrees. A grain
+           that lands on a slope rolls downhill until it finds somewhere it
+           can stay, which is why a poured heap spreads into a beach instead
+           of standing up in a tower. */
+        for (let step = 0; step < 60; step++) {
+          const l = c > 0 ? nat.heap[c - 1] : Infinity;
+          const r = c < nat.cols - 1 ? nat.heap[c + 1] : Infinity;
+          const here = nat.heap[c];
+          if (l - here < cell * p.rep && r - here < cell * p.rep) break;
+          c += (l > r ? -1 : (r > l ? 1 : (Math.random() < 0.5 ? -1 : 1)));
+          c = Math.max(0, Math.min(nat.cols - 1, c));
+        }
+        p.x = c * cell + cell * 0.5;
+        p.y = nat.heap[c] - cell * 0.5;
+        p.done = true;
+        nat.heap[c] -= cell * 0.92;
+      }
+      fctx.fillStyle = p.c;
+      fctx.fillRect(p.x - cell * 0.5, p.y - cell * 0.5, cell + 0.6, cell + 0.6);
+    }
+    /* and it settles into the beach you are about to be standing on — the
+       last frame of this and the first frame of the dig are the same beach */
+    const settle = Math.max(0, (u - 0.62) / 0.38);
+    if (settle > 0) {
+      const horizon = H * 0.42;
+      fctx.globalAlpha = Math.min(1, settle * settle * 1.25);
+      const sg = fctx.createLinearGradient(0, horizon, 0, H);
+      sg.addColorStop(0, "#ded0ab");
+      sg.addColorStop(1, "#c9b78e");
+      fctx.fillStyle = sg;
+      fctx.beginPath();
+      fctx.moveTo(0, H);
+      for (let x = 0; x <= W; x += 12) {
+        const t = x / W;
+        fctx.lineTo(x, horizon + Math.sin(t * 7.2) * 5 + Math.sin(t * 3.1 + 1.4) * 9
+                              + Math.sin(t * 19.0 + 0.3) * 2);
+      }
+      fctx.lineTo(W, H);
+      fctx.closePath();
+      fctx.fill();
+      fctx.globalAlpha = 1;
+    }
+  }
+
+  /* --- rain: the squall that comes in off the sea ---
+     A lighthouse and a wood are joined by weather. It drives in, blots the
+     frame, and thins out somewhere with trees in it. */
+  else if (nat.kind === "rain") {
+    if (!nat.seeds) {
+      nat.seeds = [];
+      const N = Math.round(Math.max(180, Math.min(520, W * H / 2400)));
+      for (let i = 0; i < N; i++)
+        nat.seeds.push({ x: Math.random() * W * 1.5 - W * 0.3, y: Math.random() * H,
+                         len: H * (0.05 + Math.random() * 0.13),
+                         sp: 1.1 + Math.random() * 1.5,
+                         a: 0.14 + Math.random() * 0.4,
+                         de: Math.random() * 0.42 });
+      nat.splash = [];
+    }
+    const heavy = Math.sin(Math.min(1, u / 0.78) * Math.PI);
+    const slant = 0.34 + Math.sin(u * 4.1) * 0.16;
+    fctx.fillStyle = `rgba(122,136,148,${(Math.pow(heavy, 0.7) * 0.94).toFixed(3)})`;
+    fctx.fillRect(0, 0, W, H);
+    fctx.lineCap = "round";
+    for (const r of nat.seeds) {
+      if (u < r.de) continue;
+      const t = (u - r.de) * r.sp;
+      const y = (r.y + t * H * 3.4) % (H + r.len * 2) - r.len;
+      const x = r.x + t * H * 3.4 * slant;
+      fctx.strokeStyle = `rgba(226,238,246,${(r.a * heavy).toFixed(3)})`;
+      fctx.lineWidth = 1 + r.len / H * 6;
+      fctx.beginPath();
+      fctx.moveTo(x % (W * 1.4), y);
+      fctx.lineTo(x % (W * 1.4) - r.len * slant, y + r.len);
+      fctx.stroke();
+    }
+    /* it lands on something, which is what makes rain sound like rain */
+    for (let i = 0; i < 14; i++) {
+      const sx = (Math.sin(i * 12.9 + u * 21) * 0.5 + 0.5) * W;
+      const sy = H * (0.72 + (Math.sin(i * 7.3 + u * 13) * 0.5 + 0.5) * 0.28);
+      const sr = (2 + (i % 4)) * (0.4 + heavy);
+      fctx.strokeStyle = `rgba(232,242,248,${(0.20 * heavy).toFixed(3)})`;
+      fctx.lineWidth = 1;
+      fctx.beginPath(); fctx.ellipse(sx, sy, sr * 2.4, sr * 0.7, 0, 0, 6.3); fctx.stroke();
+    }
+  }
+
+  if (!nat.fired && u >= nat.at) {
+    nat.fired = true;
+    const f = nat.after;
+    if (nat.at >= 1) { natEnd(); if (f) f(); return false; }
+    if (f) f();
+    return true;
+  }
+  if (u >= 1) { natEnd(); return false; }
   return true;
 }
+
+const M0 = (W, H) => Math.min(W, H);
 
 function drawLeaf(c, x, y, s, rot, hue, a) {
   c.save();
@@ -7733,6 +8226,139 @@ function leafSound() {
   s.start(t0); s.stop(t0 + 3.3);
 }
 
+/* going down a pipe: everything above you gets darker and further off, so
+   the filter closes and the reverb opens */
+function drainSound() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noise(ac); s.loop = true;
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 1.5;
+  bp.frequency.setValueAtTime(1500, t0);
+  bp.frequency.exponentialRampToValueAtTime(180, t0 + 2.6);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(0.085, t0 + 0.5);
+  g.gain.setValueAtTime(0.085, t0 + 1.8);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.2);
+  s.connect(bp); bp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 3.3);
+  /* the pipe has a note in it, the way pipes do, and it drops as you fall */
+  for (const [f, v] of [[196, 0.030], [131, 0.036], [98, 0.028]]) {
+    const o = ac.createOscillator(); o.type = "sine";
+    o.frequency.setValueAtTime(f, t0);
+    o.frequency.exponentialRampToValueAtTime(f * 0.42, t0 + 2.5);
+    const og = ac.createGain();
+    og.gain.setValueAtTime(0.0001, t0);
+    og.gain.linearRampToValueAtTime(v, t0 + 0.6);
+    og.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.0);
+    o.connect(og); og.connect(BUS);
+    o.start(t0); o.stop(t0 + 3.1);
+  }
+  /* single drips ringing off the walls, spread across the stereo field */
+  for (let i = 0; i < 9; i++) {
+    const t = t0 + 0.25 + Math.random() * 2.2;
+    const o = ac.createOscillator(); o.type = "sine";
+    const f0 = 900 + Math.random() * 1500;
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(f0 * 0.45, t + 0.09);
+    const og = ac.createGain();
+    og.gain.setValueAtTime(0.030, t);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
+    o.connect(og); og.connect(at(Math.random() * window.innerWidth) || BUS);
+    o.start(t); o.stop(t + 0.3);
+  }
+}
+
+/* gel letting go: a soft low bloop per run, no attack to speak of */
+function dripSound() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  for (let i = 0; i < 16; i++) {
+    const t = t0 + Math.random() * 2.0;
+    const o = ac.createOscillator(); o.type = "sine";
+    const f0 = 120 + Math.random() * 240;
+    o.frequency.setValueAtTime(f0 * 2.1, t);
+    o.frequency.exponentialRampToValueAtTime(f0 * 0.6, t + 0.16 + Math.random() * 0.14);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.036 + Math.random() * 0.02, t + 0.035);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
+    o.connect(g); g.connect(at(Math.random() * window.innerWidth) || BUS);
+    o.start(t); o.stop(t + 0.4);
+  }
+  /* the stretch before it goes */
+  const s = ac.createBufferSource(); s.buffer = noise(ac); s.loop = true;
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass";
+  lp.frequency.setValueAtTime(700, t0);
+  lp.frequency.exponentialRampToValueAtTime(150, t0 + 2.8);
+  const g2 = ac.createGain();
+  g2.gain.setValueAtTime(0.0001, t0);
+  g2.gain.linearRampToValueAtTime(0.052, t0 + 1.1);
+  g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.0);
+  s.connect(lp); lp.connect(g2); g2.connect(BUS);
+  s.start(t0); s.stop(t0 + 3.1);
+}
+
+/* pouring sand is thousands of tiny impacts — noise high enough up that
+   you hear the grains rather than the pour */
+function sandSound() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noise(ac); s.loop = true;
+  const hp = ac.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 1900;
+  const bp = ac.createBiquadFilter(); bp.type = "peaking";
+  bp.frequency.setValueAtTime(5200, t0);
+  bp.frequency.linearRampToValueAtTime(2600, t0 + 3.0);
+  bp.gain.value = 7; bp.Q.value = 0.8;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(0.088, t0 + 0.9);
+  g.gain.setValueAtTime(0.088, t0 + 2.0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.4);
+  s.connect(hp); hp.connect(bp); bp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 3.5);
+  /* the heap settling under it */
+  const o = ac.createOscillator(); o.type = "sine";
+  o.frequency.setValueAtTime(74, t0 + 0.6);
+  o.frequency.linearRampToValueAtTime(52, t0 + 3.0);
+  const og = ac.createGain();
+  og.gain.setValueAtTime(0.0001, t0 + 0.6);
+  og.gain.linearRampToValueAtTime(0.032, t0 + 1.6);
+  og.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.3);
+  o.connect(og); og.connect(BUS);
+  o.start(t0 + 0.6); o.stop(t0 + 3.4);
+}
+
+/* a squall: the bed swells, and individual drops land on top of it */
+function rainSound() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noise(ac); s.loop = true;
+  const hp = ac.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 620;
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass";
+  lp.frequency.setValueAtTime(2200, t0);
+  lp.frequency.linearRampToValueAtTime(6800, t0 + 1.5);
+  lp.frequency.linearRampToValueAtTime(2400, t0 + 3.4);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(0.115, t0 + 1.4);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.6);
+  s.connect(hp); hp.connect(lp); lp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 3.7);
+  for (let i = 0; i < 26; i++) {
+    const t = t0 + 0.3 + Math.random() * 2.4;
+    const o = ac.createOscillator(); o.type = "triangle";
+    const f0 = 1400 + Math.random() * 2600;
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(f0 * 0.55, t + 0.05);
+    const og = ac.createGain();
+    og.gain.setValueAtTime(0.012 + Math.random() * 0.010, t);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+    o.connect(og); og.connect(at(Math.random() * window.innerWidth) || BUS);
+    o.start(t); o.stop(t + 0.1);
+  }
+}
+
 /* ================= the wood =================
    The beam comes round, cloud takes the frame, and it puts you down in a
    stand of trees at dusk with a wind getting up. Drag your hand through
@@ -7745,11 +8371,12 @@ let woodOn = false, woodT = 0, trees = [], loose = [], grass = [];
    back through every earlier scene, which is what happened before */
 let chainEnd = false, restT = 0, restLeaves = null;
 let wgust = 0, wgustX = 0, wgustY = 0, wgustV = 0, woodDrag = false, stripped = 0, woodHanded = false;
+let woodTotal = 0, woodLetGo = false;
 let windNode = null;
 
 function startWood() {
   if (woodOn) return;
-  woodOn = true; woodT = 0; stripped = 0; woodHanded = false;
+  woodOn = true; woodT = 0; stripped = 0; woodHanded = false; woodLetGo = false;
   loose = [];
   const W = window.innerWidth, H = window.innerHeight;
   const hz = H * 0.72;
@@ -7789,6 +8416,7 @@ function startWood() {
                  h: H * (0.012 + rnd() * 0.030), ph: rnd() * 6.3,
                  hue: 34 + rnd() * 26 });
 
+  woodTotal = trees.reduce((a, t) => a + t.leaves.length, 0);
   bed("sand");
   woodWind();
 }
@@ -7927,10 +8555,23 @@ function woodFrame(dt) {
     fctx.stroke();
   }
 
-  /* stripped: the wind takes the rest of it */
+  /* Hunting the last leaf on the last tree is work, not pleasure. Once most
+     of the canopy is down the wind finishes the job — the remainder lets go
+     on its own, which is what wind does anyway. */
+  if (woodTotal && still > 0 && still <= woodTotal * 0.16 && !woodLetGo) {
+    woodLetGo = true;
+    for (const t of trees) for (const l of t.leaves) {
+      if (!l.on) continue;
+      l.on = false; stripped++;
+      loose.push({ x: t.x + l.ox, y: t.y + l.oy, s: l.s, hue: l.hue, ph: l.ph,
+                   rot: Math.random() * 6.3, spin: (Math.random() - 0.5) * 7,
+                   vx: 90 + Math.random() * 160, vy: -50 - Math.random() * 110 });
+    }
+    wgustV = Math.max(wgustV, 260);
+  }
   if (still === 0 && !woodHanded) {
     woodHanded = true;
-    release("wood"); setTimeout(() => natRun("leaf", () => { woodOn = false; startRiver(); }, 3.0), 700);
+    release("wood"); setTimeout(() => natRun("leaf", () => { woodOn = false; startRiver(); }, 3.4, { at: 0.60 }), 700);
   }
   natFrame(dt);
 }
@@ -8336,7 +8977,7 @@ function riverFrame(dt) {
   if (crossed && !rivHanded) {
     rivHanded = true;
     crossingDone();
-    release("river"); setTimeout(() => natRun("wash", () => { rivOn = false; chainEnd = true; restT = 0; }, 3.4), 900);
+    release("river"); setTimeout(() => natRun("wash", () => { rivOn = false; chainEnd = true; restT = 0; }, 3.6, { at: 0.58 }), 900);
   }
   natFrame(dt);
 }
