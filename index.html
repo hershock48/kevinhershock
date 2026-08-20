@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="build" content="2026-08-20T12:21Z">
+<meta name="build" content="2026-08-20T15:57Z">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Kevin Hershock</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎈</text></svg>">
@@ -9113,348 +9113,467 @@ function rustle(px, v) {
 }
 
 /* ================= the river =================
-   The leaves the wind took have to come down somewhere, and they come
-   down on water. A river running away from you between two banks, rocks
-   standing in it with the white water piling on their upstream faces,
-   and the leaves you stripped going past on the current.
+   The leaves the wind took have to come down somewhere, and they come down
+   on water.
 
-   Put your hand on the water and a stone comes up out of it. Put enough
-   of them up to get across, and the river takes the whole frame with it. */
+   This ran away from you before — a channel receding to a point, which is
+   the shape of a road. So the composition said "go down it" while the thing
+   you do said "get across it", and the two fought. It runs across the frame
+   now: your bank at your feet, thirty feet of moving water, the far bank and
+   the last of the light above it. Crossing is upward, which is also the
+   direction the whole piece has been going.
+
+   Put your hand on the water and a stone comes up out of it. Put up enough
+   to walk from this bank to that one, and the river takes the frame with it. */
 
 let rivOn = false, rivT = 0, rocks = [], stones = [], rivLeaves = [], foam = [];
 let bankStones = [], rivHanded = false, rivNode = null, crossed = 0;
+let reeds = [], tufts = [], rivDir = 1, rivGlow = 0;
+let barCool = null, barWarm = null, rivVig = null, rivVigW = 0, rivVigH = 0;
+
+/* A soft-ended bar. The current and the reflection were each building a fresh
+   linear gradient per streak per frame — about a hundred and eighty objects a
+   frame on a phone, which is most of the frame budget for something that never
+   changes shape. Built once, stretched to fit. */
+function softBar(r, g, b) {
+  const c = document.createElement("canvas");
+  c.width = 128; c.height = 8;
+  const x = c.getContext("2d");
+  const lg = x.createLinearGradient(0, 0, 128, 0);
+  lg.addColorStop(0, `rgba(${r},${g},${b},0)`);
+  lg.addColorStop(0.38, `rgba(${r},${g},${b},1)`);
+  lg.addColorStop(0.64, `rgba(${r},${g},${b},1)`);
+  lg.addColorStop(1, `rgba(${r},${g},${b},0)`);
+  x.fillStyle = lg;
+  x.fillRect(0, 0, 128, 8);
+  return c;
+}
 
 function rivGeom() {
   const W = window.innerWidth, H = window.innerHeight;
-  /* it recedes: narrow and pale at the top, wide and dark at your feet */
-  return {
-    W, H,
-    far: H * 0.30,                       /* where the water starts */
-    wFar: W * 0.16, wNear: W * 0.92,
-    cx: W * 0.5,
-  };
+  const tall = H > W * 1.2;
+  const farB = H * (tall ? 0.36 : 0.42);     /* the far bank meets the water */
+  const nearB = H * (tall ? 0.84 : 0.86);    /* the water meets your feet */
+  return { W, H, sky: farB - H * 0.02, farB, nearB, span: nearB - farB };
 }
-/* half-width of the channel at a given depth (0 far, 1 near) */
-const rivHalf = (G, d) => (G.wFar + (G.wNear - G.wFar) * Math.pow(d, 1.35)) * 0.5;
-const rivY = (G, d) => G.far + (G.H - G.far) * Math.pow(d, 0.82);
-/* one place that turns a size and a depth into pixels, so it cannot be
-   applied twice again */
-const rivPx = (G, base, d) => Math.min(G.W, G.H) * base * (0.35 + 0.85 * d);
+/* 0 at the far bank, 1 at your toes — everything in the water is placed by it */
+const rivYAt = (G, t) => G.farB + G.span * t;
+const rivTAt = (G, y) => Math.max(0, Math.min(1, (y - G.farB) / G.span));
+/* things nearer you are bigger; one place that says by how much */
+const rivScale = (G, t) => Math.min(G.W, G.H) * (0.55 + 0.72 * t);
+/* a river runs fastest down the middle and hardly at all at its edges */
+const rivFlow = (t) => 0.22 + 0.78 * Math.sin(Math.max(0, Math.min(1, t)) * Math.PI);
 
 function startRiver() {
   mark("river");
   if (rivOn) return;
-  rivOn = true; rivT = 0; crossed = 0; rivHanded = false;
+  rivOn = true; rivT = 0; crossed = 0; rivHanded = false; rivGlow = 0;
   stones = []; foam = [];
   const G = rivGeom();
+  rivDir = RUN.windDir >= 0 ? 1 : -1;        /* it runs the way the wind did */
 
+  /* rocks that were always there, standing in it */
   rocks = [];
-  for (let i = 0; i < (G.W < 620 ? 7 : 11); i++) {
-    const d = 0.12 + rnd() * 0.80;
-    const u = (rnd() - 0.5) * 1.55;
-    rocks.push({ d, u, s: 0.020 + rnd() * 0.032,
+  for (let i = 0; i < (G.W < 620 ? 5 : 8); i++)
+    rocks.push({ t: 0.10 + rnd() * 0.80, x: rnd(), s: 0.011 + rnd() * 0.015,
                  rot: rnd() * 6.3, seed: rnd() * 100 });
-  }
-  rocks.sort((a, b) => a.d - b.d);
+  rocks.sort((a, b) => a.t - b.t);
 
+  /* shingle on both banks */
   bankStones = [];
-  for (let i = 0; i < (G.W < 620 ? 40 : 80); i++) {
-    const d = rnd();
-    const side = rnd() < 0.5 ? -1 : 1;
-    bankStones.push({ d, side, u: 1.02 + rnd() * 0.55,
-                      s: 0.005 + rnd() * 0.012,
-                      hue: 26 + rnd() * 18, l: 16 + rnd() * 20, rot: rnd() * 6.3 });
+  for (let i = 0; i < (G.W < 620 ? 46 : 90); i++)
+    bankStones.push({ x: rnd(), near: rnd() < 0.62, o: rnd(),
+                      s: 0.0022 + rnd() * 0.0055,
+                      hue: 26 + rnd() * 18, l: 14 + rnd() * 18, rot: rnd() * 6.3 });
+
+  /* reeds along the far bank, which is what tells you it is a bank and not a
+     wall, and grass tufts on yours */
+  /* Reeds grow in clumps where the water is shallow, not evenly spaced like
+     a fence — evenly spaced was the reason they read as aerials. */
+  reeds = [];
+  const clumps = G.W < 620 ? 6 : 11;
+  for (let c = 0; c < clumps; c++) {
+    const cx = rnd(), n = 3 + ((rnd() * 6) | 0), big = 0.6 + rnd() * 0.7;
+    for (let i = 0; i < n; i++)
+      reeds.push({ x: cx + (rnd() - 0.5) * 0.035,
+                   h: (0.018 + rnd() * 0.030) * big,
+                   lean: (rnd() - 0.5) * 0.7,
+                   ph: rnd() * 6.3, hue: 44 + rnd() * 22, head: rnd() < 0.35 });
+  }
+  tufts = [];
+  const clu2 = G.W < 620 ? 9 : 16;
+  for (let c = 0; c < clu2; c++) {
+    const cx = rnd(), co = rnd(), n = 4 + ((rnd() * 7) | 0);
+    for (let i = 0; i < n; i++)
+      tufts.push({ x: cx + (rnd() - 0.5) * 0.045, o: co + (rnd() - 0.5) * 0.16,
+                   h: 0.008 + rnd() * 0.020,
+                   ph: rnd() * 6.3, hue: 40 + rnd() * 22 });
   }
 
   rivLeaves = [];
-  for (let i = 0; i < (G.W < 620 ? 16 : 26); i++)
-    rivLeaves.push({ d: rnd(), u: (rnd() - 0.5) * 1.5, s: 5 + rnd() * 9,
-                     rot: rnd() * 6.3, spin: (rnd() - 0.5) * 1.4, hue: 16 + rnd() * 34 });
+  for (let i = 0; i < (G.W < 620 ? 14 : 24); i++)
+    rivLeaves.push({ t: 0.05 + rnd() * 0.9, x: rnd(), s: 4 + rnd() * 7,
+                     rot: rnd() * 6.3, spin: (rnd() - 0.5) * 1.6, hue: 16 + rnd() * 34 });
 
+  if (!barCool) barCool = softBar(206, 228, 244);
+  if (!barWarm) barWarm = softBar(255, 210, 146);
   bed("sea");
   riverSound();
+  finCanvas.style.cursor = "pointer";
 }
 
+/* a rock: a lump with a lit top, a wet waterline, and white water piling on
+   whichever side the current hits it */
 function drawRock(x, y, s, rot, seed, wet) {
   const c = fctx;
   c.save();
-  c.translate(x, y); c.rotate(rot);
-  const N = 9;
+  c.translate(x, y);
+  c.rotate(Math.sin(seed) * 0.3 + rot * 0.05);
+  const g = c.createLinearGradient(0, -s, 0, s * 0.8);
+  g.addColorStop(0, "#8d8478");
+  g.addColorStop(0.42, "#6d6357");
+  g.addColorStop(1, "#3a352e");
+  c.fillStyle = g;
   c.beginPath();
-  for (let i = 0; i < N; i++) {
-    const a = i / N * Math.PI * 2;
-    const r = s * (0.78 + 0.30 * Math.sin(seed + i * 2.1));
-    c.lineTo(Math.cos(a) * r, Math.sin(a) * r * 0.72);
+  const N = 9;
+  for (let i = 0; i <= N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    const r = s * (0.74 + 0.30 * Math.abs(Math.sin(a * 2.3 + seed)));
+    const px = Math.cos(a) * r, py = Math.sin(a) * r * 0.66;
+    i ? c.lineTo(px, py) : c.moveTo(px, py);
   }
   c.closePath();
-  const g = c.createLinearGradient(-s, -s, s * 0.6, s);
-  g.addColorStop(0, `hsl(28,${8 + wet * 6}%,${34 + wet * 8}%)`);
-  g.addColorStop(0.45, `hsl(26,${7 + wet * 5}%,${22 + wet * 6}%)`);
-  g.addColorStop(1, `hsl(24,8%,${11 + wet * 4}%)`);
-  c.fillStyle = g; c.fill();
-  /* the waterline is darker, and above it there is a highlight */
-  c.fillStyle = `rgba(255,250,236,${(0.10 + wet * 0.14).toFixed(3)})`;
-  c.beginPath();
-  c.ellipse(-s * 0.26, -s * 0.30, s * 0.34, s * 0.16, -0.5, 0, 6.3);
   c.fill();
-  c.fillStyle = "rgba(6,10,14,0.34)";
+  /* the top catches what light is left */
+  c.fillStyle = "rgba(226,216,196,0.20)";
   c.beginPath();
-  c.ellipse(0, s * 0.44, s * 0.86, s * 0.20, 0, 0, 6.3);
+  c.ellipse(-s * 0.16, -s * 0.30, s * 0.52, s * 0.22, -0.2, 0, 6.3);
   c.fill();
   c.restore();
+  if (!wet) return;
+  /* the waterline, and the white water on the upstream face */
+  c.fillStyle = "rgba(226,240,248,0.22)";
+  c.beginPath();
+  c.ellipse(x, y + s * 0.44, s * 0.92, s * 0.17, 0, 0, 6.3);
+  c.fill();
+  for (let i = 0; i < 4; i++) {
+    const p = i / 4;
+    const px = x - rivDir * s * (0.62 + p * 0.42);
+    const py = y + s * (0.34 + Math.sin(rivT * 5 + i + seed) * 0.08);
+    c.fillStyle = `rgba(255,255,255,${(0.30 * (1 - p)).toFixed(3)})`;
+    c.beginPath();
+    c.ellipse(px, py, s * (0.20 - p * 0.03), s * (0.075 - p * 0.010), 0, 0, 6.3);
+    c.fill();
+  }
+  /* and the wake it leaves behind it */
+  c.strokeStyle = "rgba(206,228,240,0.13)";
+  c.lineWidth = Math.max(0.8, s * 0.06);
+  for (const side of [-1, 1]) {
+    c.beginPath();
+    c.moveTo(x + rivDir * s * 0.5, y + s * 0.42);
+    c.quadraticCurveTo(x + rivDir * s * 1.1, y + s * (0.46 + side * 0.16),
+                       x + rivDir * s * 1.9, y + s * (0.50 + side * 0.30));
+    c.stroke();
+  }
 }
 
 function riverFrame(dt) {
-  const G = rivGeom(), W = G.W, H = G.H;
+  const W = window.innerWidth, H = window.innerHeight;
+  const G = rivGeom();
   rivT += dt;
   hardClear(finCanvas, fctx);
 
-  /* ---- the far bank and whatever sky is left ---- */
-  const sky = fctx.createLinearGradient(0, 0, 0, G.far);
-  sky.addColorStop(0, "#0c1524");
-  sky.addColorStop(0.65, "#1d2536");
-  sky.addColorStop(1, "#4a4438");
-  fctx.fillStyle = sky; fctx.fillRect(0, 0, W, G.far + 2);
-  const glow = fctx.createRadialGradient(W * 0.5, G.far, 0, W * 0.5, G.far, H * 0.28);
-  glow.addColorStop(0, "rgba(196,150,102,0.34)");
-  glow.addColorStop(1, "rgba(150,120,90,0)");
-  fctx.fillStyle = glow; fctx.fillRect(0, 0, W, G.far + 2);
-  /* trees on the far side, small and flat */
-  fctx.fillStyle = "#0a0e14";
-  for (let i = 0; i < 46; i++) {
-    const x = (i / 46) * W + Math.sin(i * 3.1) * 12;
-    const hh = H * (0.012 + Math.abs(Math.sin(i * 1.7)) * 0.030);
-    fctx.beginPath();
-    fctx.moveTo(x - hh * 0.35, G.far + 1);
-    fctx.lineTo(x, G.far - hh);
-    fctx.lineTo(x + hh * 0.35, G.far + 1);
-    fctx.closePath(); fctx.fill();
-  }
+  /* ---------- sky ---------- */
+  const sky = fctx.createLinearGradient(0, 0, 0, G.farB);
+  sky.addColorStop(0, "#0d1526");
+  sky.addColorStop(0.52, "#26304a");
+  sky.addColorStop(0.82, "#6b5a54");
+  sky.addColorStop(1, "#c08a54");
+  fctx.fillStyle = sky;
+  fctx.fillRect(0, 0, W, G.farB);
+  /* the last of the sun, behind the trees */
+  const sunX = W * (0.18 + RUN.sunX * 0.64);
+  const sg = fctx.createRadialGradient(sunX, G.farB, 0, sunX, G.farB, Math.min(W, H) * 0.60);
+  sg.addColorStop(0, "rgba(255,206,132,0.60)");
+  sg.addColorStop(0.35, "rgba(226,146,86,0.22)");
+  sg.addColorStop(1, "rgba(180,110,70,0)");
+  fctx.fillStyle = sg;
+  fctx.fillRect(0, 0, W, G.farB);
 
-  /* ---- the banks ---- */
-  const bank = fctx.createLinearGradient(0, G.far, 0, H);
-  bank.addColorStop(0, "#2a2418");
-  bank.addColorStop(0.5, "#1d1912");
-  bank.addColorStop(1, "#0f0d0a");
-  fctx.fillStyle = bank; fctx.fillRect(0, G.far, W, H - G.far);
-  /* grass on the banks, leaning downstream */
-  for (let i = 0; i < (W < 620 ? 60 : 130); i++) {
-    const d = (i * 0.618) % 1;
-    const side = i % 2 ? 1 : -1;
-    const hw = rivHalf(G, d), y = rivY(G, d);
-    const x = G.cx + side * (hw * (1.06 + ((i * 0.37) % 1) * 0.9));
-    if (x < -20 || x > W + 20) continue;
-    const gh = (H - G.far) * 0.030 * (0.35 + d);
-    fctx.strokeStyle = `hsla(${40 + (i % 7) * 4},22%,${12 + d * 12}%,0.75)`;
-    fctx.lineWidth = Math.max(1, gh * 0.12);
-    fctx.beginPath();
-    fctx.moveTo(x, y);
-    fctx.quadraticCurveTo(x + gh * 0.2, y - gh * 0.6,
-                          x + gh * 0.5 + Math.sin(rivT * 1.6 + i) * gh * 0.12, y - gh);
-    fctx.stroke();
-  }
-
-  /* ---- the water ---- */
-  fctx.save();
+  /* ---------- the trees on the other side ---------- */
+  const treeBase = G.farB + 1;
+  fctx.fillStyle = "#141a20";
   fctx.beginPath();
-  fctx.moveTo(G.cx - rivHalf(G, 0), rivY(G, 0));
-  for (let i = 0; i <= 24; i++) {
-    const d = i / 24;
-    fctx.lineTo(G.cx - rivHalf(G, d), rivY(G, d));
+  fctx.moveTo(0, treeBase);
+  const step = Math.max(16, W / 46);
+  for (let x = 0; x <= W + step; x += step) {
+    const hgt = H * (0.035 + 0.055 * (0.5 + 0.5 * Math.sin(x * 0.021 + 1.7)))
+              * (0.7 + 0.6 * (0.5 + 0.5 * Math.sin(x * 0.061)));
+    fctx.lineTo(x - step * 0.5, treeBase - hgt * 0.35);
+    fctx.lineTo(x, treeBase - hgt);
+    fctx.lineTo(x + step * 0.5, treeBase - hgt * 0.35);
   }
-  for (let i = 24; i >= 0; i--) {
-    const d = i / 24;
-    fctx.lineTo(G.cx + rivHalf(G, d), rivY(G, d));
-  }
+  fctx.lineTo(W, treeBase);
   fctx.closePath();
-  fctx.clip();
+  fctx.fill();
 
-  const wat = fctx.createLinearGradient(0, G.far, 0, H);
-  wat.addColorStop(0, "#5d6a6a");
-  wat.addColorStop(0.25, "#39434c");
-  wat.addColorStop(1, "#10161d");
-  fctx.fillStyle = wat;
-  fctx.fillRect(0, G.far, W, H - G.far);
-
-  /* the current: bands running down the channel, faster the nearer they are */
-  fctx.globalCompositeOperation = "lighter";
-  for (let i = 0; i < 34; i++) {
-    const d0 = ((i / 34) + (rivT * 0.10) % (1 / 34) * 34 / 34) % 1;
-    const d = (d0 + rivT * 0.11) % 1;
-    const y = rivY(G, d), hw = rivHalf(G, d);
-    const a = 0.055 * (0.25 + d) * (0.6 + 0.4 * Math.sin(rivT * 2 + i));
-    fctx.fillStyle = `rgba(210,232,246,${a.toFixed(3)})`;
-    const wob = Math.sin(rivT * 1.4 + i * 1.3) * hw * 0.10;
-    fctx.fillRect(G.cx - hw * 0.92 + wob, y, hw * 1.84, Math.max(1, (H - G.far) * 0.006 * (0.4 + d)));
-  }
-  fctx.globalCompositeOperation = "source-over";
-
-  /* the shallows: it gets pale and broken where it meets the stones */
-  fctx.globalCompositeOperation = "lighter";
-  for (const side of [-1, 1]) {
+  /* ---------- the far bank ---------- */
+  const bankTop = (x) => G.farB - H * 0.022 + Math.sin(x * 0.008 + 0.6) * H * 0.008
+                                            + Math.sin(x * 0.023) * H * 0.004;
+  const fb = fctx.createLinearGradient(0, G.farB - H * 0.03, 0, G.farB + H * 0.055);
+  fb.addColorStop(0, "#3b3524");
+  fb.addColorStop(1, "#1d1c15");
+  fctx.fillStyle = fb;
+  fctx.beginPath();
+  fctx.moveTo(0, G.farB + H * 0.012);
+  for (let x = 0; x <= W; x += 14) fctx.lineTo(x, bankTop(x));
+  fctx.lineTo(W, G.farB + H * 0.012);
+  fctx.closePath();
+  fctx.fill();
+  /* reeds standing up out of it */
+  for (const r of reeds) {
+    const x = r.x * W, base = bankTop(x) + H * 0.004;
+    const hgt = H * r.h, sway = Math.sin(rivT * 0.9 + r.ph) * hgt * 0.13 + r.lean * hgt * 0.3;
+    fctx.strokeStyle = `hsl(${r.hue},20%,${11 + r.h * 260}%)`;
+    fctx.lineWidth = Math.max(0.9, H * 0.0016);
     fctx.beginPath();
-    for (let i = 0; i <= 30; i++) {
-      const d = i / 30, hw = rivHalf(G, d), y = rivY(G, d);
-      const wob = Math.sin(rivT * 0.9 + d * 11) * hw * 0.02;
-      fctx.lineTo(G.cx + side * (hw + wob), y);
-    }
-    for (let i = 30; i >= 0; i--) {
-      const d = i / 30, hw = rivHalf(G, d), y = rivY(G, d);
-      const wob = Math.sin(rivT * 1.3 + d * 9) * hw * 0.02;
-      fctx.lineTo(G.cx + side * (hw * 0.82 + wob), y);
-    }
-    fctx.closePath();
-    const eg = fctx.createLinearGradient(0, G.far, 0, H);
-    eg.addColorStop(0, "rgba(214,232,242,0.10)");
-    eg.addColorStop(1, "rgba(224,240,248,0.22)");
-    fctx.fillStyle = eg;
-    fctx.fill();
-  }
-  fctx.globalCompositeOperation = "source-over";
-
-  /* what the sky puts on it */
-  const sh = fctx.createLinearGradient(0, G.far, 0, G.far + (H - G.far) * 0.35);
-  sh.addColorStop(0, "rgba(200,158,110,0.26)");
-  sh.addColorStop(1, "rgba(180,150,110,0)");
-  fctx.fillStyle = sh; fctx.fillRect(0, G.far, W, (H - G.far) * 0.35);
-  fctx.restore();
-
-  /* ---- rocks, and the water piling up on them ---- */
-  for (const r of rocks) {
-    const y = rivY(G, r.d), hw = rivHalf(G, r.d);
-    const x = G.cx + r.u * hw * 0.62;
-    const s = rivPx(G, r.s, r.d);
-    /* the standing wave on the upstream face */
-    fctx.save();
-    fctx.globalCompositeOperation = "lighter";
-    for (let k = 0; k < 7; k++) {
-      const f = k / 6;
-      const a = 0.11 * (1 - f) * (0.7 + 0.3 * Math.sin(rivT * 6 + k + r.seed));
-      fctx.fillStyle = `rgba(236,246,252,${a.toFixed(3)})`;
+    fctx.moveTo(x, base);
+    fctx.quadraticCurveTo(x + sway * 0.4, base - hgt * 0.6, x + sway, base - hgt);
+    fctx.stroke();
+    if (r.head) {
+      fctx.fillStyle = `hsl(${r.hue - 8},24%,${14 + r.h * 240}%)`;
       fctx.beginPath();
-      fctx.ellipse(x + Math.sin(rivT * 5 + k) * s * 0.10,
-                   y - s * 0.30 - f * s * 0.55,
-                   s * (0.72 - f * 0.30), s * (0.20 - f * 0.07), 0, 0, 6.3);
+      fctx.ellipse(x + sway, base - hgt, H * 0.0026, H * 0.0075, sway * 0.02, 0, 6.3);
       fctx.fill();
     }
-    fctx.restore();
-    drawRock(x, y, s, r.rot, r.seed, 1);
-    /* and the tail of foam running off downstream */
-    if (Math.random() < 14 * dt && foam.length < 220)
-      foam.push({ x: x + (Math.random() - 0.5) * s, y: y + s * 0.3,
-                  d: r.d, r: s * (0.06 + Math.random() * 0.10), life: 1 });
   }
 
-  /* ---- foam ---- */
-  for (let i = foam.length - 1; i >= 0; i--) {
-    const f = foam[i];
-    f.d = Math.min(1, f.d + dt * (0.06 + f.d * 0.16));
-    f.y = rivY(G, f.d);
-    f.x += Math.sin(rivT * 3 + i) * 12 * dt;
-    f.life -= dt * 0.42;
-    if (f.life <= 0 || f.d >= 1) { foam.splice(i, 1); continue; }
-    fctx.fillStyle = `rgba(240,248,252,${(0.34 * f.life).toFixed(3)})`;
-    fctx.beginPath();
-    fctx.arc(f.x, f.y, f.r * (0.5 + f.life * 0.8), 0, 6.3);
-    fctx.fill();
+  /* ---------- the water ---------- */
+  const wg = fctx.createLinearGradient(0, G.farB, 0, G.nearB);
+  wg.addColorStop(0, "#4a4436");
+  wg.addColorStop(0.16, "#2c3341");
+  wg.addColorStop(0.62, "#141d2b");
+  wg.addColorStop(1, "#0b1119");
+  fctx.fillStyle = wg;
+  fctx.fillRect(0, G.farB, W, G.nearB - G.farB);
+
+  /* What the sky is doing on the surface. This is the thing that makes water
+     read as water — it carries the sky, broken up and wobbling — and it is
+     the same language as the light on the sea two scenes ago, on purpose. */
+  fctx.save();
+  fctx.globalCompositeOperation = "lighter";
+  const fine = Math.min(W, H) > 560;
+  const rows = Math.max(20, Math.round(G.span / (fine ? 8 : 13)));
+  for (let i = 0; i < rows; i++) {
+    const t0 = i / rows, t1 = (i + 1) / rows;
+    const y = rivYAt(G, t0);
+    const fade = Math.pow(1 - t0, 1.7);
+    if (fade < 0.015) continue;
+    const wob = Math.sin(rivT * 0.9 + i * 0.55) * W * 0.012
+              + Math.sin(rivT * 1.7 + i * 0.21) * W * 0.006;
+    const hw = W * (0.05 + 0.30 * t0);            /* it opens out toward you */
+    fctx.globalAlpha = 0.42 * fade;
+    fctx.drawImage(barWarm, sunX - hw + wob, y, hw * 2, rivYAt(G, t1) - y + 1);
+    fctx.globalAlpha = 1;
+  }
+  /* and it breaks into pieces on the ripples */
+  const glints = fine ? 90 : 44;
+  for (let i = 0; i < glints; i++) {
+    const j = Math.sin(i * 12.9898) * 43758.5453; const r1 = j - Math.floor(j);
+    const k = Math.sin(i * 4.1414) * 21301.7;     const r2 = k - Math.floor(k);
+    const t = Math.pow(r1, 1.5) * 0.85;
+    const fade = Math.pow(1 - t, 1.6);
+    const hw = W * (0.05 + 0.30 * t);
+    const off = (r2 - 0.5) * 2;
+    const x = sunX + off * hw + Math.sin(rivT * 1.2 + i) * W * 0.01;
+    const edge = 1 - Math.min(1, Math.abs(off) * 1.15);
+    const tw = 0.4 + 0.6 * Math.abs(Math.sin(rivT * (1.3 + (i % 5) * 0.31) + i));
+    const a = 0.5 * fade * edge * tw;
+    if (a < 0.02) continue;
+    fctx.fillStyle = `rgba(255,222,168,${a.toFixed(3)})`;
+    fctx.fillRect(x - (6 + t * 26) / 2, rivYAt(G, t), 6 + t * 26, Math.max(1, 0.8 + t * 2.4));
+  }
+  fctx.restore();
+
+  /* The current. Soft-ended streaks running with the flow, quickest down the
+     middle, longer and slower-looking the nearer they are — hard little bars
+     read as hatching, which is what this was before. */
+  const lines = Math.max(16, Math.round(G.span / (fine ? 11 : 16)));
+  for (let i = 0; i < lines; i++) {
+    const t = (i + 0.5) / lines;
+    const y = rivYAt(G, t) + Math.sin(rivT * 0.8 + i * 1.3) * G.span * 0.004;
+    const sp = rivFlow(t);
+    const j = Math.sin(i * 91.7) * 0.5 + 0.5;
+    const per = W * (0.30 + j * 0.34);
+    const off = ((rivT * sp * W * 0.20 * rivDir) % per + per) % per;
+    const len = W * (0.06 + 0.16 * t) * (0.55 + j * 0.8);
+    const a = (0.035 + 0.10 * t) * (0.4 + 0.6 * sp);
+    const hgt = Math.max(0.9, G.span / lines * 0.30);
+    for (let k = -1; k * per - off < W + per; k++) {
+      const x = k * per - off + Math.sin(rivT * 1.1 + i * 2.7) * 10;
+      fctx.globalAlpha = a;
+      fctx.drawImage(barCool, x, y, len, hgt);
+    }
+  }
+  fctx.globalAlpha = 1;
+
+  /* ---------- the rocks that were always there ---------- */
+  for (const r of rocks) {
+    const y = rivYAt(G, r.t);
+    drawRock(r.x * W, y, rivScale(G, r.t) * r.s, r.rot, r.seed, true);
   }
 
-  /* ---- the leaves, still going ---- */
+  /* ---------- leaves, going by ---------- */
   for (const l of rivLeaves) {
-    l.d += dt * (0.045 + l.d * 0.11);
-    if (l.d > 1) { l.d = 0; l.u = (Math.random() - 0.5) * 1.5; }
+    const sp = rivFlow(l.t);
+    l.x += rivDir * sp * dt * 0.085;
+    if (l.x > 1.1) l.x -= 1.25; if (l.x < -0.15) l.x += 1.25;
     l.rot += l.spin * dt;
-    const y = rivY(G, l.d), hw = rivHalf(G, l.d);
-    const x = G.cx + l.u * hw * 0.8 + Math.sin(rivT * 0.8 + l.rot) * hw * 0.03;
-    drawLeaf(fctx, x, y, l.s * (0.5 + l.d), l.rot, l.hue, 0.8);
+    const y = rivYAt(G, l.t) + Math.sin(rivT * 1.6 + l.t * 9) * G.span * 0.006;
+    drawLeaf(fctx, l.x * W, y, l.s * (0.5 + l.t), l.rot, l.hue, 0.55 + 0.35 * l.t);
   }
 
-  /* ---- the bank stones ---- */
-  for (const b of bankStones) {
-    const y = rivY(G, b.d), hw = rivHalf(G, b.d);
-    const x = G.cx + b.side * hw * b.u;
-    drawRock(x, y, rivPx(G, b.s, b.d), b.rot, b.d * 40, 0);
-  }
-
-  /* ---- the stones you have put up ---- */
+  /* ---------- the stones you put up ---------- */
   for (const s of stones) {
-    s.rise = Math.min(1, s.rise + dt * 1.6);
-    const y = rivY(G, s.d), hw = rivHalf(G, s.d);
-    const x = G.cx + s.u * hw;
-    const sz = rivPx(G, s.s, s.d) * (0.3 + 0.7 * s.rise);
-    /* the water breaks round it as it comes up */
-    fctx.save();
-    fctx.globalCompositeOperation = "lighter";
-    const a = 0.22 * s.rise * (0.6 + 0.4 * Math.sin(rivT * 7 + s.d * 9));
-    fctx.fillStyle = `rgba(240,250,255,${a.toFixed(3)})`;
+    s.rise = Math.min(1, s.rise + dt * 1.9);
+    const e = 1 - Math.pow(1 - s.rise, 3);
+    const sc = rivScale(G, s.t) * s.s;
+    const y = rivYAt(G, s.t);
+    /* the ring it made coming up */
+    if (s.rise < 1) {
+      const rr = sc * (1.1 + e * 3.2);
+      fctx.strokeStyle = `rgba(226,244,252,${(0.5 * (1 - e)).toFixed(3)})`;
+      fctx.lineWidth = Math.max(1, sc * 0.13);
+      fctx.beginPath(); fctx.ellipse(s.x, y + sc * 0.4, rr, rr * 0.32, 0, 0, 6.3); fctx.stroke();
+    }
+    /* foam collar where it parts the water */
+    fctx.fillStyle = "rgba(232,246,252,0.20)";
     fctx.beginPath();
-    fctx.ellipse(x, y - sz * 0.18, sz * 1.15, sz * 0.30, 0, 0, 6.3);
+    fctx.ellipse(s.x, y + sc * 0.44, sc * (1.02 + 0.07 * Math.sin(rivT * 4 + s.seed)),
+                 sc * 0.22, 0, 0, 6.3);
     fctx.fill();
-    fctx.restore();
-    drawRock(x, y - sz * 0.24 * s.rise, sz, s.rot, s.seed, 0.4);
+    drawRock(s.x, y - sc * (0.30 * e), sc, s.rot, s.seed, true);
+    /* a dry top, because it has been up long enough to drain */
+    if (e > 0.6) {
+      fctx.fillStyle = `rgba(206,196,176,${(0.30 * (e - 0.6) / 0.4).toFixed(3)})`;
+      fctx.beginPath();
+      fctx.ellipse(s.x - sc * 0.10, y - sc * (0.30 * e + 0.30), sc * 0.56, sc * 0.24, -0.2, 0, 6.3);
+      fctx.fill();
+    }
   }
 
-  /* how far across the crossing has got */
-  const reach = stones.length
-    ? Math.max(...stones.map(s => s.u)) - Math.min(...stones.map(s => s.u)) : 0;
-  const spansL = stones.some(s => s.u < -0.62), spansR = stones.some(s => s.u > 0.62);
-  const gaps = stonesGapOK();
-  crossed = (spansL && spansR && gaps) ? 1 : 0;
+  /* ---------- your bank, drawn last so it stands in front ---------- */
+  const nearTop = (x) => G.nearB + Math.sin(x * 0.010 + 2.1) * H * 0.010
+                                 + Math.sin(x * 0.027) * H * 0.005;
+  const nb = fctx.createLinearGradient(0, G.nearB - H * 0.01, 0, H);
+  nb.addColorStop(0, "#221f18");
+  nb.addColorStop(0.5, "#15130f");
+  nb.addColorStop(1, "#0a0908");
+  fctx.fillStyle = nb;
+  fctx.beginPath();
+  fctx.moveTo(0, H);
+  for (let x = 0; x <= W; x += 14) fctx.lineTo(x, nearTop(x));
+  fctx.lineTo(W, H);
+  fctx.closePath();
+  fctx.fill();
+  /* wet shingle at the waterline, both sides */
+  for (const b of bankStones) {
+    const x = b.x * W;
+    const y = b.near ? nearTop(x) + (H - nearTop(x)) * b.o * 0.55
+                     : bankTop(x) + H * 0.004 + b.o * H * 0.030;
+    const s = Math.min(W, H) * b.s * (b.near ? 1.15 : 0.6);
+    fctx.fillStyle = `hsl(${b.hue},12%,${b.l * 0.62}%)`;
+    fctx.save();
+    fctx.translate(x, y); fctx.rotate(b.rot);
+    fctx.beginPath(); fctx.ellipse(0, 0, s, s * 0.62, 0, 0, 6.3); fctx.fill();
+    fctx.restore();
+  }
+  for (const g2 of tufts) {
+    const x = g2.x * W, base = nearTop(x) + (H - nearTop(x)) * g2.o * 0.9;
+    const hgt = H * g2.h, sway = Math.sin(rivT * 1.2 + g2.ph) * hgt * 0.2;
+    fctx.strokeStyle = `hsl(${g2.hue},18%,${9 + g2.h * 420}%)`;
+    fctx.lineWidth = Math.max(0.8, H * 0.0014);
+    fctx.beginPath();
+    fctx.moveTo(x, base);
+    fctx.quadraticCurveTo(x + sway * 0.5, base - hgt * 0.6, x + sway, base - hgt);
+    fctx.stroke();
+  }
 
-  /* a nudge: the far bank shows where it wants to go */
+  /* ---------- a nudge: the way across ---------- */
   if (rivT > 5 && !crossed) {
-    const p = 0.5 + 0.5 * Math.sin(rivT * 1.9);
-    const y = rivY(G, 0.52), hw = rivHalf(G, 0.52);
-    fctx.strokeStyle = `rgba(226,240,255,${(0.05 + 0.09 * p).toFixed(3)})`;
-    fctx.setLineDash([10, 14]);
+    const p = 0.5 + 0.5 * Math.sin(rivT * 1.8);
+    const nx = W * (0.32 + 0.36 * (0.5 + 0.5 * Math.sin(rivT * 0.35)));
+    fctx.save();
+    fctx.setLineDash([9, 13]);
+    fctx.lineDashOffset = -rivT * 22;
+    fctx.strokeStyle = `rgba(226,238,246,${(0.09 + 0.13 * p).toFixed(3)})`;
     fctx.lineWidth = Math.max(2, Math.min(W, H) * 0.005);
     fctx.beginPath();
-    fctx.moveTo(G.cx - hw * 0.96, y);
-    fctx.lineTo(G.cx + hw * 0.96, y);
+    fctx.moveTo(nx, rivYAt(G, 0.95));
+    fctx.lineTo(nx, rivYAt(G, 0.05));
     fctx.stroke();
-    fctx.setLineDash([]);
+    fctx.restore();
   }
 
+  /* ---------- across? ---------- */
+  crossed = crossingOK(G) ? 1 : 0;
+  if (crossed) {
+    rivGlow = Math.min(1, rivGlow + dt * 0.5);
+    fctx.fillStyle = `rgba(255,214,150,${(rivGlow * 0.10).toFixed(3)})`;
+    fctx.fillRect(0, 0, W, H);
+  }
   if (crossed && !rivHanded) {
     rivHanded = true;
+    finCanvas.style.cursor = "";
     crossingDone();
-    release("river"); setTimeout(() => natRun("wash", () => { rivOn = false; chainEnd = true; restT = 0; }, 3.6, { at: 0.58 }), 900);
+    release("river");
+    setTimeout(() => natRun("wash", () => { rivOn = false; chainEnd = true; restT = 0; }, 3.6, { at: 0.58 }), 900);
   }
+
+  /* the corners, so the eye stays on the water */
+  if (!rivVig || rivVigW !== W || rivVigH !== H) {
+    rivVig = fctx.createRadialGradient(W * 0.5, H * 0.55, Math.min(W, H) * 0.30,
+                                       W * 0.5, H * 0.55, Math.max(W, H) * 0.78);
+    rivVig.addColorStop(0, "rgba(0,0,0,0)");
+    rivVig.addColorStop(1, "rgba(0,0,0,0.42)");
+    rivVigW = W; rivVigH = H;
+  }
+  fctx.fillStyle = rivVig;
+  fctx.fillRect(0, 0, W, H);
+
   natFrame(dt);
 }
 
-/* stones are a crossing only if you can actually step them */
-function stonesGapOK() {
+/* A crossing is a chain from this bank to that one: something to step on
+   near your feet, something near the far side, and no gap in between that
+   you would not jump. It does not have to be straight. */
+function crossingOK(G) {
   if (stones.length < 3) return false;
-  const us = stones.map(s => s.u).sort((a, b) => a - b);
-  if (us[0] > -0.62 || us[us.length - 1] < 0.62) return false;
-  for (let i = 1; i < us.length; i++) if (us[i] - us[i - 1] > 0.55) return false;
+  const ss = stones.slice().sort((a, b) => b.t - a.t);   /* near first */
+  if (ss[0].t < 0.72) return false;
+  if (ss[ss.length - 1].t > 0.28) return false;
+  for (let i = 1; i < ss.length; i++) {
+    if (ss[i - 1].t - ss[i].t > 0.34) return false;
+    if (Math.abs(ss[i - 1].x - ss[i].x) > G.W * 0.26) return false;
+  }
   return true;
 }
 
 window.addEventListener("pointerdown", (e) => {
   if (!rivOn || crossed) return;
   const G = rivGeom();
-  if (e.clientY < G.far) return;
-  /* which depth was tapped, and how far across */
-  let d = 0.5, best = 1e9;
-  for (let i = 0; i <= 40; i++) {
-    const dd = i / 40, yy = rivY(G, dd);
-    if (Math.abs(yy - e.clientY) < best) { best = Math.abs(yy - e.clientY); d = dd; }
-  }
-  const hw = rivHalf(G, d);
-  const u = (e.clientX - G.cx) / hw;
-  if (Math.abs(u) > 1.02) return;
-  /* they line up on one crossing, so it reads as a path and not a scatter */
-  const band = stones.length ? stones[0].d : d;
-  stones.push({ d: band, u, s: 0.024 + rnd() * 0.016, rot: rnd() * 6.3,
-                seed: rnd() * 100, rise: 0 });
+  if (e.clientY < G.farB || e.clientY > G.nearB) return;   /* only in the water */
+  const t = rivTAt(G, e.clientY);
+  stones.push({ t, x: e.clientX, s: 0.026 + rnd() * 0.010,
+                rot: rnd() * 6.3, seed: rnd() * 100, rise: 0 });
   stoneUp(e.clientX);
   if (e.cancelable) e.preventDefault();
 }, { passive: false });
 window.addEventListener("pointermove", (e) => {
   if (!rivOn) return;
-  finCanvas.style.cursor = crossed ? "" : "pointer";
+  const G = rivGeom();
+  const inWater = e.clientY > G.farB && e.clientY < G.nearB;
+  finCanvas.style.cursor = crossed ? "" : (inWater ? "pointer" : "");
 }, { passive: true });
 
 /* --- sound --- */
