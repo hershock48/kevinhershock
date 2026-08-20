@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="build" content="2026-08-20T04:23Z">
+<meta name="build" content="2026-08-20T04:37Z">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Kevin Hershock</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎈</text></svg>">
@@ -177,6 +177,30 @@
   #mute:hover, #mute:focus-visible { opacity: 0.75; outline: none; }
   #mute.off { opacity: 0.55; }
   @media (hover: none) { #mute { opacity: 0.34; } }
+
+  /* Its opposite number: if you have been here before and got somewhere,
+     this takes you back to it. Same corner language as the sound, on the
+     other side, and it only exists while you are still at the pump — it
+     must never sit on top of a scene. */
+  #resume {
+    position: fixed;
+    left: 14px; bottom: 14px;
+    width: 40px; height: 40px;
+    z-index: 60;
+    border: 0; padding: 0; margin: 0;
+    background: none;
+    color: #6d6a63;
+    opacity: 0;
+    pointer-events: none;
+    cursor: pointer;
+    transition: opacity 0.9s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #resume svg { display: block; margin: auto; overflow: visible; }
+  #resume svg path { fill: currentColor; stroke: none; }
+  #resume.there { opacity: 0.16; pointer-events: auto; }
+  #resume.there:hover, #resume.there:focus-visible { opacity: 0.75; outline: none; }
+  @media (hover: none) { #resume.there { opacity: 0.34; } }
 
   #grain {
     position: fixed;
@@ -537,6 +561,7 @@
 <div id="flash"></div>
 <div id="vignette"></div>
 <div id="grain"></div>
+<button id="resume" aria-label="pick up where you left off" title="pick up where you left off"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 5.6l7 6.4-7 6.4zM13 5.6l7 6.4-7 6.4z"/></svg></button>
 <button id="mute" aria-label="sound off" title="sound"><svg viewBox="0 0 24 24" width="20" height="20"><path id="spk" d="M4 9.5h3.6L12 5.6v12.8L7.6 14.5H4z"/><g id="waves"><path d="M15.4 9.1a4 4 0 0 1 0 5.8"/><path d="M17.9 6.6a7.6 7.6 0 0 1 0 10.8"/></g><g id="xout" style="display:none"><path d="M16 9.6l5 4.8M21 9.6l-5 4.8"/></g></svg></button>
 
 <script>
@@ -880,7 +905,93 @@ function setMuted(v) {
     try { BUS.gain.setTargetAtTime(v ? 0.0001 : 0.9, AC.currentTime, 0.09); } catch (e) {}
   }
 }
+/* ---- picking it up again ----
+   This runs about twenty minutes end to end, and until now closing the tab
+   put you back at the pump. It does not resume automatically — you always
+   land at the beginning, because the beginning is the best bit — but if
+   you have been further before, there is a way back to it in the corner.
+   One entry per chapter, in order, so "furthest" means something. */
+const CHAPTERS = [
+  { k: "pool",   go: () => { skipIntro(); showDot(); } },
+  { k: "tap",    go: () => { skipIntro(); showTap(); } },
+  { k: "chest",  go: () => { skipIntro(); showTap(); turnWheel(1080); vol = 1; } },
+  { k: "goo",    go: () => { skipIntro(); tapShown = true; vol = 0; activateGoo(); } },
+  { k: "storm",  go: () => { skipIntro(); startFinale(); } },
+  { k: "night",  go: () => { skipIntro(); startFinale(); fT = 20; lightsOut(); } },
+  { k: "dawn",   go: () => { skipIntro(); startFinale(); fT = 20; lightsOut();
+                             nightT = 12.5; dawnPhase = 1; dawnIdle = 0; bed("sea"); } },
+  { k: "beach",  go: () => { openCanvas(); startDig(); } },
+  { k: "window", go: () => { openCanvas(); startWindow(); whiteOut = 2.4; } },
+  { k: "jelly",  go: () => { openCanvas(); startJelly(196); } },
+  { k: "lake",   go: () => { openCanvas(); startSurface(); } },
+  { k: "beacon", go: () => { openCanvas(); startBeacon(); } },
+  { k: "wood",   go: () => { openCanvas(); startWood(); } },
+  { k: "river",  go: () => { openCanvas(); startRiver(); } },
+];
+const CHAPTER_AT = (k) => CHAPTERS.findIndex(c => c.k === k);
+
+function mark(k) {
+  try {
+    if (!KEEP) return;
+    const cur = KEEP.getItem("kh.at");
+    if (cur !== null && CHAPTER_AT(cur) >= CHAPTER_AT(k)) return;
+    KEEP.setItem("kh.at", k);
+  } catch (e) {}
+}
+
+/* the pump and everything it left behind */
+function skipIntro() {
+  exploded = true; glueActive = false; sweepMode = false; sweepDone = true;
+  stuckPts = []; scraps = []; swept = [];
+  try { stopHiss(); } catch (e) {}
+  document.body.style.cursor = "";
+  /* the glue is finished with, but the glitter canvas is what the water is
+     drawn on later — clear it, do not take it away */
+  for (const id of ["glue", "broom"]) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = "none";
+  }
+  try { hardClear(canvas, ctx); } catch (e) {}
+  const st = document.getElementById("stage");
+  if (st) { st.style.transition = "none"; st.style.opacity = "0"; }
+}
+
+/* everything from the ink onward lives on one canvas — hand it the frame */
+function openCanvas() {
+  skipIntro();
+  for (const id of ["goo", "dot", "stage", "veil", "tap", "chest", "key",
+                    "cork", "screw", "note", "scrim", "cord", "shovel"]) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = "none";
+  }
+  finActive = true; nightPhase = 1; fT = 20; nightT = 20; dawnPhase = 0;
+  finCanvas.style.filter = "none";
+  finCanvas.style.background = "#05060a";
+  finCanvas.style.display = "block";
+  sizeFinale();
+}
+
+function offerResume() {
+  const btn = document.getElementById("resume");
+  if (!btn || !KEEP) return;
+  let at = null;
+  try { at = KEEP.getItem("kh.at"); } catch (e) {}
+  const i = at === null ? -1 : CHAPTER_AT(at);
+  if (i < 0) return;
+  /* let them look at it first — this is not a menu, it is an offer */
+  setTimeout(() => { if (!exploded) btn.classList.add("there"); }, 2600);
+  const jump = (e) => {
+    e.stopPropagation(); e.preventDefault();
+    btn.classList.remove("there");
+    audio();
+    try { CHAPTERS[i].go(); } catch (err) {}
+  };
+  btn.addEventListener("pointerdown", jump);
+  btn.addEventListener("click", (e) => e.stopPropagation());
+}
+
 document.addEventListener("DOMContentLoaded", () => {
+  offerResume();
   const b = document.getElementById("mute");
   if (!b) return;
   setMuted(MUTED);
@@ -1735,6 +1846,8 @@ function svgToScreen(x, y) {
 let timeScale = 1;
 function explode() {
   exploded = true;
+  const rb = document.getElementById("resume");
+  if (rb) rb.classList.remove("there");
   /* the oldest trick: dead silence right before the bang */
   if (drone && AC) {
     drone.g.gain.cancelScheduledValues(AC.currentTime);
@@ -2168,6 +2281,7 @@ function buildPool() {
 }
 
 function startPool() {
+  mark("pool");
   if (poolOn) return;
   sizePool();
   buildPool();
@@ -2528,6 +2642,7 @@ function plinkSound() {
 }
 
 function showTap() {
+  mark("tap");
   if (tapShown) return;
   tapShown = true;
   bed('water');
@@ -3126,6 +3241,7 @@ function updateLid(dt) {
 }
 
 function showChest() {
+  mark("chest");
   chestShown = true;
   chestEl.style.display = "block";
   requestAnimationFrame(() => chestEl.classList.add("on"));
@@ -3341,6 +3457,7 @@ function sizeGoo() {
   tearCtx = tearCanvas.getContext("2d", { willReadFrequently: true });
 }
 function activateGoo() {
+  mark("goo");
   if (gooActive) return;
   const W = window.innerWidth, H = window.innerHeight;
   sizeGoo();
@@ -4005,6 +4122,7 @@ function startFinale() {
   finCanvas.style.background = "#fdfdfb";     /* the paper is back */
   sizeFinale();
   finActive = true;
+  mark("storm");
   fT = 0; inkY = 0; inkV = 0; splatT = -1;
   finCanvas.style.display = "block";
 
@@ -4540,6 +4658,7 @@ function chime(n, px) {
 function lightsOut() {
   if (nightPhase) return;
   nightPhase = 1; nightT = 0;
+  mark("night");
   stopStorm();
   bed('night');
   finCanvas.style.filter = "none";
@@ -4666,7 +4785,7 @@ function drawNight(dt) {
   fctx.globalAlpha = 1;
 
   /* Orion finished — the sun is waiting just under the horizon */
-  if (!dawnPhase && done >= E.length && nightT > 11.5) { dawnPhase = 1; dawnIdle = 0; bed('sea'); }
+  if (!dawnPhase && done >= E.length && nightT > 11.5) { dawnPhase = 1; dawnIdle = 0; bed('sea'); mark("dawn"); }
   if (dawnPhase) drawDawn(dt);
 
   /* the very occasional shooting star */
@@ -5540,6 +5659,7 @@ function lidTopAt(x) {
 }
 
 function startDig() {
+  mark("beach");
   if (digPhase) return;
   digPhase = 1; digT = 0; lidSeen = 0; lidClear = 0;
   bed('sand');
@@ -6246,6 +6366,7 @@ function sizeFog() {
 }
 
 function startWindow() {
+  mark("window");
   if (winOn) return;
   digPhase = 0;
   winOn = true; winT = 0; winClear = 0; winGone = 0;
@@ -6511,6 +6632,7 @@ function clearSigh() {
 let jellyOn = false, jellyT = 0, jellies = [], motes = [], jellyHue = 200, jellyRise = 0, jellyLit = 0, jellyLast = 0;
 
 function startJelly(hue) {
+  mark("jelly");
   if (jellyOn) return;
   jellyOn = true; jellyT = 0; jellyRise = 0; jellyLit = 0; jellyLast = 0;
   jellyHue = hue === undefined ? 200 : hue;
@@ -6757,6 +6879,7 @@ let surfOn = false, surfT = 0, breach = 0, lanterns = [], lampRise = 0, lampLast
 let lakeStars = [], mistBands = [], shoreLine = null, lensDrops = [];
 
 function startSurface() {
+  mark("lake");
   if (surfOn) return;
   surfOn = true; surfT = 0; breach = 0; lampRise = 0; lampLast = 0;
   const W = window.innerWidth, H = window.innerHeight;
@@ -7222,6 +7345,7 @@ function beacGeom() {
 }
 
 function startBeacon() {
+  mark("beacon");
   if (beaconOn) return;
   beaconOn = true; beacT = 0; lampOn = 0; levY = 0; sweeps = 0; beacHanded = false;
   beamA = -Math.PI * 0.55;
@@ -8446,6 +8570,7 @@ let woodTotal = 0, woodLetGo = false;
 let windNode = null;
 
 function startWood() {
+  mark("wood");
   if (woodOn) return;
   woodOn = true; woodT = 0; stripped = 0; woodHanded = false; woodLetGo = false;
   loose = [];
@@ -8773,6 +8898,7 @@ const rivY = (G, d) => G.far + (G.H - G.far) * Math.pow(d, 0.82);
 const rivPx = (G, base, d) => Math.min(G.W, G.H) * base * (0.35 + 0.85 * d);
 
 function startRiver() {
+  mark("river");
   if (rivOn) return;
   rivOn = true; rivT = 0; crossed = 0; rivHanded = false;
   stones = []; foam = [];
