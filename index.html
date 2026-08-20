@@ -12468,6 +12468,7 @@ function cupBaseY() {
 
 let cupOn = false, cupT = 0, cupName = "", cupSpark = [], cupShow = 0;
 let cupRise = 1, cupPool = null, cupWrite = 1;
+let cupFold = 1, cupLit = 1, cupPop = 0, cupShot = 0;
 const cupEl = document.getElementById("cup");
 const cupNameEl = document.getElementById("cupname");
 const cupSaidEl = document.getElementById("cupsaid");
@@ -12477,6 +12478,7 @@ function startTrophy(pool) {
   if (cupOn) return;
   cupOn = true; cupT = 0; cupShow = 0; cupSpark = [];
   cupPool = pool || null; cupRise = pool ? 0 : 1; cupWrite = pool ? 0 : 1;
+  cupFold = pool ? 0 : 1; cupLit = pool ? 0 : 1; cupPop = 0; cupShot = pool ? 0 : 1;
   finCanvas.style.background = "#07070c";
   finCanvas.style.display = "block";
   finCanvas.style.cursor = "";
@@ -12486,7 +12488,7 @@ function startTrophy(pool) {
   /* leave it alone until the marker has finished — nobody wants a keyboard
      up over the joke landing */
   setTimeout(() => { try { cupNameEl && cupNameEl.focus({ preventScroll: true }); } catch (e) {} },
-             pool ? 5200 : 1400);
+             pool ? 8200 : 1400);
 }
 
 function trophyFrame(dt) {
@@ -12501,13 +12503,33 @@ function trophyFrame(dt) {
     /* the squeak lands on each stroke starting, not on a timer */
     const a = passStrokeAt(was), b = passStrokeAt(cupWrite);
     if (b > a && cupWrite < 1) markerSqueak(b);
-    if (was < 1 && cupWrite >= 1) capClick();
+    if (was < 1 && cupWrite >= 1) { capClick(); cupPop = -0.55; }
+  }
+  /* a beat after the cap goes back on, the fingers fold forward and the
+     one in the middle stays where it is */
+  if (cupWrite >= 1) {
+    if (cupPop < 0) { cupPop = Math.min(0, cupPop + dt); if (cupPop >= 0) knuckleFold(); }
+    else if (cupFold < 1) cupFold = Math.min(1, cupFold + dt * 1.45);
+    /* and then somebody takes a picture of it */
+    else if (!cupShot) { cupShot = 1; cupPop = 0.0001; shutterFlash(); }
+  }
+  if (cupShot) {
+    cupPop += dt;
+    cupLit = Math.min(1, cupLit + dt * 5.2);
   }
   hardClear(finCanvas, fctx);
   /* it comes up out of what the beast melted into, so the two scenes are
      one move and not a cut */
   drawPassCard(fctx, W, H, cupName, cupT, cupShow,
-               cupPool ? cupRise : 1, cupPool, cupWrite, false);
+               cupPool ? cupRise : 1, cupPool, cupWrite, false, cupFold, cupLit);
+  /* the flash itself: a hard white frame, then it falls off fast */
+  if (cupShot && cupPop < 0.9) {
+    const f = Math.max(0, Math.exp(-cupPop * 7.5) - 0.02);
+    if (f > 0.002) {
+      fctx.fillStyle = `rgba(255,253,246,${Math.min(1, f).toFixed(3)})`;
+      fctx.fillRect(0, 0, W, H);
+    }
+  }
 
   /* a little glitter, on and off */
   if (cupSpark.length < 46 && Math.random() < dt * 22) {
@@ -12535,49 +12557,129 @@ function trophyFrame(dt) {
 
 /* Drawn into whichever context it is handed, so the picture you share is
    the same picture you are looking at. */
-/* The back of a hand. Wrist at the bottom, four fingers up, thumb off to
-   the left. The fingers are generated rather than typed out so they are all
-   the same shape and only the length and the base move — the bingo fist
-   taught me that a finger drawn as its own shape reads as pasted on. */
-function passHand() {
-  /* the knuckle line sits at 0.50 — fingers are about half a hand, and
-     putting the bases up at 0.30 was what made the first one a mitten */
-  const F = [                 /* centre x, half width, tip y */
-    [0.328, 0.060, 0.150],    /* index */
-    [0.458, 0.062, 0.070],    /* middle */
-    [0.586, 0.060, 0.110],    /* ring */
-    [0.700, 0.052, 0.230],    /* little */
-  ];
-  const WEB = [0.450, 0.440, 0.475];
-  return unitPath((put, quad) => {
-    put(0.340, 1.000);                              /* the wrist, left */
-    quad(0.300, 0.900, 0.276, 0.800);
-    /* the thumb. It comes off the side of the palm low down and lies out
-       and away — up beside the index it is just a fifth short finger. */
-    quad(0.250, 0.762, 0.190, 0.742);
-    quad(0.100, 0.716, 0.052, 0.652, 7);
-    quad(0.010, 0.594, 0.046, 0.554, 6);            /* round the tip */
-    quad(0.084, 0.516, 0.134, 0.566, 6);
-    quad(0.180, 0.612, 0.238, 0.630, 7);            /* into the web of it */
-    quad(0.246, 0.564, 0.250, 0.500, 6);            /* up to the index */
-    for (let i = 0; i < 4; i++) {
-      const cx = F[i][0], hw = F[i][1], ty = F[i][2];
-      quad(cx - hw - 0.012, ty + 0.190, cx - hw, ty + 0.068, 8);   /* up one side */
-      quad(cx - hw, ty - 0.028, cx, ty - 0.030, 6);                /* over the tip */
-      quad(cx + hw, ty - 0.028, cx + hw, ty + 0.068, 6);           /* and down */
-      if (i < 3)
-        quad(cx + hw + 0.006, WEB[i] - 0.060,
-             (cx + hw + F[i + 1][0] - F[i + 1][1]) / 2, WEB[i], 7); /* the web */
-    }
-    quad(0.788, 0.470, 0.800, 0.620);               /* the outside edge */
-    quad(0.796, 0.820, 0.660, 1.000);               /* down to the wrist */
+/* The hand on the pass, and what it does.
+
+   It arrives open, back toward you, and PEN15 goes across it in marker.
+   Then the fingers fold forward — toward the camera, so they foreshorten
+   into knuckles rather than swinging down — and the middle one stays where
+   it is. Then the flash goes off, and the photograph that leaves with it is
+   that: a gold hand, PEN15 on the back, one finger up.
+
+   Folding is done by shortening each finger rather than morphing between
+   two separate outlines. One generator means the shape cannot come apart
+   halfway through, and a finger curling at you really does foreshorten.
+
+   base x, base y, angle from vertical, length, half width at base, at tip */
+const FING = [
+  [0.324, 0.508, -0.120, 0.348, 0.060, 0.045],   /* index  */
+  [0.452, 0.476, -0.025, 0.400, 0.062, 0.047],   /* middle — this one stays */
+  [0.576, 0.496,  0.070, 0.364, 0.059, 0.044],   /* ring   */
+  [0.678, 0.548,  0.158, 0.284, 0.052, 0.039],   /* little */
+];
+const THUMB = [0.276, 0.772, -1.190, 0.300, 0.078, 0.054];
+/* how far up each finger the web reaches on its left and right side. The
+   crotch between two fingers is not down at the knuckle — it is about an
+   eighth of the way up, which is the difference between a hand and a rake. */
+const WEBT = [[0.00, 0.135], [0.135, 0.130], [0.130, 0.150], [0.150, 0.00]];
+
+/* the digits at a given amount of fold: 0 open, 1 a fist with one up */
+function passDigits(f) {
+  const fingers = FING.map((d, i) => {
+    const curl = i === 1 ? 0 : 1;
+    return [d[0] + (0.500 - d[0]) * curl * f * 0.10,
+            d[1] - curl * f * 0.022,
+            d[2] * (1 - curl * f * 0.62),
+            d[3] * (1 - curl * f * 0.760),
+            d[4] * (1 + curl * f * 0.13),
+            d[5] * (1 + curl * f * 0.42)];
   });
+  const thumb = [THUMB[0] + f * 0.030, THUMB[1] - f * 0.028,
+                 THUMB[2] - f * 0.150, THUMB[3] * (1 - f * 0.400),
+                 THUMB[4] * (1 + f * 0.10), THUMB[5] * (1 + f * 0.40)];
+  return { fingers, thumb };
 }
-const PASS_HAND = passHand();
-/* the fingertips, for the nails — you can see them from the back, and that
-   is most of what tells you this is the back of a hand and not the palm */
-const PASS_NAILS = [[0.328, 0.060, 0.150], [0.458, 0.062, 0.070],
-                    [0.586, 0.060, 0.110], [0.700, 0.052, 0.230]];
+
+/* where a point sits along a digit: t up it, u across it (-1 left, +1 right) */
+function digitAt(d, t, u) {
+  const ax = Math.sin(d[2]), ay = -Math.cos(d[2]);
+  const px = Math.cos(d[2]), py = Math.sin(d[2]);
+  const L = d[3] - d[5];
+  const w = d[4] + (d[5] - d[4]) * t;
+  return [d[0] + ax * L * t + px * w * u, d[1] + ay * L * t + py * w * u];
+}
+
+function passHand(f) {
+  const D = passDigits(f);
+  const P = [];
+  const put = (x, y) => P.push([x, y]);
+  const quad = (cx, cy, x1, y1, n) => {
+    const p0 = P[P.length - 1];
+    n = n || 9;
+    for (let i = 1; i <= n; i++) {
+      const t = i / n, u = 1 - t;
+      put(u * u * p0[0] + 2 * u * t * cx + t * t * x1,
+          u * u * p0[1] + 2 * u * t * cy + t * t * y1);
+    }
+  };
+
+  /* one digit, up its left side, round the end and down its right. The half
+     width tapers then swells a little at each joint, which is the whole
+     difference between a finger and a tube. */
+  const digit = (d, t0, t1) => {
+    const bx = d[0], by = d[1], ang = d[2], L = d[3], w0 = d[4], w1 = d[5];
+    const ax = Math.sin(ang), ay = -Math.cos(ang);
+    const px = Math.cos(ang), py = Math.sin(ang);
+    const Le = Math.max(0.004, L - w1);
+    const half = (t) => w0 + (w1 - w0) * t
+      + (0.0075 * Math.exp(-Math.pow((t - 0.34) / 0.13, 2))
+       + 0.0060 * Math.exp(-Math.pow((t - 0.68) / 0.13, 2))) * (1 - f * 0.7);
+    const N = 15;
+    for (let i = 0; i <= N; i++) {
+      const t = t0 + (1 - t0) * (i / N), w = half(t);
+      put(bx + ax * Le * t - px * w, by + ay * Le * t - py * w);
+    }
+    const cxp = bx + ax * Le, cyp = by + ay * Le;
+    for (let i = 1; i < 10; i++) {
+      const a = -Math.PI / 2 + (i / 10) * Math.PI;
+      const s = Math.sin(a), c = Math.cos(a);
+      put(cxp + px * w1 * s + ax * w1 * c, cyp + py * w1 * s + ay * w1 * c);
+    }
+    for (let i = N; i >= 0; i--) {
+      const t = t1 + (1 - t1) * (i / N), w = half(t);
+      put(bx + ax * Le * t + px * w, by + ay * Le * t + py * w);
+    }
+  };
+
+  /* the palm fills out as it closes — a fist is a fatter thing than a hand */
+  const sw = f * 0.026;
+  /* THE NOTCH: the palm edge used to stop at a fixed point and the thumb
+     then started wherever its own geometry put it, so the silhouette took a
+     step at the join and the thumb read as stuck on. The edge is aimed at
+     the thumb's actual base corner now, so the two are the same line. */
+  const tL = digitAt(D.thumb, 0, -1);
+  put(0.352 - sw * 0.4, 1.000);
+  quad(0.302 - sw, 0.948, 0.288 - sw, 0.900, 6);      /* over the thumb muscle */
+  quad(0.272 - sw, 0.876, tL[0] - sw, tL[1], 6);      /* into the base of it */
+  digit(D.thumb, 0, 0);
+  /* THE FIX: this used to run to a control point out at 0.276, which cut a
+     notch between the thumb and the hand and read as a thumb stuck on the
+     side. The first web space is a broad fill of flesh, so the curve has to
+     bulge into it, not away from it. */
+  const iL = digitAt(D.fingers[0], WEBT[0][0], -1);
+  quad(0.276, 0.598, iL[0], iL[1], 9);
+  for (let i = 0; i < 4; i++) {
+    digit(D.fingers[i], WEBT[i][0], WEBT[i][1]);
+    if (i < 3) {
+      const a = digitAt(D.fingers[i], WEBT[i][1], 1);
+      const b = digitAt(D.fingers[i + 1], WEBT[i + 1][0], -1);
+      quad((a[0] + b[0]) / 2, Math.max(a[1], b[1]) + 0.030 + f * 0.010,
+           b[0], b[1], 7);
+    }
+  }
+  quad(0.784 + sw, 0.628, 0.774 + sw, 0.742, 7);      /* the long outer edge */
+  quad(0.758 + sw, 0.882, 0.662 + sw * 0.4, 1.000, 8);
+  return P;
+}
 
 /* PEN15, as the strokes you would actually make writing it, in the order
    you would make them. Each is a polyline in a 0..1 box per character. */
@@ -12652,7 +12754,7 @@ function passStrokeAt(p) {
    file that gets shared, because that has to stand alone. False on screen,
    where the real HTML input is the name field — drawing both put a painted
    KEVIN underneath a typed one. */
-function drawPassCard(x, W, H, name, t, show, rise, pool, write, plate) {
+function drawPassCard(x, W, H, name, t, show, rise, pool, write, plate, fold, lit) {
   plate = plate === undefined ? true : !!plate;
   const R = Math.min(W, H);
   const cx = W * 0.5, cy = H * (plate ? 0.40 : 0.355);
@@ -12660,25 +12762,46 @@ function drawPassCard(x, W, H, name, t, show, rise, pool, write, plate) {
   t = t || 0; show = show === undefined ? 1 : show;
   rise = rise === undefined ? 1 : Math.max(0, Math.min(1, rise));
   write = write === undefined ? 1 : Math.max(0, Math.min(1, write));
+  fold = fold === undefined ? 1 : Math.max(0, Math.min(1, fold));
+  lit  = lit  === undefined ? 1 : Math.max(0, Math.min(1, lit));
   const ri = 1 - Math.pow(1 - rise, 3);
   const lift = (1 - ri) * s * 1.9;
+  /* the outline is rebuilt at this fold every frame, so the shape can never
+     come apart between the open hand and the fist */
+  const RAW = passHand(fold);
+  let bx0 = 1e9, by0 = 1e9, bx1 = -1e9, by1 = -1e9;
+  for (const p of RAW) {
+    if (p[0] < bx0) bx0 = p[0];
+    if (p[0] > bx1) bx1 = p[0];
+    if (p[1] < by0) by0 = p[1];
+    if (p[1] > by1) by1 = p[1];
+  }
+  /* measured off the open hand so the drawing does not resize as it folds */
+  const BOX = { x: -0.02, y: by0 - 0.02, w: 1.04, h: 1.06 - by0 };
 
   const bg = x.createLinearGradient(0, 0, 0, H);
-  bg.addColorStop(0, "#07070c");
+  bg.addColorStop(0, lit > 0.5 ? "#050509" : "#07070c");
   bg.addColorStop(0.62, "#0d0b12");
   bg.addColorStop(1, "#171019");
   x.fillStyle = bg; x.fillRect(0, 0, W, H);
-  const halo = x.createRadialGradient(cx, cy, 0, cx, cy, R * 0.86);
-  halo.addColorStop(0, `rgba(226,178,88,${(0.20 * show).toFixed(3)})`);
+  /* before the flash it sits in a warm glow of its own; after, it is lit
+     hard from the front and the room behind it has gone black */
+  const halo = x.createRadialGradient(cx, cy, 0, cx, cy, R * (0.86 - lit * 0.22));
+  halo.addColorStop(0, `rgba(${(226 + lit * 22) | 0},${(178 + lit * 48) | 0},${(88 + lit * 92) | 0},${((0.20 + lit * 0.14) * show).toFixed(3)})`);
   halo.addColorStop(0.45, `rgba(180,130,60,${(0.07 * show).toFixed(3)})`);
   halo.addColorStop(1, "rgba(120,80,40,0)");
   x.fillStyle = halo; x.fillRect(0, 0, W, H);
 
-  /* the hand box. It is cast in the same gold, because it came out of it. */
-  const hw = Math.min(W * 0.46, H * 0.40);
-  const hh = hw * 1.30;
-  const hx = cx - hw / 2, hy = cy - hh * 0.52 + lift;
-  const P = (i) => [hx + PASS_HAND[i][0] * hw, hy + PASS_HAND[i][1] * hh];
+  /* the hand box. It is cast in the same gold, because it came out of it.
+     Sized off the outline's real aspect so the fist is not squashed. */
+  const ASP = BOX.h / BOX.w;
+  const hw = Math.min(W * 0.42, (H * 0.50) / ASP);
+  const hh = hw * ASP;
+  const hx = cx - hw / 2, hy = cy - hh * 0.50 + lift;
+  /* the outline's own numbers, straight to pixels */
+  const HP = (px, py) => [hx + (px - BOX.x) / BOX.w * hw,
+                          hy + (py - BOX.y) / BOX.h * hh];
+  const P = (i) => HP(RAW[i][0], RAW[i][1]);
 
   x.save();
   if (rise < 1 && pool) { x.beginPath(); x.rect(0, 0, W, pool.y); x.clip(); }
@@ -12694,19 +12817,22 @@ function drawPassCard(x, W, H, name, t, show, rise, pool, write, plate) {
   x.restore();
 
   x.beginPath();
-  for (let i = 0; i < PASS_HAND.length; i++) {
+  for (let i = 0; i < RAW.length; i++) {
     const p = P(i);
     i ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1]);
   }
   x.closePath();
 
+  /* under a flash the metal blows out where it faces you and falls off a
+     cliff at the edges — that contrast is most of what says photograph */
+  const mix = (a, b) => `rgb(${(a[0]+(b[0]-a[0])*lit)|0},${(a[1]+(b[1]-a[1])*lit)|0},${(a[2]+(b[2]-a[2])*lit)|0})`;
   const gg = x.createLinearGradient(hx, hy, hx + hw, hy + hh);
-  gg.addColorStop(0.00, "#f6e2a6");
-  gg.addColorStop(0.22, "#e8bd5c");
-  gg.addColorStop(0.46, "#c99327");
-  gg.addColorStop(0.60, "#f2dd9c");
-  gg.addColorStop(0.80, "#bf861f");
-  gg.addColorStop(1.00, "#8a5c12");
+  gg.addColorStop(0.00, mix([246,226,166], [255,252,236]));
+  gg.addColorStop(0.22, mix([232,189, 92], [255,236,178]));
+  gg.addColorStop(0.46, mix([201,147, 39], [236,190, 84]));
+  gg.addColorStop(0.60, mix([242,221,156], [255,246,206]));
+  gg.addColorStop(0.80, mix([191,134, 31], [166,110, 24]));
+  gg.addColorStop(1.00, mix([138, 92, 18], [ 78, 50,  8]));
   x.fillStyle = gg;
   x.fill();
   x.strokeStyle = "rgba(94,62,12,0.55)";
@@ -12724,52 +12850,86 @@ function drawPassCard(x, W, H, name, t, show, rise, pool, write, plate) {
   sh.addColorStop(1, "rgba(58,36,4,0.34)");
   x.fillStyle = sh;
   x.fillRect(hx, hy, hw, hh);
-  /* tendons, running from the wrist out to each knuckle */
-  x.strokeStyle = "rgba(120,80,14,0.13)";
-  x.lineWidth = Math.max(1, hw * 0.007);
+  /* The detail is worked out from the same digits the outline was built
+     from, at the same fold, so a knuckle can never drift off its finger. */
+  const D = passDigits(fold);
+  const HD = (p) => HP(p[0], p[1]);
   x.lineCap = "round";
-  for (const n of PASS_NAILS) {
+
+  /* tendons on the back of the hand — they pull taut as it closes */
+  x.strokeStyle = `rgba(120,80,14,${(0.14 + fold * 0.10).toFixed(3)})`;
+  x.lineWidth = Math.max(1, hw * 0.007);
+  for (const d of D.fingers) {
+    const a = HP(0.470 + (d[0] - 0.50) * 0.26, 0.905);
+    const c = HP(d[0] + (0.50 - d[0]) * 0.16, 0.700);
+    const b = HD(digitAt(d, 0.02, 0));
     x.beginPath();
-    x.moveTo(hx + (0.44 + (n[0] - 0.5) * 0.30) * hw, hy + 0.86 * hh);
-    x.quadraticCurveTo(hx + (n[0] - 0.01) * hw, hy + 0.62 * hh,
-                       hx + n[0] * hw, hy + (n[2] + 0.20) * hh);
+    x.moveTo(a[0], a[1]);
+    x.quadraticCurveTo(c[0], c[1], b[0], b[1]);
     x.stroke();
   }
-  /* the knuckles — wide and faint. Round and bright reads as a rivet. */
-  x.fillStyle = "rgba(255,244,206,0.10)";
-  for (const n of PASS_NAILS) {
+  /* the knuckles, which is what the folded fingers become */
+  for (const d of D.fingers) {
+    const p = HD(digitAt(d, 0.04 + fold * 0.30, 0));
+    x.save();
+    x.translate(p[0], p[1]); x.rotate(d[2]);
+    x.fillStyle = `rgba(255,244,206,${(0.11 + fold * 0.09 + lit * 0.07).toFixed(3)})`;
     x.beginPath();
-    x.ellipse(hx + n[0] * hw, hy + (n[2] + 0.215) * hh,
-              hw * n[1] * 1.05, hh * 0.013, 0, 0, 6.3);
+    x.ellipse(0, 0, hw * d[4] * (0.98 + fold * 0.25), hh * 0.014, 0, 0, 6.3);
     x.fill();
+    x.restore();
+  }
+  /* the joint creases. On the folded ones they crowd together into the
+     packed-up look of a fist; on the one still up they stay spread out. */
+  x.strokeStyle = `rgba(112,74,12,${(0.11 + fold * 0.10).toFixed(3)})`;
+  x.lineWidth = Math.max(1, hw * 0.0050);
+  for (const d of D.fingers.concat([D.thumb])) {
+    /* a folded finger is a stub pointing at you — one crease near its end,
+       not two across its middle, which read as scratches */
+    const stub = d[3] < 0.22;
+    for (const tt of (stub ? [0.560] : [0.345, 0.690])) {
+      const uu = stub ? 0.50 : 0.66;
+      const a = HD(digitAt(d, tt, -uu)), b = HD(digitAt(d, tt, uu));
+      const m = HD(digitAt(d, tt - 0.028, 0));
+      x.beginPath();
+      x.moveTo(a[0], a[1]);
+      x.quadraticCurveTo(m[0], m[1], b[0], b[1]);
+      x.stroke();
+    }
   }
   x.restore();
 
-  /* the nails. This is the line that says back of a hand, not palm — so
-     they have to be ovals lying across the finger, not beads on it. */
-  const nail = (nx, ny, nw, nh, rot) => {
+  /* the nails. Once it is a fist only the one that is still up shows its
+     end — the rest are pointing at you and have gone behind the knuckles. */
+  const nails = fold > 0.55 ? [D.fingers[1]] : D.fingers.concat([D.thumb]);
+  for (const d of nails) {
+    const p = HD(digitAt(d, 0.90, 0));
     x.save();
-    x.translate(nx, ny); if (rot) x.rotate(rot);
+    x.translate(p[0], p[1]); x.rotate(d[2]);
+    const nh = hh * 0.020, nw = hw * d[5] * 0.66;
     const ng = x.createLinearGradient(0, -nh, 0, nh);
-    ng.addColorStop(0, "rgba(255,250,226,0.40)");
-    ng.addColorStop(1, "rgba(150,104,22,0.22)");
+    ng.addColorStop(0, `rgba(255,250,226,${(0.42 + lit * 0.25).toFixed(3)})`);
+    ng.addColorStop(1, "rgba(150,104,22,0.20)");
     x.fillStyle = ng;
     x.beginPath(); x.ellipse(0, 0, nw, nh, 0, 0, 6.3); x.fill();
     x.strokeStyle = "rgba(96,64,12,0.26)";
     x.lineWidth = Math.max(1, R * 0.0020);
     x.stroke();
     x.restore();
-  };
-  for (const n of PASS_NAILS)
-    nail(hx + n[0] * hw, hy + (n[2] + 0.034) * hh, hw * n[1] * 0.60, hh * 0.019, 0);
-  nail(hx + 0.072 * hw, hy + 0.578 * hh, hw * 0.036, hh * 0.020, -1.15);
+  }
 
   /* ---- PEN15, in marker, across the back of it ---- */
   if (write > 0.001) {
-    const mw = hw * 0.485;                          /* how wide the word sits */
+    /* across the back of the fist, under the knuckles and above the heel,
+       which on this outline is roughly y 0.60 to 0.86 */
+    /* the closed fist is a narrower thing to write on than the open hand,
+       so the word tightens and drops as it folds rather than running off
+       the side of it */
+    const mw = hw * (0.560 - fold * 0.086);         /* how wide the word sits */
     const sc = mw / PASS_WORD.width;
-    const ROT = -0.11;
-    const mx = hx + hw * 0.262, my = hy + hh * 0.690;
+    const ROT = -0.10 + fold * 0.022;
+    const m0 = HP(0.222 + fold * 0.020, 0.742 + fold * 0.062);
+    const mx = m0[0], my = m0[1];
     const drawn = write * PASS_WORD.total;
     x.save();
     x.translate(mx, my);
@@ -12910,7 +13070,7 @@ function cupCanvas() {
   const c = document.createElement("canvas");
   const w = 1200, h = 1200;
   c.width = w; c.height = h;
-  drawPassCard(c.getContext("2d"), w, h, cupNameEl ? cupNameEl.value : "", 0, 1, 1, null, 1);
+  drawPassCard(c.getContext("2d"), w, h, cupNameEl ? cupNameEl.value : "", 0, 1, 1, null, 1, true, 1, 1);
   return c;
 }
 function cupBlob() {
@@ -12979,6 +13139,58 @@ function markerSqueak(i) {
   if (pan) pan.connect(BUS);
   n.start(t0); n.stop(t0 + 0.26);
 }
+/* the fingers coming down: four soft knocks, close together, not in time */
+function knuckleFold() {
+  const ac = audio(); if (!ac) return;
+  for (let i = 0; i < 4; i++) {
+    const t0 = ac.currentTime + 0.02 + i * 0.055 + (i % 2) * 0.012;
+    const n = ac.createBufferSource(); n.buffer = noise(ac);
+    const lp = ac.createBiquadFilter(); lp.type = "lowpass";
+    lp.frequency.value = 420 - i * 40; lp.Q.value = 1.4;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(0.075 - i * 0.008, t0 + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.14);
+    n.connect(lp); lp.connect(g); g.connect(BUS);
+    n.start(t0); n.stop(t0 + 0.18);
+  }
+}
+/* a shutter, and the capacitor behind the flash letting go */
+function shutterFlash() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  for (const d of [0, 0.085]) {                 /* open, and closed again */
+    const n = ac.createBufferSource(); n.buffer = noise(ac);
+    const hp = ac.createBiquadFilter(); hp.type = "highpass";
+    hp.frequency.value = 2600;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t0 + d);
+    g.gain.linearRampToValueAtTime(0.11, t0 + d + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + d + 0.05);
+    n.connect(hp); hp.connect(g); g.connect(BUS);
+    n.start(t0 + d); n.stop(t0 + d + 0.08);
+  }
+  /* the whump of the tube firing */
+  const o = ac.createOscillator(); o.type = "sine";
+  o.frequency.setValueAtTime(180, t0);
+  o.frequency.exponentialRampToValueAtTime(52, t0 + 0.16);
+  const g2 = ac.createGain();
+  g2.gain.setValueAtTime(0.16, t0);
+  g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.30);
+  o.connect(g2); g2.connect(BUS);
+  o.start(t0); o.stop(t0 + 0.34);
+  /* and the whine of it charging back up */
+  const w = ac.createOscillator(); w.type = "triangle";
+  w.frequency.setValueAtTime(1900, t0 + 0.18);
+  w.frequency.exponentialRampToValueAtTime(4200, t0 + 1.5);
+  const wg = ac.createGain();
+  wg.gain.setValueAtTime(0.0001, t0 + 0.18);
+  wg.gain.linearRampToValueAtTime(0.012, t0 + 0.5);
+  wg.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.7);
+  w.connect(wg); wg.connect(BUS);
+  w.start(t0 + 0.18); w.stop(t0 + 1.8);
+}
+
 /* the cap going back on */
 function capClick() {
   const ac = audio(); if (!ac) return;
