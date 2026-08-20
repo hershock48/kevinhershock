@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="build" content="2026-08-20T12:11Z">
+<meta name="build" content="2026-08-20T12:21Z">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Kevin Hershock</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎈</text></svg>">
@@ -7445,7 +7445,7 @@ function startBeacon() {
    anything at that bearing sits a little below the horizon, because it is
    nearer than the sky. */
 const beamHX = (G, t) => G.W * 0.245 + t * G.W * 0.86;
-const shipY = (G) => G.hz + (G.H - G.hz) * 0.10;
+const shipY = (G) => G.hz + (G.H - G.hz) * 0.34;
 
 function drawBeam(G, t, a, spread, water) {
   if (a <= 0.004) return;
@@ -7605,8 +7605,8 @@ function beaconFrame(dt) {
   const sy = shipY(G), sx = beamHX(G, shipT);
   const vis = shipAnswer ? 1 : shipSeen;
   if (vis > 0.01) {
-    const bob = Math.sin(beacT * 1.15) * Math.min(W, H) * 0.006;
-    const sc = Math.min(W, H) * 0.040;
+    const bob = Math.sin(beacT * 1.15) * Math.min(W, H) * 0.010;
+    const sc = Math.min(W, H) * 0.082;
     fctx.save();
     fctx.translate(sx, sy + bob);
     fctx.rotate(Math.sin(beacT * 0.9) * 0.06);
@@ -7663,7 +7663,7 @@ function beaconFrame(dt) {
     fctx.strokeStyle = `rgba(255,238,190,${(0.20 + 0.45 * shipLock).toFixed(3)})`;
     fctx.lineWidth = Math.max(1.6, Math.min(W, H) * 0.004);
     fctx.beginPath();
-    fctx.arc(sx, sy, Math.min(W, H) * 0.075, -Math.PI / 2,
+    fctx.arc(sx, sy, Math.min(W, H) * 0.135, -Math.PI / 2,
              -Math.PI / 2 + 6.283 * shipLock);
     fctx.stroke();
   }
