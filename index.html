@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="build" content="2026-08-20T03:50Z">
+<meta name="build" content="2026-08-20T04:23Z">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Kevin Hershock</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎈</text></svg>">
@@ -6508,11 +6508,11 @@ function clearSigh() {
    and it lights, and lighting them is the whole of it — when they are all
    awake they rise together and take the light with them. */
 
-let jellyOn = false, jellyT = 0, jellies = [], motes = [], jellyHue = 200, jellyRise = 0, jellyLit = 0;
+let jellyOn = false, jellyT = 0, jellies = [], motes = [], jellyHue = 200, jellyRise = 0, jellyLit = 0, jellyLast = 0;
 
 function startJelly(hue) {
   if (jellyOn) return;
-  jellyOn = true; jellyT = 0; jellyRise = 0; jellyLit = 0;
+  jellyOn = true; jellyT = 0; jellyRise = 0; jellyLit = 0; jellyLast = 0;
   jellyHue = hue === undefined ? 200 : hue;
   const W = window.innerWidth, H = window.innerHeight;
   const N = W < 620 ? 6 : 9;
@@ -6664,6 +6664,20 @@ function jellyFrame(dt) {
   }
   jellyLit = jellies.filter(j => j.lit > 0.5).length;
 
+  /* One creature you cannot reach — drifted behind something, sitting under
+     the corner — would be a dead end, and there are no dead ends here. If a
+     single one is left for long enough, it comes to you. */
+  const dark = jellies.filter(j => j.lit < 0.99);
+  if (!allLit && dark.length <= 2 && jellies.length > 2) {
+    jellyLast += dt;
+    if (jellyLast > 9) {
+      jellyLast = 6;                       /* one at a time, three seconds apart */
+      const j = dark[0];
+      j.flash = 1; j.lit = 0.021;
+      jellyPing(j.hue, false, j.x);
+    }
+  } else jellyLast = 0;
+
   if (allLit) {
     jellyRise = Math.min(1, jellyRise + dt * 0.22);
     if (jellyRise > 0.72 && !surfOn) { jellyOn = false; startSurface(); return; }
@@ -6739,12 +6753,12 @@ function jellySwell() {
    paper lanterns adrift on the black water, unlit. Touch one and it
    catches. Light them all and they go up together, and you go with them. */
 
-let surfOn = false, surfT = 0, breach = 0, lanterns = [], lampRise = 0;
+let surfOn = false, surfT = 0, breach = 0, lanterns = [], lampRise = 0, lampLast = 0;
 let lakeStars = [], mistBands = [], shoreLine = null, lensDrops = [];
 
 function startSurface() {
   if (surfOn) return;
-  surfOn = true; surfT = 0; breach = 0; lampRise = 0;
+  surfOn = true; surfT = 0; breach = 0; lampRise = 0; lampLast = 0;
   const W = window.innerWidth, H = window.innerHeight;
   const hz = H * 0.42;
 
@@ -7058,6 +7072,17 @@ function surfaceFrame(dt) {
   }
 
   /* ---- all lit: up they go, and you with them ---- */
+  const unlit = lanterns.filter(l => l.lit <= 0.98);
+  if (lanterns.length && unlit.length && unlit.length <= 2) {
+    lampLast += dt;
+    if (lampLast > 9) {
+      lampLast = 6;
+      const l = unlit[0];
+      l.lit = 0.021;
+      lanternCatch(l.x, l.hue);
+    }
+  } else lampLast = 0;
+
   if (lanterns.length && lanterns.every(l => l.lit > 0.98)) {
     lampRise = Math.min(1, lampRise + dt * 0.10);
     if (lampRise > 0.55 && !nat && !surfHanded) {
@@ -7646,7 +7671,9 @@ function natEnd() {
 /* --- frost: dendrites out of the corners, then the thaw --- */
 function frostSeeds(W, H) {
   const S = [];
-  const N = 26;
+  /* each seed is a recursive tree drawn twice — half as many on a phone,
+     where nobody can see the difference and the frame rate is the picture */
+  const N = Math.min(W, H) < 560 ? 15 : 26;
   for (let i = 0; i < N; i++) {
     /* they start on the edge, because that is where a pane goes first */
     const e = i / N * 4;
@@ -7814,13 +7841,22 @@ function natFrame(dt) {
     /* The throat is a surface, not a set of hoops — so it is drawn as filled
        bands from the outside in, each one a little brighter than the last,
        because the only light down here is the hole you came in through. */
-    const N = 34, RMAX = M * 1.9;
-    const bands = [];
+    const N = 30, RMAX = M * 1.9;
+    /* A ring wider than the frame paints the whole frame, and every ring
+       behind it is then invisible. Find the last one that still covers and
+       start there — on a phone that is nine full-screen fills a frame saved. */
+    const coverR = Math.hypot(W / 2, H / 2 / 0.86) * 1.02;
+    let bands = [];
     for (let i = 0; i < N; i++) {
       let p = (i / N - u * 2.15) % 1; if (p < 0) p += 1;
       bands.push(p);
     }
     bands.sort((a, b) => b - a);            // far ones first, near ones over them
+    let first = 0;
+    for (let i = 0; i < bands.length; i++) {
+      if (RMAX * Math.pow(bands[i], 1.7) >= coverR) first = i; else break;
+    }
+    bands = bands.slice(first);
     for (const p of bands) {
       const r = RMAX * Math.pow(p, 1.7);
       if (r < 1.5) continue;
@@ -7873,12 +7909,18 @@ function natFrame(dt) {
     }
     fctx.globalCompositeOperation = "source-over";
     fctx.restore();
-    /* the corners go, so the pipe closes in on you */
-    const vg = fctx.createRadialGradient(cx, cy, M * 0.18, cx, cy, M * 0.95);
-    vg.addColorStop(0, "rgba(0,0,0,0)");
-    vg.addColorStop(1, `rgba(0,0,0,${(0.55 + 0.35 * u).toFixed(2)})`);
-    fctx.fillStyle = vg;
+    /* the corners go, so the pipe closes in on you. Built once — a fresh
+       gradient object every frame is not free at three times pixel density. */
+    if (!nat.vg || nat.vgW !== W || nat.vgH !== H) {
+      nat.vg = fctx.createRadialGradient(cx, cy, M * 0.18, cx, cy, M * 0.95);
+      nat.vg.addColorStop(0, "rgba(0,0,0,0)");
+      nat.vg.addColorStop(1, "rgba(0,0,0,1)");
+      nat.vgW = W; nat.vgH = H;
+    }
+    fctx.globalAlpha = 0.55 + 0.35 * u;
+    fctx.fillStyle = nat.vg;
     fctx.fillRect(0, 0, W, H);
+    fctx.globalAlpha = 1;
   }
 
   /* --- drip: the gel that is left runs down and becomes the ink ---
@@ -8006,7 +8048,7 @@ function natFrame(dt) {
           if (a <= 12) continue;
           /* sand is never one colour; scatter what we sampled a little */
           const j = 0.86 + Math.random() * 0.28;
-          nat.seeds.push({ x: px, y: py,
+          nat.seeds.push({ x: px, y: py, ry,
                            /* they fan out on the way down, so what lands is a
                               beach and not a cone */
                            vx: (Math.random() - 0.5) * W * 0.62,
@@ -8017,10 +8059,18 @@ function natFrame(dt) {
                            c: `rgb(${Math.min(255, r * j) | 0},${Math.min(255, g * j) | 0},${Math.min(255, b * j) | 0})` });
         }
       }
-      /* daylight coming up behind the paper */
-      nat.sky = true;
+      nat.rows = rows;
+      /* Grains that have landed never move again, and grains that have not
+         started are still the picture we captured. Only the ones in the air
+         need drawing every frame — so landed ones are baked into a pile
+         canvas once, and the untouched part of the page is blitted straight
+         off the capture. On a phone that is the difference between a
+         transition and a slideshow. */
+      nat.pile = document.createElement("canvas");
+      nat.pile.width = W; nat.pile.height = H;
+      nat.pileX = nat.pile.getContext("2d");
     }
-    const cell = nat.cell;
+    const cell = nat.cell, rows = nat.rows;
     /* the beach's own sky, arriving as the paper leaves */
     const sky = fctx.createLinearGradient(0, 0, 0, H);
     sky.addColorStop(0, "#8fc3dd");
@@ -8030,14 +8080,17 @@ function natFrame(dt) {
     fctx.fillStyle = sky;
     fctx.fillRect(0, 0, W, H);
     fctx.globalAlpha = 1;
+    /* de is (ry/rows)*0.46 + jitter, so every row past this one is certainly
+       still sitting where it was drawn — blit it instead of stepping it */
+    const staticFrom = Math.ceil((u / 0.46) * rows);
+    if (nat.cap && staticFrom < rows) {
+      const yTop = Math.max(0, staticFrom * cell - cell);
+      try { fctx.drawImage(nat.cap, 0, yTop, W, H - yTop, 0, yTop, W, H - yTop); } catch (e) {}
+    }
+    fctx.drawImage(nat.pile, 0, 0);
     for (const p of nat.seeds) {
+      if (p.done || p.ry >= staticFrom) continue;
       if (u < p.de) {
-        /* still page: sits where it was drawn */
-        fctx.fillStyle = p.c;
-        fctx.fillRect(p.x - cell * 0.5, p.y - cell * 0.5, cell + 0.6, cell + 0.6);
-        continue;
-      }
-      if (p.done) {
         fctx.fillStyle = p.c;
         fctx.fillRect(p.x - cell * 0.5, p.y - cell * 0.5, cell + 0.6, cell + 0.6);
         continue;
@@ -8064,6 +8117,9 @@ function natFrame(dt) {
         p.y = nat.heap[c] - cell * 0.5;
         p.done = true;
         nat.heap[c] -= cell * 0.92;
+        nat.pileX.fillStyle = p.c;
+        nat.pileX.fillRect(p.x - cell * 0.5, p.y - cell * 0.5, cell + 0.6, cell + 0.6);
+        continue;
       }
       fctx.fillStyle = p.c;
       fctx.fillRect(p.x - cell * 0.5, p.y - cell * 0.5, cell + 0.6, cell + 0.6);
