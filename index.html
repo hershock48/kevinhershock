@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="build" content="2026-08-20T03:34Z">
+<meta name="build" content="2026-08-20T03:50Z">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Kevin Hershock</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎈</text></svg>">
@@ -5463,9 +5463,9 @@ function chartClick(e) {
   release("night", 2.2); nightPad = null;      /* the night ends at the beach */
   natRun("sand", () => startDig(), 3.2, { src, at: 0.88 });
   setTimeout(() => {
-    if (el) el.classList.remove("on");
+    if (el) { el.classList.remove("on"); el.style.display = "none"; }
     if (sc) sc.classList.remove("on");
-  }, 60);
+  }, 40);
 }
 
 /* ================= the dig =================
@@ -7577,10 +7577,25 @@ function natCapture(src) {
   natX.setTransform(1, 0, 0, 1, 0, 0);
   natX.clearRect(0, 0, W, H);
   if (src) {
-    /* put it back exactly where the eye last saw it, or the grains start
-       from the wrong place and the join reads as a cut after all */
-    let r = null;
+    /* Put it back exactly where the eye last saw it, or the grains start
+       from the wrong place and the join reads as a cut after all. The sheet
+       is paper with ink on it — the paper is a CSS background, so it has to
+       be laid down under the canvas or only the ink turns to sand. */
+    let r = null, pr = null;
     try { r = src.getBoundingClientRect(); } catch (e) {}
+    try {
+      const sheet = src.closest ? src.closest(".paper") : null;
+      if (sheet) pr = sheet.getBoundingClientRect();
+    } catch (e) {}
+    const box = (pr && pr.width > 4 && pr.height > 4) ? pr : r;
+    if (box && box.width > 4 && box.height > 4) {
+      const g = natX.createLinearGradient(box.left, box.top, box.right, box.bottom);
+      g.addColorStop(0, "#fdf6e4");
+      g.addColorStop(0.55, "#f4e8cd");
+      g.addColorStop(1, "#e8d8b4");
+      natX.fillStyle = g;
+      natX.fillRect(box.left, box.top, box.width, box.height);
+    }
     try {
       if (r && r.width > 4 && r.height > 4) natX.drawImage(src, r.left, r.top, r.width, r.height);
       else natX.drawImage(src, 0, 0, W, H);
@@ -8011,7 +8026,7 @@ function natFrame(dt) {
     sky.addColorStop(0, "#8fc3dd");
     sky.addColorStop(0.55, "#cfe3e6");
     sky.addColorStop(1, "#e8d9b6");
-    fctx.globalAlpha = Math.min(1, u * 1.5);
+    fctx.globalAlpha = Math.min(1, u * 2.8);
     fctx.fillStyle = sky;
     fctx.fillRect(0, 0, W, H);
     fctx.globalAlpha = 1;
