@@ -238,6 +238,71 @@
   #resume.there:hover, #resume.there:focus-visible { opacity: 0.75; outline: none; }
   @media (hover: none) { #resume.there { opacity: 0.34; } }
 
+  /* The keyboard hook for the last room. It has to be a real focused input
+     or a phone will never raise its keyboard — so it is real, and one
+     character wide, and sitting under everything where nobody sees it. */
+  #kb {
+    position: fixed; left: 50%; top: 50%;
+    width: 1px; height: 1px;
+    opacity: 0; z-index: 1;
+    border: 0; padding: 0; margin: 0; background: none;
+    color: transparent; caret-color: transparent;
+    font-size: 16px;                 /* under 16px and iOS zooms the page */
+    pointer-events: none;
+  }
+
+  /* the trophy plate */
+  #cup {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    z-index: 62;
+    display: flex; flex-direction: column; align-items: center;
+    gap: 14px;
+    padding: 0 20px calc(env(safe-area-inset-bottom, 0px) + 26px);
+    font-family: Georgia, "Times New Roman", serif;
+  }
+  #cup[hidden] { display: none; }
+  #cupname {
+    width: min(78vw, 340px);
+    background: none; border: 0;
+    border-bottom: 1px solid rgba(226,190,116,0.34);
+    color: #f2dfae;
+    font: 600 clamp(17px, 4.4vw, 23px)/1.5 Georgia, "Times New Roman", serif;
+    letter-spacing: 0.20em; text-align: center; text-indent: 0.20em;
+    padding: 4px 0 7px;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #cupname::placeholder { color: rgba(226,206,160,0.28); letter-spacing: 0.14em; }
+  #cupname:focus { border-bottom-color: rgba(240,212,146,0.72); }
+  #cupbtns { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  #cup button {
+    appearance: none;
+    background: rgba(226,190,116,0.07);
+    border: 1px solid rgba(226,190,116,0.30);
+    border-radius: 999px;
+    color: #e9d3a2;
+    font: 500 14px/1 Georgia, "Times New Roman", serif;
+    letter-spacing: 0.10em;
+    padding: 11px 20px;
+    cursor: pointer;
+    transition: background var(--t-tick) var(--ease-gentle),
+                border-color var(--t-tick) var(--ease-gentle),
+                transform var(--t-tick) var(--ease-gentle);
+    -webkit-tap-highlight-color: transparent;
+  }
+  #cup button:hover, #cup button:focus-visible {
+    background: rgba(232,200,132,0.16);
+    border-color: rgba(240,212,146,0.62);
+    outline: none;
+  }
+  #cup button:active { transform: scale(0.96); }
+  #cupsaid {
+    margin: 0; min-height: 1.1em;
+    font: 400 13px/1.1 Georgia, "Times New Roman", serif;
+    letter-spacing: 0.08em;
+    color: rgba(226,206,160,0.62);
+  }
+
   #grain {
     position: fixed;
     inset: -80px;
@@ -597,6 +662,19 @@
 <div id="flash"></div>
 <div id="vignette"></div>
 <div id="grain"></div>
+<!-- the last room: a riddle, and then a trophy with your name on it -->
+<input id="kb" aria-label="type a letter" autocomplete="off" autocorrect="off"
+       autocapitalize="characters" spellcheck="false" maxlength="1" inputmode="text">
+<div id="cup" hidden>
+  <input id="cupname" type="text" maxlength="18" placeholder="your name"
+         aria-label="the name on the trophy" autocomplete="off" spellcheck="false">
+  <div id="cupbtns">
+    <button id="cupshare" type="button">Share</button>
+    <button id="cuptext" type="button">Text it</button>
+    <button id="cupsave" type="button">Save</button>
+  </div>
+  <p id="cupsaid" role="status" aria-live="polite"></p>
+</div>
 <button id="resume" aria-label="pick up where you left off" title="pick up where you left off"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 5.6l7 6.4-7 6.4zM13 5.6l7 6.4-7 6.4z"/></svg></button>
 <button id="mute" aria-label="sound off" title="sound"><svg viewBox="0 0 24 24" width="20" height="20"><path id="spk" d="M4 9.5h3.6L12 5.6v12.8L7.6 14.5H4z"/><g id="waves"><path d="M15.4 9.1a4 4 0 0 1 0 5.8"/><path d="M17.9 6.6a7.6 7.6 0 0 1 0 10.8"/></g><g id="xout" style="display:none"><path d="M16 9.6l5 4.8M21 9.6l-5 4.8"/></g></svg></button>
 
@@ -981,6 +1059,8 @@ const CHAPTERS = [
   { k: "bingo",  go: () => { openCanvas(); startBingo(); } },
   { k: "sundae", go: () => { openCanvas(); startSundae(null); } },
   { k: "golf",   go: () => { openCanvas(); startGolf(null); } },
+  { k: "boss",   go: () => { openCanvas(); startRiddle(); } },
+  { k: "trophy", go: () => { openCanvas(); startTrophy(); } },
 ];
 const CHAPTER_AT = (k) => CHAPTERS.findIndex(c => c.k === k);
 
@@ -4749,6 +4829,8 @@ let lastSeg = -1;
 function drawNight(dt) {
   const W = window.innerWidth, H = window.innerHeight;
   nightT += dt;
+  if (cupOn) { trophyFrame(dt); return; }
+  if (ridOn) { riddleFrame(dt); return; }
   if (chainEnd) { restFrame(dt); return; }
   if (panOn) { panFrame(dt); return; }
   if (bgOn) { bingoFrame(dt); return; }
@@ -10814,45 +10896,55 @@ function sundaeDone() {
 }
 
 /* ================= two tees =================
-   The scoops come out of the glass and land on a pair of tees.
+   The scoops come out of the glass and land on a pair of tees on the back of
+   a tee box, looking down a hole.
 
-   The one on the left has KORY written down it. Swing at that one and the
-   ball goes about four feet sideways and stops, the way it does.
+   The first version of this was a click and then a ball left, which is not
+   golf. There is a club now. Hold to take it back — the further back it
+   goes the harder you are going to hit it — and let go to swing. It sweeps
+   through, it makes contact, and the ball goes.
 
-   The one on the right says KEVIN. */
+   The left tee has KORY down it. It does not matter how hard you swing at
+   that one. The right one says KEVIN. */
 
-let glfOn = false, glfT = 0, glfPhase = 0;       /* 0 drop, 1 kory, 2 shanked, 3 kevin, 4 flight, 5 bang */
-let glfBalls = [], glfSwing = 0, glfGrab = null, glfAimed = -1;
-let glfShot = null, glfBird = null, glfBoom = 0, glfShake = 0, glfIdle = 0;
-let glfDebris = [], glfFeathers = [], glfDone = 0, glfFlash = 0;
+let glfOn = false, glfT = 0, glfPhase = 0;   /* 0 drop 1 kory 2 shanked 3 kevin 4 flight 5 bang */
+let glfBalls = [], glfShot = null, glfBird = null, glfBoom = 0, glfShake = 0;
+let glfDebris = [], glfFeathers = [], glfDone = 0, glfFlash = 0, glfIdle = 0;
+let clubA = 0, clubTo = 0, clubState = "rest", clubP = 0, clubHeld = 0, glfDust = [];
+let glfManX = null, glfAt = 0, glfWalking = false;
+let glfFlames = [], glfSparks = [], glfSmoke = [];
 const TEE_WORDS = ["KORY", "KEVIN"];
+const BACK_A = -3.55;                        /* how far back the club goes */
 
 function glfGeom() {
   const W = window.innerWidth, H = window.innerHeight;
-  const ground = H * 0.80;
-  const teeH = Math.min(H * 0.20, W * 0.11);
-  return { W, H, ground, teeH,
-           tx: [W * 0.30, W * 0.62],
-           br: Math.min(W, H) * 0.030 };
+  const hz = H * 0.46;                       /* where the land meets the sky */
+  const ground = H * 0.86;                   /* the front edge of the tee box */
+  const teeH = Math.min(H * 0.21, W * 0.11);
+  return { W, H, hz, ground, teeH,
+           tx: [W * 0.34, W * 0.60],
+           br: Math.min(W, H) * 0.026,
+           manH: Math.min(H * 0.44, W * 0.30) };
 }
+const glfBallY = (G) => G.ground - G.teeH - G.br * 0.9;
 
 function startGolf(fromScoops) {
   mark("golf");
   if (glfOn) return;
   glfOn = true; glfT = 0; glfPhase = 0;
-  glfSwing = 0; glfGrab = null; glfAimed = -1; glfShot = null;
-  glfBoom = 0; glfShake = 0; glfIdle = 0; glfDone = 0; glfFlash = 0;
-  glfDebris = []; glfFeathers = [];
+  glfShot = null; glfBoom = 0; glfShake = 0; glfIdle = 0;
+  glfDone = 0; glfFlash = 0; glfDebris = []; glfFeathers = []; glfDust = [];
+  clubA = 0; clubTo = 0; clubState = "rest"; clubP = 0; clubHeld = 0;
+  glfManX = null; glfAt = 0; glfWalking = false;
+  glfFlames = []; glfSparks = []; glfSmoke = [];
   const G = glfGeom();
-  /* the two scoops come down out of the frame above and land on the tees */
   glfBalls = [0, 1].map(i => ({
     x: (fromScoops && fromScoops[i] ? fromScoops[i].x : G.tx[i]),
-    y: (fromScoops && fromScoops[i] ? fromScoops[i].y : -G.br * 4),
-    vy: 0, on: false, gone: false, tx: G.tx[i],
-    ty: G.ground - G.teeH - G.br * 0.85,
+    y: (fromScoops && fromScoops[i] ? fromScoops[i].y : -G.br * 5),
+    vy: 0, on: false, gone: false, tx: G.tx[i], ty: glfBallY(G),
     col: (fromScoops && fromScoops[i] ? fromScoops[i].col : "#f6efe2"),
   }));
-  glfBird = { x: -0.1, y: 0.20, ph: 0, alive: 1 };
+  glfBird = { x: -0.12, y: 0.17, alive: 1 };
   finCanvas.style.background = "#0b1018";
   finCanvas.style.display = "block";
   sizeFinale();
@@ -10861,46 +10953,321 @@ function startGolf(fromScoops) {
   courseRoom();
 }
 
-function drawTee(G, i, lit) {
-  const x = G.tx[i], top = G.ground - G.teeH;
-  fctx.save();
-  /* the peg */
-  const w = G.teeH * 0.13;
-  const tg = fctx.createLinearGradient(x - w, 0, x + w, 0);
-  tg.addColorStop(0, "#6b5334");
-  tg.addColorStop(0.4, "#c9a86a");
-  tg.addColorStop(1, "#5d4728");
-  fctx.fillStyle = tg;
-  fctx.beginPath();
-  fctx.moveTo(x - w * 1.7, top);
-  fctx.lineTo(x + w * 1.7, top);
-  fctx.lineTo(x + w * 0.55, top + G.teeH * 0.78);
-  fctx.quadraticCurveTo(x, top + G.teeH * 1.02, x - w * 0.55, top + G.teeH * 0.78);
-  fctx.closePath();
-  fctx.fill();
-  /* the cup at the top of it */
-  fctx.fillStyle = "#4a3a22";
-  fctx.beginPath();
-  fctx.ellipse(x, top, w * 1.7, w * 0.55, 0, 0, 6.3);
-  fctx.fill();
-  /* the name, down the peg */
-  const word = TEE_WORDS[i];
-  fctx.fillStyle = lit ? "rgba(255,244,206,0.96)" : "rgba(236,226,200,0.62)";
-  fctx.textAlign = "center"; fctx.textBaseline = "middle";
-  const fs = Math.min(G.teeH * 0.115, w * 1.5);
-  fctx.font = `700 ${Math.round(fs)}px Georgia, "Times New Roman", serif`;
-  for (let k = 0; k < word.length; k++) {
-    const f = (k + 0.9) / (word.length + 0.6);
-    fctx.fillText(word[k], x, top + G.teeH * 0.14 + f * G.teeH * 0.66);
-  }
-  if (lit) {
-    const p = 0.5 + 0.5 * Math.sin(glfT * 2.4);
-    fctx.strokeStyle = `rgba(255,232,160,${(0.18 + 0.28 * p).toFixed(3)})`;
-    fctx.lineWidth = Math.max(2, G.br * 0.16);
+/* --- the hole you are looking down --- */
+function drawCourse(G, dt) {
+  const { W, H, hz, ground } = G;
+  const sky = fctx.createLinearGradient(0, 0, 0, hz);
+  sky.addColorStop(0, "#1d3050");
+  sky.addColorStop(0.45, "#4b6b86");
+  sky.addColorStop(0.80, "#a8b7a4");
+  sky.addColorStop(1, "#e3d3a6");
+  fctx.fillStyle = sky;
+  fctx.fillRect(0, 0, W, hz);
+  /* the sun still low */
+  const sx = W * 0.70, sg = fctx.createRadialGradient(sx, hz, 0, sx, hz, Math.min(W, H) * 0.5);
+  sg.addColorStop(0, "rgba(255,226,168,0.50)");
+  sg.addColorStop(0.4, "rgba(230,176,110,0.16)");
+  sg.addColorStop(1, "rgba(200,150,100,0)");
+  fctx.fillStyle = sg;
+  fctx.fillRect(0, 0, W, hz);
+
+  /* trees down both sides, receding */
+  for (let r = 0; r < 2; r++) {
+    fctx.fillStyle = r ? "#1b2c22" : "rgba(30,48,36,0.85)";
     fctx.beginPath();
-    fctx.arc(x, top - G.br * 0.85, G.br * (2.0 + 0.4 * p), 0, 6.3);
+    fctx.moveTo(0, hz + 2);
+    const step = Math.max(14, W / (34 + r * 12));
+    for (let x = 0; x <= W + step; x += step) {
+      const edge = Math.min(1, Math.abs(x - W * 0.5) / (W * 0.36));
+      const h = H * (0.012 + 0.075 * Math.pow(edge, 1.6))
+              * (0.7 + 0.6 * (0.5 + 0.5 * Math.sin(x * 0.05 + r * 2)));
+      fctx.lineTo(x - step * 0.5, hz - h * 0.4);
+      fctx.lineTo(x, hz - h);
+      fctx.lineTo(x + step * 0.5, hz - h * 0.4);
+    }
+    fctx.lineTo(W, hz + 2);
+    fctx.closePath();
+    fctx.fill();
+  }
+
+  /* the fairway, in stripes, running away from you to a green */
+  const vpx = W * 0.5, land = fctx.createLinearGradient(0, hz, 0, H);
+  land.addColorStop(0, "#5c7c4a");
+  land.addColorStop(0.35, "#4a6d3c");
+  land.addColorStop(1, "#2e4a29");
+  fctx.fillStyle = land;
+  fctx.fillRect(0, hz, W, H - hz);
+  /* rough at the sides is darker */
+  const rgh = fctx.createLinearGradient(0, hz, 0, H);
+  rgh.addColorStop(0, "rgba(24,40,24,0.55)");
+  rgh.addColorStop(1, "rgba(18,32,20,0.75)");
+  fctx.fillStyle = rgh;
+  fctx.beginPath();
+  fctx.moveTo(0, hz); fctx.lineTo(vpx - W * 0.05, hz);
+  fctx.lineTo(-W * 0.35, H); fctx.lineTo(0, H); fctx.closePath(); fctx.fill();
+  fctx.beginPath();
+  fctx.moveTo(W, hz); fctx.lineTo(vpx + W * 0.05, hz);
+  fctx.lineTo(W * 1.35, H); fctx.lineTo(W, H); fctx.closePath(); fctx.fill();
+  /* the mown stripes: the cheapest thing in the world that says "golf" */
+  for (let i = 0; i < 11; i++) {
+    if (i % 2) continue;
+    const t0 = i / 11, t1 = (i + 1) / 11;
+    const y0 = hz + (H - hz) * Math.pow(t0, 1.7), y1 = hz + (H - hz) * Math.pow(t1, 1.7);
+    const w0 = W * (0.05 + t0 * 0.55), w1 = W * (0.05 + t1 * 0.55);
+    fctx.fillStyle = "rgba(150,182,116,0.11)";
+    fctx.beginPath();
+    fctx.moveTo(vpx - w0, y0); fctx.lineTo(vpx + w0, y0);
+    fctx.lineTo(vpx + w1, y1); fctx.lineTo(vpx - w1, y1);
+    fctx.closePath(); fctx.fill();
+  }
+  /* a bunker off to one side — it needs a lip, or it is a puddle */
+  {
+    const ux = vpx - W * 0.20, uy = hz + (H - hz) * 0.20;
+    const uw = W * 0.075, uh = H * 0.016;
+    fctx.fillStyle = "rgba(22,38,22,0.42)";
+    fctx.beginPath();
+    fctx.ellipse(ux, uy + uh * 0.34, uw * 1.06, uh * 1.14, -0.1, 0, 6.3);
+    fctx.fill();
+    const ug = fctx.createLinearGradient(0, uy - uh, 0, uy + uh);
+    ug.addColorStop(0, "#cbb890");
+    ug.addColorStop(0.45, "#eadfbe");
+    ug.addColorStop(1, "#d6c69c");
+    fctx.fillStyle = ug;
+    fctx.beginPath();
+    fctx.ellipse(ux, uy, uw, uh, -0.1, 0, 6.3);
+    fctx.fill();
+    fctx.strokeStyle = "rgba(255,250,232,0.45)";
+    fctx.lineWidth = Math.max(1, H * 0.0016);
+    fctx.beginPath();
+    fctx.ellipse(ux, uy, uw, uh, -0.1, Math.PI * 1.06, Math.PI * 1.94);
     fctx.stroke();
   }
+  /* the green, and a flag on it */
+  fctx.fillStyle = "rgba(126,168,96,0.55)";
+  fctx.beginPath();
+  fctx.ellipse(vpx + W * 0.03, hz + (H - hz) * 0.075, W * 0.075, H * 0.012, 0, 0, 6.3);
+  fctx.fill();
+  const fx = vpx + W * 0.045, fy = hz + (H - hz) * 0.068;
+  fctx.strokeStyle = "rgba(240,240,236,0.75)";
+  fctx.lineWidth = Math.max(1, H * 0.0022);
+  fctx.beginPath(); fctx.moveTo(fx, fy); fctx.lineTo(fx, fy - H * 0.045); fctx.stroke();
+  fctx.fillStyle = "#c8352e";
+  fctx.beginPath();
+  fctx.moveTo(fx, fy - H * 0.045);
+  fctx.lineTo(fx + W * 0.016, fy - H * 0.038);
+  fctx.lineTo(fx, fy - H * 0.031);
+  fctx.closePath(); fctx.fill();
+
+  /* the tee box you are standing on */
+  const bx = fctx.createLinearGradient(0, ground - H * 0.06, 0, H);
+  bx.addColorStop(0, "#48703f");
+  bx.addColorStop(1, "#25401f");
+  fctx.fillStyle = bx;
+  fctx.beginPath();
+  fctx.moveTo(-W * 0.1, H);
+  fctx.lineTo(-W * 0.02, ground);
+  for (let x = 0; x <= W; x += 20)
+    fctx.lineTo(x, ground + Math.sin(x * 0.012 + 1.3) * H * 0.004);
+  fctx.lineTo(W * 1.02, ground);
+  fctx.lineTo(W * 1.1, H);
+  fctx.closePath();
+  fctx.fill();
+  for (let i = 0; i < 90; i++) {
+    const j = Math.sin(i * 12.9898) * 43758.5453, r1 = j - Math.floor(j);
+    const k = Math.sin(i * 78.233) * 43758.5453, r2 = k - Math.floor(k);
+    const gx = r1 * W, gy = ground + r2 * (H - ground);
+    fctx.strokeStyle = `rgba(158,196,132,${(0.05 + r2 * 0.10).toFixed(3)})`;
+    fctx.lineWidth = 1.2;
+    fctx.beginPath();
+    fctx.moveTo(gx, gy);
+    fctx.lineTo(gx + Math.sin(glfT * 1.2 + i) * 3, gy - 4 - r2 * 8);
+    fctx.stroke();
+  }
+}
+
+function drawTee(G, i, live) {
+  const x = G.tx[i], top = G.ground - G.teeH, T = G.teeH;
+  const w = T * 0.22;              /* half the width of the shank */
+  fctx.save();
+  /* the tee's own shadow, so it is standing on the grass and not over it */
+  fctx.fillStyle = "rgba(18,32,18,0.30)";
+  fctx.beginPath();
+  fctx.ellipse(x + w * 0.6, G.ground + T * 0.01, w * 1.5, w * 0.34, 0, 0, 6.3);
+  fctx.fill();
+
+  /* A real tee, not a traffic cone: a flared cup, then a shank with
+     parallel sides — the name has to fit down it — and a short point. */
+  const tg = fctx.createLinearGradient(x - w, 0, x + w, 0);
+  tg.addColorStop(0, "#6a512f");
+  tg.addColorStop(0.30, "#d8b878");
+  tg.addColorStop(0.58, "#c19a5c");
+  tg.addColorStop(1, "#54401f");
+  fctx.fillStyle = tg;
+  fctx.beginPath();
+  fctx.moveTo(x - w * 1.62, top);
+  fctx.quadraticCurveTo(x - w * 0.82, top + T * 0.10, x - w * 0.62, top + T * 0.20);
+  fctx.lineTo(x - w * 0.55, top + T * 0.82);
+  fctx.quadraticCurveTo(x - w * 0.40, top + T * 1.02, x, top + T * 1.06);
+  fctx.quadraticCurveTo(x + w * 0.40, top + T * 1.02, x + w * 0.55, top + T * 0.82);
+  fctx.lineTo(x + w * 0.62, top + T * 0.20);
+  fctx.quadraticCurveTo(x + w * 0.82, top + T * 0.10, x + w * 1.62, top);
+  fctx.closePath();
+  fctx.fill();
+  /* the dish the ball sits in */
+  fctx.fillStyle = "rgba(58,42,18,0.80)";
+  fctx.beginPath();
+  fctx.ellipse(x, top, w * 1.62, w * 0.44, 0, 0, 6.3);
+  fctx.fill();
+  fctx.fillStyle = "rgba(255,236,190,0.22)";
+  fctx.beginPath();
+  fctx.ellipse(x, top - w * 0.06, w * 1.30, w * 0.28, 0, Math.PI, 0);
+  fctx.fill();
+
+  /* the name down the shank, upright, one letter at a time */
+  const word = TEE_WORDS[i];
+  fctx.textAlign = "center"; fctx.textBaseline = "middle";
+  const fs = Math.min(T * 0.115, w * 0.98);
+  fctx.font = `700 ${Math.round(fs)}px Georgia, "Times New Roman", serif`;
+  const y0 = top + T * 0.28, y1 = top + T * 0.80;
+  for (let k = 0; k < word.length; k++) {
+    const yy = y0 + (y1 - y0) * (word.length === 1 ? 0.5 : k / (word.length - 1));
+    fctx.fillStyle = "rgba(48,32,12,0.65)";
+    fctx.fillText(word[k], x + 1, yy + 1.2);
+    fctx.fillStyle = live ? "rgba(255,250,230,0.99)" : "rgba(246,234,204,0.66)";
+    fctx.fillText(word[k], x, yy);
+  }
+  fctx.restore();
+}
+
+/* --- the golfer ---
+   A club on its own hanging in the sky is not a swing, it is a floating
+   club. There is a man on the end of it now. He is a silhouette, cut the
+   same flat way as the trees, and the arms and the shaft are one lever
+   turning about his shoulder — which is what a golf swing actually is. */
+function glfStance(G, bx, by) {
+  const mh = G.manH;
+  const fy = G.ground + (G.H - G.ground) * 0.30;   /* his feet, a step nearer you */
+  const mx = bx + mh * 0.52;
+  const sx = mx - mh * 0.07, sy = fy - mh * 0.80;  /* the shoulder */
+  return { mh, fy, mx, sx, sy,
+           L: Math.hypot(bx - sx, by - sy),
+           rest: Math.atan2(by - sy, bx - sx) };
+}
+function clubRest(G, bx, by) {
+  const S = glfStance(G, bx, by);
+  return { px: S.sx, py: S.sy, L: S.L };
+}
+
+function drawGolfer(G, bx, by) {
+  const S = glfStance(G, bx, by);
+  const { mh, fy, mx, sx, sy, L } = S;
+  const a = S.rest + clubA;
+  const lean = clubA * 0.055;
+  const hx = sx + Math.cos(a) * L * 0.36, hy = sy + Math.sin(a) * L * 0.36;
+  const cx = sx + Math.cos(a) * L,        cy = sy + Math.sin(a) * L;
+  const SIL = "#101a17", CLOTH = "#18241f";
+  const hipY = fy - mh * 0.46;
+
+  fctx.save();
+  /* the shadow the low sun throws off him */
+  fctx.fillStyle = "rgba(16,30,16,0.32)";
+  fctx.beginPath();
+  fctx.ellipse(mx - mh * 0.05, fy + mh * 0.012, mh * 0.21, mh * 0.036, 0, 0, 6.3);
+  fctx.fill();
+
+  /* trousers */
+  fctx.fillStyle = SIL;
+  fctx.beginPath();
+  fctx.moveTo(mx - mh * 0.150, fy);
+  fctx.lineTo(mx - mh * 0.078, hipY);
+  fctx.lineTo(mx + mh * 0.078, hipY);
+  fctx.lineTo(mx + mh * 0.150, fy);
+  fctx.lineTo(mx + mh * 0.086, fy);
+  fctx.lineTo(mx, hipY + mh * 0.21);
+  fctx.lineTo(mx - mh * 0.086, fy);
+  fctx.closePath();
+  fctx.fill();
+  /* shoes */
+  fctx.beginPath();
+  fctx.ellipse(mx - mh * 0.118, fy, mh * 0.058, mh * 0.020, 0, 0, 6.3);
+  fctx.fill();
+  fctx.beginPath();
+  fctx.ellipse(mx + mh * 0.118, fy, mh * 0.058, mh * 0.020, 0, 0, 6.3);
+  fctx.fill();
+
+  /* torso, turning a little with the swing */
+  fctx.save();
+  fctx.translate(mx, hipY);
+  fctx.rotate(lean);
+  fctx.fillStyle = CLOTH;
+  fctx.beginPath();
+  fctx.moveTo(-mh * 0.078, 0.5);
+  fctx.quadraticCurveTo(-mh * 0.112, -mh * 0.16, -mh * 0.126, -mh * 0.30);
+  fctx.quadraticCurveTo(-mh * 0.070, -mh * 0.355, 0, -mh * 0.355);
+  fctx.quadraticCurveTo(mh * 0.070, -mh * 0.355, mh * 0.126, -mh * 0.30);
+  fctx.quadraticCurveTo(mh * 0.112, -mh * 0.16, mh * 0.078, 0.5);
+  fctx.closePath();
+  fctx.fill();
+  /* head, and a cap looking down the hole */
+  fctx.fillStyle = SIL;
+  fctx.beginPath();
+  fctx.arc(0, -mh * 0.425, mh * 0.070, 0, 6.3);
+  fctx.fill();
+  fctx.beginPath();
+  fctx.ellipse(-mh * 0.062, -mh * 0.462, mh * 0.070, mh * 0.024, -0.16, 0, 6.3);
+  fctx.fill();
+  fctx.restore();
+
+  /* the arc the head has just come through */
+  if (clubState === "down" || clubState === "through") {
+    fctx.strokeStyle = "rgba(236,240,246,0.14)";
+    fctx.lineWidth = Math.max(3, G.br * 0.85);
+    fctx.beginPath();
+    fctx.arc(sx, sy, L, a - 1.1, a, false);
+    fctx.stroke();
+  }
+
+  /* arms */
+  fctx.strokeStyle = SIL;
+  fctx.lineWidth = mh * 0.052;
+  fctx.lineCap = "round";
+  fctx.beginPath();
+  fctx.moveTo(sx, sy); fctx.lineTo(hx, hy);
+  fctx.stroke();
+
+  /* the shaft */
+  const sg = fctx.createLinearGradient(hx, hy, cx, cy);
+  sg.addColorStop(0, "#20242b");
+  sg.addColorStop(0.55, "#8d949d");
+  sg.addColorStop(1, "#c9ced6");
+  fctx.strokeStyle = sg;
+  fctx.lineWidth = Math.max(2.5, G.br * 0.26);
+  fctx.beginPath();
+  fctx.moveTo(hx, hy); fctx.lineTo(cx, cy);
+  fctx.stroke();
+  /* the grip in his hands */
+  fctx.strokeStyle = "#0e1114";
+  fctx.lineWidth = Math.max(4, G.br * 0.42);
+  fctx.beginPath();
+  fctx.moveTo(hx - Math.cos(a) * L * 0.06, hy - Math.sin(a) * L * 0.06);
+  fctx.lineTo(hx + Math.cos(a) * L * 0.10, hy + Math.sin(a) * L * 0.10);
+  fctx.stroke();
+
+  /* the head of the club */
+  fctx.translate(cx, cy);
+  fctx.rotate(a);
+  const hg = fctx.createLinearGradient(0, -G.br, 0, G.br);
+  hg.addColorStop(0, "#e8ecf2");
+  hg.addColorStop(0.5, "#9aa2ac");
+  hg.addColorStop(1, "#4e545d");
+  fctx.fillStyle = hg;
+  fctx.beginPath();
+  fctx.ellipse(G.br * 0.22, 0, G.br * 1.15, G.br * 0.82, 0, 0, 6.3);
+  fctx.fill();
+  fctx.fillStyle = "rgba(255,255,255,0.30)";
+  fctx.beginPath();
+  fctx.ellipse(G.br * 0.05, -G.br * 0.26, G.br * 0.40, G.br * 0.19, -0.3, 0, 6.3);
+  fctx.fill();
   fctx.restore();
 }
 
@@ -10910,74 +11277,68 @@ function golfFrame(dt) {
   glfT += dt;
   hardClear(finCanvas, fctx);
 
-  glfShake = Math.max(0, glfShake - dt * 2.4);
+  glfShake = Math.max(0, glfShake - dt * 0.78);
   fctx.save();
-  if (glfShake > 0.001)
-    fctx.translate((Math.random() - 0.5) * glfShake * W * 0.06,
-                   (Math.random() - 0.5) * glfShake * H * 0.06);
-
-  /* ---------- morning on a course ---------- */
-  const sky = fctx.createLinearGradient(0, 0, 0, G.ground);
-  sky.addColorStop(0, "#16243c");
-  sky.addColorStop(0.55, "#3a5570");
-  sky.addColorStop(1, "#9db4a8");
-  fctx.fillStyle = sky;
-  fctx.fillRect(0, 0, W, G.ground);
-  /* hills behind */
-  for (let r = 0; r < 2; r++) {
-    fctx.fillStyle = r ? "rgba(56,80,66,0.95)" : "rgba(74,98,84,0.75)";
-    fctx.beginPath();
-    fctx.moveTo(0, G.ground);
-    for (let x = 0; x <= W; x += 26)
-      fctx.lineTo(x, G.ground - H * (0.05 + r * 0.03)
-                   - Math.sin(x * 0.0035 + r * 2.1) * H * (0.045 - r * 0.015)
-                   - Math.sin(x * 0.011 + r) * H * 0.012);
-    fctx.lineTo(W, G.ground);
-    fctx.closePath();
-    fctx.fill();
-  }
-  /* the fairway */
-  const gr = fctx.createLinearGradient(0, G.ground, 0, H);
-  gr.addColorStop(0, "#3f6b45");
-  gr.addColorStop(1, "#223d28");
-  fctx.fillStyle = gr;
-  fctx.fillRect(0, G.ground, W, H - G.ground);
-  for (let i = 0; i < 130; i++) {
-    const j = Math.sin(i * 12.9898) * 43758.5453, r1 = j - Math.floor(j);
-    const k = Math.sin(i * 78.233) * 43758.5453, r2 = k - Math.floor(k);
-    const gx = r1 * W, gy = G.ground + r2 * (H - G.ground);
-    fctx.strokeStyle = `rgba(150,186,138,${(0.06 + r2 * 0.12).toFixed(3)})`;
-    fctx.lineWidth = 1.2;
-    fctx.beginPath();
-    fctx.moveTo(gx, gy);
-    fctx.lineTo(gx + Math.sin(glfT * 1.1 + i) * 3, gy - 4 - r2 * 7);
-    fctx.stroke();
+  if (glfShake > 0.001) {
+    const k = Math.min(1, glfShake);
+    /* scale up a touch first, so the shake never uncovers the canvas edge */
+    fctx.translate(W * 0.5, H * 0.5);
+    fctx.scale(1 + k * 0.11, 1 + k * 0.11);
+    fctx.rotate((Math.random() - 0.5) * k * 0.018);
+    fctx.translate(-W * 0.5, -H * 0.5);
+    fctx.translate((Math.random() - 0.5) * k * W * 0.055,
+                   (Math.random() - 0.5) * k * H * 0.055);
   }
 
-  /* ---------- the bird, minding its own business ---------- */
+  drawCourse(G, dt);
+
+  /* the bird, minding its own business */
   if (glfBird.alive) {
-    glfBird.x += dt * 0.045;
+    glfBird.x += dt * 0.042;
     if (glfBird.x > 1.15) glfBird.x = -0.15;
-    const bx = glfBird.x * W, by = glfBird.y * H + Math.sin(glfT * 0.7) * H * 0.015;
-    const flap = Math.sin(glfT * 7);
-    const bs = Math.min(W, H) * 0.020;
-    fctx.strokeStyle = "rgba(22,28,36,0.72)";
-    fctx.lineWidth = Math.max(1.5, bs * 0.20);
+    const bx = glfBird.x * W, by = glfBird.y * H + Math.sin(glfT * 0.7) * H * 0.018;
+    const flap = Math.sin(glfT * 6.2);
+    const bs = Math.min(W, H) * 0.040;
+    const SILB = "rgba(18,25,33,0.86)";
+    /* a body, so it is a bird and not a squiggle */
+    fctx.fillStyle = SILB;
+    fctx.beginPath();
+    fctx.ellipse(bx, by, bs * 0.44, bs * 0.17, 0.05, 0, 6.3);
+    fctx.fill();
+    fctx.beginPath();
+    fctx.arc(bx + bs * 0.42, by - bs * 0.07, bs * 0.13, 0, 6.3);
+    fctx.fill();
+    fctx.beginPath();
+    fctx.moveTo(bx + bs * 0.52, by - bs * 0.10);
+    fctx.lineTo(bx + bs * 0.76, by - bs * 0.04);
+    fctx.lineTo(bx + bs * 0.52, by + bs * 0.02);
+    fctx.closePath(); fctx.fill();
+    /* tail */
+    fctx.beginPath();
+    fctx.moveTo(bx - bs * 0.38, by - bs * 0.10);
+    fctx.lineTo(bx - bs * 0.72, by + bs * 0.04);
+    fctx.lineTo(bx - bs * 0.38, by + bs * 0.10);
+    fctx.closePath(); fctx.fill();
+    /* wings, beating */
+    fctx.strokeStyle = SILB;
+    fctx.lineWidth = Math.max(2, bs * 0.15);
     fctx.lineCap = "round";
     fctx.beginPath();
-    fctx.moveTo(bx - bs, by + flap * bs * 0.5);
-    fctx.quadraticCurveTo(bx, by - bs * 0.30, bx + bs, by + flap * bs * 0.5);
+    fctx.moveTo(bx - bs * 0.12, by - bs * 0.06);
+    fctx.quadraticCurveTo(bx - bs * 0.55, by - bs * 0.42 + flap * bs * 0.62,
+                          bx - bs * 0.86, by + flap * bs * 0.80);
+    fctx.moveTo(bx + bs * 0.06, by - bs * 0.06);
+    fctx.quadraticCurveTo(bx + bs * 0.42, by - bs * 0.42 + flap * bs * 0.62,
+                          bx + bs * 0.70, by + flap * bs * 0.80);
     fctx.stroke();
-    glfBird.sx = bx; glfBird.sy = by; glfBird.r = bs * 1.6;
+    glfBird.sx = bx; glfBird.sy = by; glfBird.r = bs * 1.1;
   }
 
-  /* ---------- the tees ---------- */
   drawTee(G, 0, glfPhase === 1);
   drawTee(G, 1, glfPhase === 3);
 
-  /* ---------- the two scoops, on their way down and then sitting there --- */
-  for (let i = 0; i < glfBalls.length; i++) {
-    const b = glfBalls[i];
+  /* the two scoops, coming down and then sitting on the pegs */
+  for (const b of glfBalls) {
     if (b.gone) continue;
     if (!b.on) {
       b.vy += 1500 * dt;
@@ -10985,16 +11346,14 @@ function golfFrame(dt) {
       b.x += (b.tx - b.x) * Math.min(1, dt * 3.2);
       if (b.y >= b.ty) { b.y = b.ty; b.on = true; teeDrop(b.x); }
     }
-    /* it is a scoop until it is hit, and then it is a golf ball */
     const r = G.br;
     const g = fctx.createRadialGradient(b.x - r * 0.35, b.y - r * 0.4, 0, b.x, b.y, r * 1.2);
     g.addColorStop(0, "#ffffff");
     g.addColorStop(0.55, b.col);
-    g.addColorStop(1, "#c9bda8");
+    g.addColorStop(1, "#c4b8a4");
     fctx.fillStyle = g;
     fctx.beginPath(); fctx.arc(b.x, b.y, r, 0, 6.3); fctx.fill();
-    /* dimples */
-    fctx.fillStyle = "rgba(150,140,120,0.30)";
+    fctx.fillStyle = "rgba(150,140,120,0.28)";
     for (let d = 0; d < 7; d++) {
       const a = d * 1.9 + 0.4, rr = r * (0.28 + (d % 3) * 0.22);
       fctx.beginPath();
@@ -11004,132 +11363,244 @@ function golfFrame(dt) {
   }
   if (glfPhase === 0 && glfBalls.every(b => b.on)) { glfPhase = 1; glfIdle = 0; }
 
-  /* ---------- the ball that is in the air ---------- */
+  /* ---------- the swing ---------- */
+  const live = glfPhase === 1 ? 0 : glfPhase === 3 ? 1 : -1;
+  if (live >= 0) glfAt = live;
+  if (glfPhase >= 1) {
+    /* he walks across to the other tee between shots */
+    const target = G.tx[glfAt];
+    if (glfManX === null) glfManX = target;
+    glfManX += (target - glfManX) * Math.min(1, dt * 2.4);
+    glfWalking = Math.abs(target - glfManX) > G.br * 0.5;
+    if (live >= 0 && glfBalls[live] && !glfBalls[live].gone && clubState !== "rest") {
+      if (clubState === "back") {
+        clubHeld += dt;
+        clubA += (BACK_A - clubA) * Math.min(1, dt * 2.6);
+      } else if (clubState === "down") {
+        clubP += dt / 0.19;
+        const from = clubHeld ? clubA0 : -1.4;
+        clubA = from + (1.20 - from) * (clubP * clubP);
+        if (!glfStruck && clubA >= -0.02) {
+          glfStruck = 1;
+          glfSwingHit(live, Math.max(0.22, Math.min(1, clubA0 / BACK_A)));
+        }
+        if (clubP >= 1) { clubState = "through"; clubP = 0; }
+      } else if (clubState === "through") {
+        clubP += dt;
+        if (clubP > 0.55) { clubState = "rest"; clubHeld = 0; clubP = 0; glfStruck = 0; }
+        clubA += (1.20 - clubA) * Math.min(1, dt * 3);
+      }
+    } else if (live >= 0 && !glfWalking) {
+      /* at address, with a waggle, because a club that never moves is a
+         picture of a club */
+      clubA += (Math.sin(glfT * 1.6) * 0.05 - clubA) * Math.min(1, dt * 4);
+    } else {
+      clubA += (0 - clubA) * Math.min(1, dt * 3.5);
+    }
+    drawGolfer(G, glfManX, glfBallY(G));
+  }
+
+  /* ---------- the ball, once it is gone ---------- */
   if (glfShot) {
     const s = glfShot;
     s.t += dt;
-    s.x += s.vx * dt;
-    s.y += s.vy * dt;
-    s.vy += 900 * dt;
     if (s.shank) {
-      /* it goes nowhere. It bounces twice and sits there looking at you. */
-      if (s.y > G.ground - G.br * 0.6) {
-        s.y = G.ground - G.br * 0.6;
-        s.vy = -s.vy * 0.34;
-        s.vx *= 0.5;
-        if (Math.abs(s.vy) < 40) { s.vy = 0; s.vx = 0; s.rest = (s.rest || 0) + dt; }
-        if (!s.thud) { s.thud = 1; shankThud(s.x); }
+      s.vy += 1500 * dt;
+      s.x += s.vx * dt; s.y += s.vy * dt;
+      const fl = glfBallY(G) + G.br * 0.9;
+      if (s.y > fl) {
+        s.y = fl; s.vy = -s.vy * 0.36; s.vx *= 0.56;
+        if (!s.bounces) s.bounces = 0;
+        s.bounces++;
+        shankThud(s.x);
+        puff(s.x, s.y, G);
+        if (Math.abs(s.vy) < 60) { s.vy = 0; s.vx = 0; s.rest = (s.rest || 0) + dt; }
       }
-      if (s.rest > 1.4 && glfPhase === 2) { glfPhase = 3; glfIdle = 0; }
+      if (s.vx === 0) s.rest = (s.rest || 0) + dt;
+      if (s.rest > 1.5 && glfPhase === 2) { glfPhase = 3; glfIdle = 0; }
     } else {
-      /* And this one is on line, because it has to be. A struck ball that
-         happened to miss would be a different joke and not as good a one. */
-      s.p = Math.min(1, (s.p || 0) + dt / 1.15);
+      s.p = Math.min(1, (s.p || 0) + dt / 1.25);
       const e = s.p * s.p * (3 - 2 * s.p);
       const tx2 = glfBird.sx !== undefined ? glfBird.sx : W * 0.5;
       const ty2 = glfBird.sy !== undefined ? glfBird.sy : H * 0.2;
-      const px2 = s.x0 + (tx2 - s.x0) * e;
-      const py2 = s.y0 + (ty2 - s.y0) * e - Math.sin(s.p * Math.PI) * H * 0.16;
-      s.vx = (px2 - s.x) / Math.max(dt, 0.001);
-      s.vy = (py2 - s.y) / Math.max(dt, 0.001);
-      s.x = px2; s.y = py2;
+      s.x = s.x0 + (tx2 - s.x0) * e;
+      s.y = s.y0 + (ty2 - s.y0) * e - Math.sin(s.p * Math.PI) * H * 0.17;
+      s.tr = s.tr || [];
+      s.tr.push([s.x, s.y]);
+      if (s.tr.length > 26) s.tr.shift();
       if (glfBird.alive && (s.p >= 0.995 ||
           Math.hypot(s.x - glfBird.sx, s.y - glfBird.sy) < glfBird.r + G.br)) {
         glfBird.alive = 0;
-        glfPhase = 5; glfBoom = 0.0001; glfShake = 1; glfFlash = 1;
+        glfPhase = 5; glfBoom = 0.0001; glfShake = 1.85; glfFlash = 1;
         kaboom();
-        for (let i = 0; i < 90; i++) {
-          const a = Math.random() * 6.3, sp = 120 + Math.random() * 900;
-          glfDebris.push({ x: glfBird.sx, y: glfBird.sy,
-                           vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
-                           life: 0.8 + Math.random() * 1.2,
-                           s: Math.min(W, H) * (0.004 + Math.random() * 0.010),
-                           c: `hsl(${(18 + Math.random() * 30) | 0},${(70 + Math.random() * 25) | 0}%,${(50 + Math.random() * 30) | 0}%)` });
-        }
-        for (let i = 0; i < 42; i++) {
-          const a = Math.random() * 6.3, sp = 40 + Math.random() * 260;
-          glfFeathers.push({ x: glfBird.sx, y: glfBird.sy,
-                             vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 60,
-                             rot: Math.random() * 6.3, spin: (Math.random() - 0.5) * 8,
-                             life: 2.4 + Math.random() * 2.2,
-                             s: Math.min(W, H) * (0.008 + Math.random() * 0.012) });
-        }
+        detonate(glfBird.sx, glfBird.sy, W, H);
         glfShot = null;
       }
-
     }
     if (glfShot) {
-      const r = G.br * 0.86;
+      /* it gets smaller as it goes, or it never reads as going anywhere */
+      const r = G.br * (glfShot.shank ? 0.92 : 0.92 - 0.52 * (glfShot.p || 0));
+      if (glfShot.tr) {
+        fctx.strokeStyle = "rgba(248,246,238,0.22)";
+        fctx.lineWidth = r * 0.8;
+        fctx.lineCap = "round"; fctx.lineJoin = "round";
+        fctx.beginPath();
+        for (let i = 0; i < glfShot.tr.length; i++) {
+          const q = glfShot.tr[i];
+          i ? fctx.lineTo(q[0], q[1]) : fctx.moveTo(q[0], q[1]);
+        }
+        fctx.stroke();
+      }
       fctx.fillStyle = "#f8f6ef";
-      fctx.beginPath(); fctx.arc(s.x, s.y, r, 0, 6.3); fctx.fill();
-      /* the line it left behind it */
-      fctx.strokeStyle = "rgba(246,244,236,0.30)";
-      fctx.lineWidth = r * 0.7;
-      fctx.lineCap = "round";
-      fctx.beginPath();
-      fctx.moveTo(s.x - s.vx * 0.055, s.y - s.vy * 0.055);
-      fctx.lineTo(s.x, s.y);
-      fctx.stroke();
+      fctx.beginPath(); fctx.arc(glfShot.x, glfShot.y, r, 0, 6.3); fctx.fill();
     }
+  }
+
+  /* dust off the turf */
+  for (let i = glfDust.length - 1; i >= 0; i--) {
+    const d = glfDust[i];
+    d.x += d.vx * dt; d.y += d.vy * dt; d.vy += 380 * dt; d.life -= dt;
+    if (d.life <= 0) { glfDust.splice(i, 1); continue; }
+    fctx.globalAlpha = Math.min(1, d.life * 2.2) * 0.5;
+    fctx.fillStyle = "#9db07e";
+    fctx.fillRect(d.x, d.y, d.s, d.s);
+    fctx.globalAlpha = 1;
   }
 
   /* ---------- the bang ---------- */
   if (glfBoom > 0) {
     glfBoom += dt;
-    const bx = glfBird.sx, by = glfBird.sy;
-    const R = Math.min(W, H);
-    /* the flash */
-    if (glfFlash > 0) {
-      glfFlash = Math.max(0, glfFlash - dt * 2.2);
-      fctx.fillStyle = `rgba(255,246,214,${(glfFlash * 0.85).toFixed(3)})`;
+    const R = Math.min(W, H), DIAG = Math.hypot(W, H);
+    const t = glfBoom;
+    /* It starts where the bird was, wherever that happened to be, and then
+       the middle of it walks to the middle of the page — otherwise the whole
+       thing happens in one corner and half the screen stays a golf course. */
+    const pull = 1 - Math.pow(1 - Math.min(1, t / 0.55), 2);
+    const bx = glfBird.sx + (W * 0.5 - glfBird.sx) * pull;
+    const by = glfBird.sy + (H * 0.46 - glfBird.sy) * pull;
+
+    /* 1. the core, which does not stay a fireball in the sky — it opens out
+          until it is the whole page */
+    const grow = 1 - Math.pow(1 - Math.min(1, t / 0.62), 3);
+    const fr = R * 0.03 + DIAG * 1.15 * grow;
+    const fa = t < 0.70 ? 1 : Math.max(0, 1 - (t - 0.70) / 3.2);
+    if (fa > 0.004) {
+      const fg = fctx.createRadialGradient(bx, by, 0, bx, by, fr);
+      fg.addColorStop(0, `rgba(255,255,244,${(fa * 0.98).toFixed(3)})`);
+      fg.addColorStop(0.13, `rgba(255,238,168,${(fa * 0.96).toFixed(3)})`);
+      fg.addColorStop(0.32, `rgba(255,168,52,${(fa * 0.90).toFixed(3)})`);
+      fg.addColorStop(0.58, `rgba(226,74,26,${(fa * 0.72).toFixed(3)})`);
+      fg.addColorStop(0.82, `rgba(122,28,14,${(fa * 0.42).toFixed(3)})`);
+      fg.addColorStop(1, "rgba(40,12,8,0)");
+      fctx.fillStyle = fg;
       fctx.fillRect(-W, -H, W * 3, H * 3);
     }
-    /* the fireball */
-    const fr = R * (0.05 + Math.min(1, glfBoom / 0.7) * 0.52);
-    const fa = Math.max(0, 1 - glfBoom / 1.5);
-    if (fa > 0.01) {
-      const fg = fctx.createRadialGradient(bx, by, 0, bx, by, fr);
-      fg.addColorStop(0, `rgba(255,252,226,${(fa * 0.95).toFixed(3)})`);
-      fg.addColorStop(0.25, `rgba(255,190,80,${(fa * 0.85).toFixed(3)})`);
-      fg.addColorStop(0.6, `rgba(226,86,32,${(fa * 0.55).toFixed(3)})`);
-      fg.addColorStop(1, "rgba(90,30,16,0)");
-      fctx.fillStyle = fg;
-      fctx.beginPath(); fctx.arc(bx, by, fr, 0, 6.3); fctx.fill();
+
+    /* 2. the flash, which is the whole screen and nothing else for a moment */
+    if (glfFlash > 0) {
+      glfFlash = Math.max(0, glfFlash - dt * 3.6);
+      const gf = Math.pow(glfFlash, 1.4);
+      fctx.fillStyle = `rgba(255,250,232,${gf.toFixed(3)})`;
+      fctx.fillRect(-W, -H, W * 3, H * 3);
     }
-    /* The rings going out. One slow fat one read as a stray arc drawn across
-       the whole frame rather than a blast — three quick thin ones that die
-       before they get big are what a shockwave looks like. */
+
+    /* 2b. and then every pixel of the page is inside the fire for a second */
+    const wash = t < 0.28 ? t / 0.28 : Math.max(0, 1 - (t - 0.28) / 2.6);
+    if (wash > 0.004) {
+      fctx.fillStyle = `rgba(232,116,34,${(wash * 0.62).toFixed(3)})`;
+      fctx.fillRect(-W, -H, W * 3, H * 3);
+    }
+
+    /* 3. rolling flame, boiling outward and lifting */
+    fctx.globalCompositeOperation = "lighter";
+    for (let i = glfFlames.length - 1; i >= 0; i--) {
+      const f = glfFlames[i];
+      f.t += dt;
+      if (f.t > f.life) { glfFlames.splice(i, 1); continue; }
+      if (f.t <= 0) continue;               /* not lit yet */
+      const p = f.t / f.life;
+      f.x += f.vx * dt; f.y += f.vy * dt;
+      f.vx *= 1 - dt * 1.5; f.vy = f.vy * (1 - dt * 1.5) - 210 * dt;   /* heat rises */
+      const rr = f.r * (0.35 + p * 1.55);
+      const al = (1 - p) * (1 - p) * 0.62;
+      const g2 = fctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, rr);
+      const hue = 44 - p * 34;
+      g2.addColorStop(0, `hsla(${hue + 12},100%,${(88 - p * 34).toFixed(0)}%,${(al).toFixed(3)})`);
+      g2.addColorStop(0.45, `hsla(${hue},100%,${(58 - p * 26).toFixed(0)}%,${(al * 0.68).toFixed(3)})`);
+      g2.addColorStop(1, "rgba(60,12,6,0)");
+      fctx.fillStyle = g2;
+      fctx.beginPath();
+      if (f.up) {
+        /* the bank along the ground is a flame, so it is taller than it is
+           wide and it flickers — a circle down there reads as a lamp */
+        const fk = 1 + Math.sin(glfT * 9 + f.x) * 0.10;
+        fctx.ellipse(f.x, f.y - rr * 0.34, rr * 0.66, rr * 1.30 * fk, 0, 0, 6.3);
+      } else fctx.arc(f.x, f.y, rr, 0, 6.3);
+      fctx.fill();
+    }
+
+    /* 4. sparks — drawn as streaks, because a dot has no speed */
+    for (let i = glfSparks.length - 1; i >= 0; i--) {
+      const s = glfSparks[i];
+      s.life -= dt;
+      if (s.life <= 0) { glfSparks.splice(i, 1); continue; }
+      s.vy += 640 * dt;
+      s.vx *= 1 - dt * 0.85; s.vy *= 1 - dt * 0.55;
+      const nx = s.x + s.vx * dt, ny = s.y + s.vy * dt;
+      const al = Math.min(1, s.life / 0.5);
+      /* the streak is the direction of travel, not the whole frame's worth
+         of it — a raw dt streak at these speeds draws diagonal rain */
+      const sp2 = Math.hypot(s.vx, s.vy) || 1;
+      const ln = Math.min(s.ln, sp2 * dt * 3);
+      fctx.strokeStyle = `hsla(${s.h},100%,${(45 + al * 19).toFixed(0)}%,${(al * 0.92).toFixed(3)})`;
+      fctx.lineWidth = s.w * (0.4 + al * 0.6);
+      fctx.lineCap = "round";
+      fctx.beginPath();
+      fctx.moveTo(nx - (s.vx / sp2) * ln, ny - (s.vy / sp2) * ln);
+      fctx.lineTo(nx, ny);
+      fctx.stroke();
+      s.x = nx; s.y = ny;
+    }
+    fctx.globalCompositeOperation = "source-over";
+
+    /* 5. the shockwave, near the start, and small */
     for (let k = 0; k < 3; k++) {
-      const tt = glfBoom - k * 0.09;
+      const tt = t - k * 0.07;
       if (tt <= 0) continue;
-      const ra = Math.max(0, 1 - tt / 0.42);
+      const ra = Math.max(0, 1 - tt / 0.46);
       if (ra <= 0.01) continue;
-      const rr = R * (0.06 + tt * 1.9);
-      fctx.strokeStyle = `rgba(255,242,206,${(ra * ra * 0.60).toFixed(3)})`;
-      fctx.lineWidth = Math.max(1, R * 0.024 * ra * ra);
-      fctx.beginPath(); fctx.arc(bx, by, rr, 0, 6.3); fctx.stroke();
+      fctx.strokeStyle = `rgba(255,246,220,${(ra * ra * 0.28).toFixed(3)})`;
+      fctx.lineWidth = Math.max(1, R * 0.016 * ra * ra);
+      fctx.beginPath(); fctx.arc(bx, by, R * (0.05 + tt * 0.7), 0, 6.3); fctx.stroke();
     }
-    /* and the smoke that stays */
-    for (let i = 0; i < 9; i++) {
-      const a = i * 0.7 + 0.3;
-      const d = Math.min(1, glfBoom / 2.2);
-      const px = bx + Math.cos(a) * R * 0.18 * d, py = by + Math.sin(a) * R * 0.14 * d - glfBoom * R * 0.05;
-      const pr = R * (0.05 + d * 0.09);
-      const pa = Math.max(0, 0.34 - glfBoom * 0.06);
-      const sg = fctx.createRadialGradient(px, py, 0, px, py, pr);
-      sg.addColorStop(0, `rgba(78,68,62,${pa.toFixed(3)})`);
-      sg.addColorStop(1, "rgba(54,46,42,0)");
-      fctx.fillStyle = sg;
-      fctx.beginPath(); fctx.arc(px, py, pr, 0, 6.3); fctx.fill();
+
+    /* 6. smoke, filling in behind it all */
+    for (const m of glfSmoke) {
+      m.t += dt;
+      if (m.t < m.d) continue;
+      const p = Math.min(1, (m.t - m.d) / m.life);
+      m.x += m.vx * dt; m.y += (m.vy - 34) * dt;
+      const rr = m.r * (0.30 + p * 1.9);
+      const al = Math.sin(p * Math.PI) * 0.20;
+      if (al <= 0.004) continue;
+      const g3 = fctx.createRadialGradient(m.x, m.y, 0, m.x, m.y, rr);
+      g3.addColorStop(0, `rgba(46,38,36,${al.toFixed(3)})`);
+      g3.addColorStop(1, "rgba(30,24,22,0)");
+      fctx.fillStyle = g3;
+      fctx.beginPath(); fctx.arc(m.x, m.y, rr, 0, 6.3); fctx.fill();
     }
   }
   for (let i = glfDebris.length - 1; i >= 0; i--) {
     const q = glfDebris[i];
     q.vy += 1100 * dt; q.x += q.vx * dt; q.y += q.vy * dt; q.life -= dt;
+    q.rot = (q.rot || 0) + (q.spin || 0) * dt;
     if (q.life <= 0) { glfDebris.splice(i, 1); continue; }
     fctx.globalAlpha = Math.min(1, q.life);
     fctx.fillStyle = q.c;
-    fctx.fillRect(q.x, q.y, q.s, q.s);
+    fctx.save();
+    fctx.translate(q.x, q.y); fctx.rotate(q.rot);
+    fctx.fillRect(-q.s * 0.5, -q.s * 0.5, q.s, q.s * 0.7);
+    fctx.restore();
     fctx.globalAlpha = 1;
   }
   for (let i = glfFeathers.length - 1; i >= 0; i--) {
@@ -11141,7 +11612,7 @@ function golfFrame(dt) {
     fctx.save();
     fctx.translate(f.x, f.y); fctx.rotate(f.rot);
     fctx.globalAlpha = Math.min(1, f.life / 1.2);
-    fctx.fillStyle = "rgba(238,236,230,0.9)";
+    fctx.fillStyle = f.burnt ? "rgba(46,38,36,0.88)" : "rgba(238,236,230,0.9)";
     fctx.beginPath();
     fctx.moveTo(0, -f.s);
     fctx.quadraticCurveTo(f.s * 0.6, 0, 0, f.s);
@@ -11150,65 +11621,161 @@ function golfFrame(dt) {
     fctx.restore();
   }
 
-  /* ---------- what to hit ---------- */
-  if (glfPhase === 1 || glfPhase === 3) {
+  /* ---------- a nudge ---------- */
+  if ((glfPhase === 1 || glfPhase === 3) && clubState === "rest") {
     glfIdle += dt;
-    if (glfIdle > 3.5) {
-      const i = glfPhase === 1 ? 0 : 1;
+    if (glfIdle > 4) {
+      const bxq = glfManX === null ? G.tx[glfAt] : glfManX, byq = glfBallY(G);
+      const { px, py, L } = clubRest(G, bxq, byq);
+      const rest = Math.atan2(byq - py, bxq - px);
       const p = 0.5 + 0.5 * Math.sin(glfT * 2.2);
-      const bx = G.tx[i], by = G.ground - G.teeH - G.br * 0.85;
-      fctx.strokeStyle = `rgba(255,240,196,${(0.09 + 0.15 * p).toFixed(3)})`;
-      fctx.lineWidth = Math.max(2.5, G.br * 0.22);
+      fctx.strokeStyle = `rgba(255,244,206,${(0.08 + 0.14 * p).toFixed(3)})`;
+      fctx.lineWidth = Math.max(2.5, G.br * 0.30);
       fctx.lineCap = "round";
       fctx.beginPath();
-      fctx.moveTo(bx - G.br * 3.4, by + G.br * 2.2 + p * G.br * 0.5);
-      fctx.quadraticCurveTo(bx - G.br * 2.4, by - G.br * 1.2, bx - G.br * 0.6, by);
+      fctx.arc(px, py, L, rest - 0.35 - p * 1.5, rest - 0.15, true);
       fctx.stroke();
     }
   }
 
   fctx.restore();
 
-  if (glfBoom > 4.6) {
+  /* the fire burns down into the dark, and something is waiting in it */
+  if (glfBoom > 2.2) {
     glfDone += dt;
     const f = Math.min(1, glfDone / 2.4);
-    fctx.fillStyle = `rgba(246,244,240,${(f * f).toFixed(3)})`;
+    fctx.fillStyle = `rgba(6,5,9,${(f * f).toFixed(3)})`;
     fctx.fillRect(0, 0, W, H);
     if (f >= 1) {
       glfOn = false; release("golf");
-      chainEnd = true; restT = 0;
       finCanvas.style.cursor = "";
+      startRiddle();
     }
   }
   natFrame(dt);
 }
 
-/* swing at whichever one is live */
-function glfHit(px, py) {
+/* One bird, one nine iron, and the end of the world. The old version of this
+   was a fireball in the corner of the sky; this one is supposed to be the
+   whole page. Everything is seeded here in one go so the first frame of the
+   blast is already full, rather than filling in over half a second. */
+function detonate(x, y, W, H) {
+  const R = Math.min(W, H), DIAG = Math.hypot(W, H);
+  const small = W < 620;
+  const N = small ? 0.5 : 1;                 /* phones get half the particles */
+
+  glfFlames = [];
+  for (let i = 0; i < Math.round(46 * N); i++) {
+    const a = Math.random() * 6.3;
+    const sp = (0.15 + Math.pow(Math.random(), 0.6) * 1.35) * DIAG * 0.62;
+    glfFlames.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.82,
+                     r: R * (0.045 + Math.random() * 0.115),
+                     t: -Math.random() * 0.10, life: 1.3 + Math.random() * 2.0 });
+  }
+  /* a second wave that blooms late, so the fire rolls on instead of snapping
+     back to a tidy golf course a second after the bang */
+  for (let i = 0; i < Math.round(34 * N); i++) {
+    const a = Math.random() * 6.3;
+    const sp = (0.10 + Math.random() * 0.75) * DIAG * 0.34;
+    glfFlames.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.7,
+                     r: R * (0.09 + Math.random() * 0.20),
+                     t: -(0.35 + Math.random() * 1.15), life: 1.6 + Math.random() * 2.2 });
+  }
+  /* and the ground burning, along the bottom of the frame */
+  for (let i = 0; i < Math.round(20 * N); i++) {
+    glfFlames.push({ x: Math.random() * W, y: H * (0.90 + Math.random() * 0.16),
+                     vx: (Math.random() - 0.5) * 40, vy: -30 - Math.random() * 60,
+                     r: R * (0.07 + Math.random() * 0.13), up: 1,
+                     t: -(0.5 + Math.random() * 2.2), life: 1.8 + Math.random() * 2.4 });
+  }
+  glfSparks = [];
+  for (let i = 0; i < Math.round(360 * N); i++) {
+    const a = Math.random() * 6.3;
+    const sp = (0.25 + Math.pow(Math.random(), 0.45) * 2.6) * DIAG * 0.85;
+    glfSparks.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 90,
+                     life: 0.5 + Math.random() * 2.3,
+                     w: Math.max(1.2, R * (0.0018 + Math.random() * 0.0055)),
+                     h: 14 + Math.random() * 34,            /* hue: ember, never white */
+                     ln: R * (0.010 + Math.random() * 0.026) });
+  }
+  glfSmoke = [];
+  for (let i = 0; i < Math.round(26 * N); i++) {
+    const a = Math.random() * 6.3, sp = (0.2 + Math.random()) * DIAG * 0.28;
+    glfSmoke.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.7,
+                    r: R * (0.10 + Math.random() * 0.16),
+                    t: 0, d: 0.12 + Math.random() * 0.7, life: 2.6 + Math.random() * 2.4 });
+  }
+  glfDebris = [];
+  for (let i = 0; i < Math.round(150 * N); i++) {
+    const a = Math.random() * 6.3, sp = 200 + Math.random() * 1700;
+    glfDebris.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+                     life: 0.9 + Math.random() * 2.0,
+                     rot: Math.random() * 6.3, spin: (Math.random() - 0.5) * 14,
+                     s: R * (0.004 + Math.random() * 0.014),
+                     c: `hsl(${(14 + Math.random() * 34) | 0},${(72 + Math.random() * 26) | 0}%,${(46 + Math.random() * 34) | 0}%)` });
+  }
+  glfFeathers = [];
+  for (let i = 0; i < Math.round(40 * N); i++) {
+    const a = Math.random() * 6.3, sp = 60 + Math.random() * 520;
+    /* most of them come out charred — a snowstorm of clean white feathers
+       reads as confetti, which is a different feeling entirely */
+    const burnt = Math.random() < 0.62;
+    glfFeathers.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 90,
+                       rot: Math.random() * 6.3, spin: (Math.random() - 0.5) * 9,
+                       life: 3.0 + Math.random() * 3.0, burnt,
+                       s: R * (0.008 + Math.random() * 0.014) });
+  }
+}
+
+function puff(x, y, G) {
+  for (let i = 0; i < 9; i++) {
+    const a = -Math.PI * (0.15 + Math.random() * 0.7);
+    const sp = 60 + Math.random() * 220;
+    glfDust.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+                   life: 0.35 + Math.random() * 0.4,
+                   s: Math.max(1.5, G.br * (0.12 + Math.random() * 0.18)) });
+  }
+}
+
+let clubA0 = 0, glfStruck = 0;
+function glfSwingHit(i, power) {
   const G = glfGeom();
-  const i = glfPhase === 1 ? 0 : glfPhase === 3 ? 1 : -1;
-  if (i < 0) return;
   const b = glfBalls[i];
-  if (!b || b.gone || !b.on) return;
-  const bx = b.x, by = b.y;
-  if (Math.hypot(px - bx, py - by) > G.br * 6.5) return;
+  if (!b || b.gone) return;
   b.gone = true;
   glfIdle = 0;
+  puff(b.x, b.y + G.br, G);
   if (i === 0) {
-    /* KORY. It goes about four feet sideways and stops. */
-    glfShot = { x: bx, y: by, vx: -260 - Math.random() * 90, vy: -180, t: 0, shank: true, rest: 0 };
+    /* KORY. Off the heel, low and left, two bounces and done. It does not
+       matter how hard you hit it. */
+    glfShot = { x: b.x, y: b.y, vx: -(300 + power * 120), vy: -220 - power * 90,
+                t: 0, shank: true, rest: 0 };
     glfPhase = 2;
     shankWhiff();
   } else {
-    glfShot = { x: bx, y: by, x0: bx, y0: by, vx: 210, vy: -1500, t: 0, p: 0, shank: false };
+    glfShot = { x: b.x, y: b.y, x0: b.x, y0: b.y, t: 0, p: 0, shank: false, tr: [] };
     glfPhase = 4;
-    goodStrike();
+    goodStrike(power);
   }
 }
+
+/* hold to take it back, let go to swing */
 window.addEventListener("pointerdown", (e) => {
   if (!glfOn) return;
-  glfHit(e.clientX, e.clientY);
+  if (glfPhase !== 1 && glfPhase !== 3) return;
+  if (clubState !== "rest") return;
+  clubState = "back"; clubHeld = 0; glfIdle = 0;
+  windUp();
 }, { passive: true });
+function glfRelease() {
+  if (!glfOn || clubState !== "back") return;
+  /* if he is still walking across when you let go, he is there now */
+  if (glfWalking) { glfManX = glfGeom().tx[glfAt]; glfWalking = false; }
+  clubA0 = clubA;
+  clubState = "down"; clubP = 0; glfStruck = 0;
+}
+window.addEventListener("pointerup", glfRelease);
+window.addEventListener("pointercancel", glfRelease);
 
 /* ---------- sound ---------- */
 function courseRoom() {
@@ -11216,17 +11783,51 @@ function courseRoom() {
   const t0 = ac.currentTime;
   const s = ac.createBufferSource(); s.buffer = noise(ac); s.loop = true;
   const bp = ac.createBiquadFilter(); bp.type = "bandpass";
-  bp.frequency.value = 420; bp.Q.value = 0.4;
+  bp.frequency.value = 400; bp.Q.value = 0.4;
   const g = ac.createGain();
   g.gain.setValueAtTime(0.0001, t0);
-  g.gain.linearRampToValueAtTime(0.038, t0 + 4);
+  g.gain.linearRampToValueAtTime(0.036, t0 + 4);
   const lfo = ac.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 0.08;
-  const lg = ac.createGain(); lg.gain.value = 0.014;
+  const lg = ac.createGain(); lg.gain.value = 0.013;
   lfo.connect(lg); lg.connect(g.gain); lfo.start(t0);
   s.connect(bp); bp.connect(g); g.connect(BUS);
   s.start(t0);
   hold("golf", { gain: g, src: s });
   hold("golf", { src: lfo });
+  /* something in the trees */
+  const tick = () => {
+    if (!glfOn) return;
+    const a2 = audio(); if (!a2) return;
+    const tt = a2.currentTime;
+    for (let i = 0; i < 2 + ((Math.random() * 2) | 0); i++) {
+      const t = tt + i * (0.09 + Math.random() * 0.05);
+      const o = a2.createOscillator(); o.type = "sine";
+      o.frequency.setValueAtTime(2600 + Math.random() * 1800, t);
+      o.frequency.exponentialRampToValueAtTime(1800 + Math.random() * 900, t + 0.06);
+      const gg = a2.createGain();
+      gg.gain.setValueAtTime(0.0001, t);
+      gg.gain.linearRampToValueAtTime(0.012, t + 0.01);
+      gg.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+      o.connect(gg); gg.connect(at(Math.random() * window.innerWidth) || BUS);
+      o.start(t); o.stop(t + 0.14);
+    }
+    setTimeout(tick, 2600 + Math.random() * 5200);
+  };
+  setTimeout(tick, 1800);
+}
+function windUp() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 1.1;
+  bp.frequency.setValueAtTime(400, t0);
+  bp.frequency.exponentialRampToValueAtTime(900, t0 + 0.5);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(0.030, t0 + 0.25);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.7);
+  s.connect(bp); bp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 0.75);
 }
 function teeDrop(px) {
   const ac = audio(); if (!ac) return;
@@ -11242,58 +11843,56 @@ function teeDrop(px) {
 function shankWhiff() {
   const ac = audio(); if (!ac) return;
   const t0 = ac.currentTime;
-  /* a dull one. All of the click and none of the ring. */
   const s = ac.createBufferSource(); s.buffer = noise(ac);
-  const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 900;
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 800;
   const g = ac.createGain();
-  g.gain.setValueAtTime(0.20, t0);
-  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.10);
+  g.gain.setValueAtTime(0.24, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.11);
   s.connect(lp); lp.connect(g); g.connect(BUS);
-  s.start(t0); s.stop(t0 + 0.12);
+  s.start(t0); s.stop(t0 + 0.13);
   const o = ac.createOscillator(); o.type = "triangle";
-  o.frequency.setValueAtTime(220, t0);
-  o.frequency.exponentialRampToValueAtTime(96, t0 + 0.16);
+  o.frequency.setValueAtTime(200, t0);
+  o.frequency.exponentialRampToValueAtTime(88, t0 + 0.18);
   const g2 = ac.createGain();
-  g2.gain.setValueAtTime(0.070, t0);
-  g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.24);
-  o.connect(g2); g2.connect(BUS); o.start(t0); o.stop(t0 + 0.26);
+  g2.gain.setValueAtTime(0.075, t0);
+  g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.26);
+  o.connect(g2); g2.connect(BUS); o.start(t0); o.stop(t0 + 0.28);
 }
 function shankThud(px) {
   const ac = audio(); if (!ac) return;
   const t0 = ac.currentTime;
   const s = ac.createBufferSource(); s.buffer = noise(ac);
-  const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 420;
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 380;
   const g = ac.createGain();
-  g.gain.setValueAtTime(0.10, t0);
+  g.gain.setValueAtTime(0.085, t0);
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
   s.connect(lp); lp.connect(g); g.connect(at(px) || BUS);
   s.start(t0); s.stop(t0 + 0.18);
 }
-function goodStrike() {
+function goodStrike(power) {
   const ac = audio(); if (!ac) return;
   const t0 = ac.currentTime;
-  /* the one you feel in your hands */
+  const v = 0.18 + power * 0.22;
   const s = ac.createBufferSource(); s.buffer = noise(ac);
-  const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 1.4;
-  bp.frequency.setValueAtTime(2600, t0);
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 1.5;
+  bp.frequency.setValueAtTime(2800, t0);
   bp.frequency.exponentialRampToValueAtTime(900, t0 + 0.10);
   const g = ac.createGain();
-  g.gain.setValueAtTime(0.30, t0);
+  g.gain.setValueAtTime(v * 1.6, t0);
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.14);
   s.connect(bp); bp.connect(g); g.connect(BUS);
   s.start(t0); s.stop(t0 + 0.16);
-  for (const [f, v] of [[880, 0.055], [1320, 0.030]]) {
+  for (const [f, vv] of [[920, v * 0.30], [1380, v * 0.16]]) {
     const o = ac.createOscillator(); o.type = "sine";
     o.frequency.setValueAtTime(f, t0);
     const g2 = ac.createGain();
-    g2.gain.setValueAtTime(v, t0);
+    g2.gain.setValueAtTime(vv, t0);
     g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.5);
     o.connect(g2); g2.connect(BUS); o.start(t0); o.stop(t0 + 0.52);
   }
-  /* and the whistle going away from you */
   const w = ac.createBufferSource(); w.buffer = noise(ac);
   const wb = ac.createBiquadFilter(); wb.type = "bandpass"; wb.Q.value = 6;
-  wb.frequency.setValueAtTime(1800, t0 + 0.05);
+  wb.frequency.setValueAtTime(1900, t0 + 0.05);
   wb.frequency.exponentialRampToValueAtTime(520, t0 + 1.5);
   const wg = ac.createGain();
   wg.gain.setValueAtTime(0.0001, t0 + 0.05);
@@ -11305,7 +11904,6 @@ function goodStrike() {
 function kaboom() {
   const ac = audio(); if (!ac) return;
   const t0 = ac.currentTime;
-  /* the crack */
   const c = ac.createBufferSource(); c.buffer = noise(ac);
   const chp = ac.createBiquadFilter(); chp.type = "highpass"; chp.frequency.value = 900;
   const cg = ac.createGain();
@@ -11313,7 +11911,6 @@ function kaboom() {
   cg.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.30);
   c.connect(chp); chp.connect(cg); cg.connect(BUS);
   c.start(t0); c.stop(t0 + 0.32);
-  /* the body of it */
   const s = ac.createBufferSource(); s.buffer = noise(ac);
   const lp = ac.createBiquadFilter(); lp.type = "lowpass";
   lp.frequency.setValueAtTime(1400, t0);
@@ -11323,7 +11920,6 @@ function kaboom() {
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.8);
   s.connect(lp); lp.connect(g); g.connect(BUS);
   s.start(t0); s.stop(t0 + 3);
-  /* and the thing you feel rather than hear */
   for (const [f, v, d] of [[42, 0.55, 2.6], [28, 0.40, 3.2], [63, 0.30, 1.8]]) {
     const o = ac.createOscillator(); o.type = "sine";
     o.frequency.setValueAtTime(f * 2.4, t0);
@@ -11333,7 +11929,6 @@ function kaboom() {
     g2.gain.exponentialRampToValueAtTime(0.0001, t0 + d);
     o.connect(g2); g2.connect(BUS); o.start(t0); o.stop(t0 + d + 0.1);
   }
-  /* the rumble coming back off the hills a beat later */
   const r = ac.createBufferSource(); r.buffer = noise(ac);
   const rl = ac.createBiquadFilter(); rl.type = "lowpass"; rl.frequency.value = 220;
   const rg = ac.createGain();
@@ -11342,6 +11937,748 @@ function kaboom() {
   rg.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.6);
   r.connect(rl); rl.connect(rg); rg.connect(BUS);
   r.start(t0 + 0.45); r.stop(t0 + 3.8);
+}
+
+/* ================= the last room =================
+   Everything up to here has been wordless. This is the one place that
+   talks, because it is the last thing and it is a joke, and a joke that
+   nobody can read is not a joke.
+
+   A riddle, eight letters, one at a time and in order. Get one right and
+   it locks and lights; get one wrong and it melts off the line. The thing
+   asking the riddle takes a hit each time you are right, and when the word
+   is finished it goes the same way the bird did.
+
+   Then a trophy, with your name on it. */
+
+const RID_Q = "What do you get when you mix a hairbee scarebee with a hair crazen?";
+const RID_A = "MINKLINK";
+const RID_GAP = 4;                     /* the space falls before this letter */
+
+let ridOn = false, ridT = 0, ridIn = 0, ridI = 0;
+let ridGot = [], ridGlow = [], ridMelt = [], ridEmber = [];
+let ridHit = 0, ridShake = 0, ridWrong = 0, ridDead = 0, ridSolved = 0;
+let ridPrompt = 0, ridBossSeed = 0;
+const kbEl = document.getElementById("kb");
+
+function ridGeom() {
+  const W = window.innerWidth, H = window.innerHeight;
+  /* The row is 8 slots, a word gap, and a half-slot of rule either end.
+     Size it from that span, not from a guess, or it runs off a phone. */
+  const cell = Math.min(W * 0.084, H * 0.105, 92);
+  const gapW = cell * 0.80;
+  const row = cell * (1.30 * (RID_A.length - 1) + 0.72) + gapW;
+  return { W, H, cell, gapW, row,
+           x0: (W - row) / 2 - cell * 0.14,
+           y: H * 0.755,
+           bossY: H * 0.425,
+           bossR: Math.min(W * 0.32, H * 0.245) };
+}
+function ridSlotX(G, i) {
+  return G.x0 + i * (G.cell * 1.30) + (i >= RID_GAP ? G.gapW : 0) + G.cell * 0.5;
+}
+
+function startRiddle() {
+  mark("boss");
+  if (ridOn) return;
+  ridOn = true; ridT = 0; ridIn = 0; ridI = 0;
+  ridGot = []; ridGlow = []; ridMelt = []; ridEmber = [];
+  ridHit = 0; ridShake = 0; ridWrong = 0; ridDead = 0; ridSolved = 0;
+  ridPrompt = 0; ridBossSeed = Math.random() * 100;
+  finCanvas.style.background = "#05060a";
+  finCanvas.style.display = "block";
+  finCanvas.style.cursor = "text";
+  const G = ridGeom();
+  for (let i = 0; i < 60; i++)
+    ridEmber.push({ x: Math.random() * G.W, y: G.H * (0.55 + Math.random() * 0.55),
+                    v: 14 + Math.random() * 46, ph: Math.random() * 6.3,
+                    s: 1 + Math.random() * 2.4, a: 0.2 + Math.random() * 0.7 });
+  bossRoom();
+  ridFocus();
+}
+
+/* A phone will not raise a keyboard for a canvas. It will for a focused
+   input, so there is a real one, one character wide, hidden under the page. */
+function ridFocus() {
+  if (!kbEl) return;
+  try { kbEl.style.pointerEvents = "auto"; kbEl.focus({ preventScroll: true }); } catch (e) {}
+}
+if (kbEl) {
+  kbEl.addEventListener("input", () => {
+    const v = (kbEl.value || "").toUpperCase();
+    kbEl.value = "";
+    if (ridOn && /^[A-Z]$/.test(v)) ridKey(v);
+  });
+  kbEl.addEventListener("blur", () => { if (ridOn && !ridSolved) setTimeout(ridFocus, 60); });
+}
+window.addEventListener("keydown", (e) => {
+  if (!ridOn || ridSolved) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (/^[a-zA-Z]$/.test(e.key)) { e.preventDefault(); ridKey(e.key.toUpperCase()); }
+});
+window.addEventListener("pointerdown", () => { if (ridOn && !ridSolved) ridFocus(); },
+                        { passive: true });
+
+function ridKey(ch) {
+  if (ridI >= RID_A.length || ridSolved) return;
+  const G = ridGeom();
+  ridPrompt = 0;
+  if (ch !== RID_A[ridI]) {
+    /* Bake the glyph once so it can be melted a strip at a time. Redrawing
+       text under a scale per slice gives you a barcode, not a letter. */
+    const fs = G.cell * 0.72;
+    const c = document.createElement("canvas");
+    const cw = Math.ceil(G.cell * 1.4), chh = Math.ceil(G.cell * 1.5);
+    c.width = cw; c.height = chh;
+    const cx2 = c.getContext("2d");
+    cx2.font = `700 ${Math.round(fs)}px Georgia, "Times New Roman", serif`;
+    cx2.textAlign = "center"; cx2.textBaseline = "alphabetic";
+    const wg = cx2.createLinearGradient(0, chh * 0.22, 0, chh * 0.76);
+    wg.addColorStop(0, "#f2765c");
+    wg.addColorStop(0.6, "#d24a34");
+    wg.addColorStop(1, "#7c2a1e");
+    cx2.fillStyle = wg;
+    cx2.fillText(ch, cw / 2, chh * 0.72);
+    ridMelt.push({ ch, i: ridI, t: 0, x: ridSlotX(G, ridI), y: G.y,
+                   img: c, cw, chh, base: chh * 0.72 });
+    ridWrong = 1; ridShake = Math.max(ridShake, 0.20);
+    ridBad();
+    return;
+  }
+  if (ch === RID_A[ridI]) {
+    ridGot[ridI] = ch;
+    ridGlow[ridI] = 1.6;
+    ridGood(ridI);
+    ridHit = 1; ridShake = Math.max(ridShake, 0.32);
+    /* a bit of it burns off */
+    for (let i = 0; i < 22; i++) {
+      const a = Math.random() * 6.3;
+      ridEmber.push({ x: G.W * 0.5 + Math.cos(a) * G.bossR * 0.8,
+                      y: G.bossY + Math.sin(a) * G.bossR * 0.6,
+                      v: 90 + Math.random() * 190, ph: Math.random() * 6.3,
+                      s: 1 + Math.random() * 2.6, a: 0.9, hot: 1 });
+    }
+    ridI++;
+    if (ridI >= RID_A.length) { ridSolved = 1; ridDead = 0.0001; bossDie(); }
+  }
+}
+
+/* --- the thing that asks --- */
+function ridBoss(G, dt) {
+  const cx = G.W * 0.5, cy = G.bossY;
+  const breathe = 1 + Math.sin(ridT * 0.9) * 0.022;
+  const flinch = ridHit > 0 ? ridHit * 0.10 : 0;
+  const R = G.bossR * breathe * (1 - flinch);
+  const dying = ridDead > 0 ? Math.min(1, ridDead / 1.5) : 0;
+
+  fctx.save();
+  fctx.globalAlpha = Math.min(1, ridIn) * (1 - dying);
+  fctx.translate(cx, cy + flinch * G.bossR * 0.25);
+
+  /* the glow it sits in */
+  const gl = fctx.createRadialGradient(0, 0, 0, 0, 0, R * 2.4);
+  gl.addColorStop(0, `rgba(196,64,26,${(0.20 + ridHit * 0.34).toFixed(3)})`);
+  gl.addColorStop(0.5, "rgba(120,34,18,0.09)");
+  gl.addColorStop(1, "rgba(40,10,8,0)");
+  fctx.fillStyle = gl;
+  fctx.beginPath(); fctx.arc(0, 0, R * 2.4, 0, 6.3); fctx.fill();
+
+  /* a shaggy mass — sampled around, so the edge is fur and not a circle */
+  const N = 96;
+  const gone = ridI / RID_A.length;
+  fctx.beginPath();
+  for (let i = 0; i <= N; i++) {
+    const a = (i / N) * 6.283185;
+    const n = Math.sin(a * 7 + ridBossSeed) * 0.055
+            + Math.sin(a * 13 - ridT * 0.7 + ridBossSeed) * 0.038
+            + Math.sin(a * 23 + ridT * 1.6) * 0.026;
+    /* the more of the word you have, the more ragged it gets */
+    const bite = gone * 0.16 * (0.5 + 0.5 * Math.sin(a * 5 + ridBossSeed * 3));
+    const rr = R * (1 + n - bite) * (a > 3.6 && a < 5.8 ? 1.10 : 1);
+    const px = Math.cos(a) * rr, py = Math.sin(a) * rr * 0.86;
+    i ? fctx.lineTo(px, py) : fctx.moveTo(px, py);
+  }
+  fctx.closePath();
+  const bg = fctx.createLinearGradient(0, -R, 0, R);
+  bg.addColorStop(0, "#0a0c12");
+  bg.addColorStop(0.7, "#100b0e");
+  bg.addColorStop(1, "#2a1210");
+  fctx.fillStyle = bg;
+  fctx.fill();
+  fctx.strokeStyle = `rgba(214,96,40,${(0.16 + ridHit * 0.5).toFixed(3)})`;
+  fctx.lineWidth = Math.max(1, R * 0.012);
+  fctx.stroke();
+
+  /* two horns */
+  fctx.fillStyle = "#0b0d12";
+  for (const s of [-1, 1]) {
+    fctx.beginPath();
+    fctx.moveTo(s * R * 0.46, -R * 0.62);
+    fctx.quadraticCurveTo(s * R * 0.86, -R * 1.32, s * R * 0.70, -R * 1.52);
+    fctx.quadraticCurveTo(s * R * 0.60, -R * 1.10, s * R * 0.26, -R * 0.70);
+    fctx.closePath(); fctx.fill();
+  }
+
+  /* eyes, which do not blink at the same time */
+  const hurt = 1 - gone * 0.55;
+  for (const s of [-1, 1]) {
+    const bl = Math.max(0, Math.sin(ridT * 0.8 + (s > 0 ? 1.4 : 0)) - 0.965) * 28;
+    const oy = -R * 0.10, ox = s * R * 0.34;
+    const er = R * 0.115 * (1 - Math.min(1, bl));
+    if (er <= 0.4) continue;
+    const eg = fctx.createRadialGradient(ox, oy, 0, ox, oy, er * 3.4);
+    eg.addColorStop(0, `rgba(255,214,120,${(0.95 * hurt + ridHit * 0.05).toFixed(3)})`);
+    eg.addColorStop(0.22, `rgba(255,132,40,${(0.72 * hurt).toFixed(3)})`);
+    eg.addColorStop(1, "rgba(200,60,20,0)");
+    fctx.fillStyle = eg;
+    fctx.beginPath(); fctx.arc(ox, oy, er * 3.4, 0, 6.3); fctx.fill();
+    fctx.fillStyle = `rgba(255,244,214,${(0.92 * hurt).toFixed(3)})`;
+    fctx.beginPath(); fctx.ellipse(ox, oy, er, er * 1.25, 0, 0, 6.3); fctx.fill();
+    fctx.fillStyle = "#160604";
+    fctx.beginPath();
+    fctx.ellipse(ox, oy, er * 0.30, er * 1.05, 0, 0, 6.3);
+    fctx.fill();
+  }
+  fctx.restore();
+}
+
+function riddleFrame(dt) {
+  const W = window.innerWidth, H = window.innerHeight;
+  const G = ridGeom();
+  ridT += dt;
+  ridIn = Math.min(1.6, ridIn + dt * 0.75);
+  ridHit = Math.max(0, ridHit - dt * 2.6);
+  ridWrong = Math.max(0, ridWrong - dt * 1.6);
+  ridShake = Math.max(0, ridShake - dt * 1.1);
+  hardClear(finCanvas, fctx);
+
+  fctx.save();
+  if (ridShake > 0.001)
+    fctx.translate((Math.random() - 0.5) * ridShake * W * 0.03,
+                   (Math.random() - 0.5) * ridShake * H * 0.03);
+
+  /* the room: still warm at the floor from what just happened up the hole */
+  const sky = fctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, "#05060a");
+  sky.addColorStop(0.55, "#0a0910");
+  sky.addColorStop(0.86, "#1a0d0d");
+  sky.addColorStop(1, "#2c120c");
+  fctx.fillStyle = sky; fctx.fillRect(0, 0, W, H);
+  const fl = fctx.createRadialGradient(W * 0.5, H * 1.06, 0, W * 0.5, H * 1.06, H * 0.72);
+  fl.addColorStop(0, `rgba(220,96,36,${(0.24 + Math.sin(ridT * 1.3) * 0.03 + ridHit * 0.2).toFixed(3)})`);
+  fl.addColorStop(1, "rgba(140,50,20,0)");
+  fctx.fillStyle = fl; fctx.fillRect(0, H * 0.4, W, H * 0.6);
+
+  ridBoss(G, dt);
+
+  /* embers off the fire that got us here */
+  for (let i = ridEmber.length - 1; i >= 0; i--) {
+    const e = ridEmber[i];
+    e.y -= e.v * dt;
+    e.x += Math.sin(ridT * 0.8 + e.ph) * 16 * dt;
+    if (e.hot) { e.v *= 1 - dt * 0.5; e.a -= dt * 0.5; }
+    if (e.y < -20 || e.a <= 0.02) {
+      if (e.hot) { ridEmber.splice(i, 1); continue; }
+      e.y = H + 10; e.x = Math.random() * W;
+    }
+    const tw = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(ridT * 3.1 + e.ph));
+    fctx.fillStyle = `rgba(255,${(150 + tw * 70) | 0},${(70 + tw * 50) | 0},${(e.a * tw * 0.85).toFixed(3)})`;
+    fctx.beginPath(); fctx.arc(e.x, e.y, e.s, 0, 6.3); fctx.fill();
+  }
+
+  /* the question */
+  const qa = Math.min(1, ridIn * 1.1) * (ridSolved ? Math.max(0, 1 - ridDead / 1.2) : 1);
+  if (qa > 0.01) {
+    const fs = Math.min(W * 0.042, H * 0.036, 27);
+    fctx.font = `400 ${Math.round(fs)}px Georgia, "Times New Roman", serif`;
+    fctx.textAlign = "center"; fctx.textBaseline = "middle";
+    const lines = wrapLines(RID_Q, W * 0.82);
+    const top = H * 0.115 - (lines.length - 1) * fs * 0.72;
+    for (let i = 0; i < lines.length; i++) {
+      fctx.fillStyle = `rgba(238,226,198,${(qa * 0.86).toFixed(3)})`;
+      fctx.fillText(lines[i], W * 0.5, top + i * fs * 1.44);
+    }
+  }
+
+  /* the eight slots */
+  const sa = Math.min(1, Math.max(0, ridIn - 0.3) * 1.4) *
+             (ridSolved ? Math.max(0, 1 - ridDead / 1.2) : 1);
+  if (sa > 0.01) {
+    const fs = G.cell * 0.72;
+    fctx.textAlign = "center"; fctx.textBaseline = "alphabetic";
+    for (let i = 0; i < RID_A.length; i++) {
+      const x = ridSlotX(G, i);
+      const has = !!ridGot[i];
+      const gw = ridGlow[i] = Math.max(0, (ridGlow[i] || 0) - dt * 1.5);
+      /* the rule under it */
+      fctx.strokeStyle = has
+        ? `rgba(126,226,146,${(sa * (0.72 + gw * 0.28)).toFixed(3)})`
+        : `rgba(238,220,182,${(sa * (i === ridI ? 0.82 : 0.44)).toFixed(3)})`;
+      fctx.lineWidth = Math.max(2.5, G.cell * (has ? 0.075 : 0.058));
+      fctx.lineCap = "round";
+      fctx.beginPath();
+      fctx.moveTo(x - G.cell * 0.36, G.y + G.cell * 0.20);
+      fctx.lineTo(x + G.cell * 0.36, G.y + G.cell * 0.20);
+      fctx.stroke();
+      if (has) {
+        fctx.font = `700 ${Math.round(fs)}px Georgia, "Times New Roman", serif`;
+        if (gw > 0.01) {
+          fctx.shadowColor = "rgba(120,240,150,0.95)";
+          fctx.shadowBlur = G.cell * (0.35 + gw * 0.9);
+        }
+        const gq = Math.min(1, gw);
+        fctx.fillStyle = `rgba(${(140 + gq * 70) | 0},${(238 + gq * 14) | 0},${(160 + gq * 50) | 0},${sa.toFixed(3)})`;
+        fctx.fillText(ridGot[i], x, G.y);
+        fctx.shadowBlur = 0;
+      } else if (i === ridI && !ridSolved) {
+        /* the caret, so you know where the next one lands */
+        const p = 0.5 + 0.5 * Math.sin(ridT * 3.4);
+        fctx.fillStyle = `rgba(255,232,180,${(sa * (0.16 + p * 0.34)).toFixed(3)})`;
+        fctx.fillRect(x - G.cell * 0.28, G.y + G.cell * 0.10, G.cell * 0.56, G.cell * 0.055);
+      }
+    }
+  }
+
+  /* the wrong ones, running off the line */
+  for (let i = ridMelt.length - 1; i >= 0; i--) {
+    const m = ridMelt[i];
+    m.t += dt;
+    if (m.t > 1.5) { ridMelt.splice(i, 1); continue; }
+    const p = m.t / 1.5;
+    /* It does not fall off — it sags. Each horizontal strip of the glyph
+       runs a little further than the one above it, so the bottom goes
+       first and the whole shape draws out into a thread and lets go. */
+    const step = 2;
+    const dx0 = m.x - m.cw / 2, dy0 = m.y - m.base;
+    fctx.save();
+    for (let sy = 0; sy < m.chh; sy += step) {
+      const f = sy / m.chh;
+      const run = Math.pow(p, 1.4) * G.cell * (0.35 + Math.pow(f, 1.6) * 4.6);
+      const al = Math.max(0, (1 - p * p) * (1 - f * 0.55));
+      if (al <= 0.012) continue;
+      const wob = Math.sin(sy * 0.5 + m.t * 5 + m.i) * G.cell * 0.02 * p;
+      const sq = 1 - Math.pow(p, 1.3) * (0.10 + f * 0.55);
+      fctx.globalAlpha = al * 0.95;
+      /* tint it as it goes, from a wrong red to a cold ash */
+      fctx.drawImage(m.img, 0, sy, m.cw, step,
+                     dx0 + m.cw * (1 - sq) / 2 + wob, dy0 + sy + run,
+                     m.cw * sq, step + p * 1.6);
+    }
+    fctx.restore();
+  }
+
+  /* a nudge, if nobody types */
+  if (!ridSolved && ridIn > 1.4) {
+    ridPrompt += dt;
+    if (ridPrompt > 1.6) {
+      const p = 0.5 + 0.5 * Math.sin(ridT * 1.8);
+      const fs = Math.min(W * 0.030, 15);
+      fctx.font = `400 ${Math.round(fs)}px Georgia, "Times New Roman", serif`;
+      fctx.textAlign = "center"; fctx.textBaseline = "middle";
+      fctx.fillStyle = `rgba(226,206,166,${(0.13 + p * 0.22).toFixed(3)})`;
+      fctx.fillText("type a letter", W * 0.5, G.y + G.cell * 1.15);
+    }
+  }
+
+  /* it goes the way the bird went */
+  if (ridDead > 0) {
+    ridDead += dt;
+    if (ridDead > 0.5 && ridEmber.length < 260 && ridDead < 2.2) {
+      for (let i = 0; i < 5; i++) {
+        const a = Math.random() * 6.3;
+        ridEmber.push({ x: W * 0.5 + Math.cos(a) * G.bossR * (0.3 + Math.random()),
+                        y: G.bossY + Math.sin(a) * G.bossR * 0.8,
+                        v: 60 + Math.random() * 260, ph: Math.random() * 6.3,
+                        s: 1 + Math.random() * 3, a: 1, hot: 1 });
+      }
+    }
+    const f = Math.max(0, Math.min(1, (ridDead - 1.2) / 1.6));
+    if (f > 0) {
+      fctx.fillStyle = `rgba(6,5,9,${(f * f).toFixed(3)})`;
+      fctx.fillRect(-W, -H, W * 3, H * 3);
+    }
+    if (ridDead > 3.4) { ridOn = false; release("boss", 1.6); startTrophy(); }
+  }
+
+  fctx.restore();
+  natFrame(dt);
+}
+
+/* the cheapest word wrap that reads right */
+function wrapLines(s, max) {
+  const words = s.split(" "), out = [];
+  let line = "";
+  for (const w of words) {
+    const t = line ? line + " " + w : w;
+    if (fctx.measureText(t).width > max && line) { out.push(line); line = w; }
+    else line = t;
+  }
+  if (line) out.push(line);
+  return out;
+}
+
+/* ================= the trophy ================= */
+let cupOn = false, cupT = 0, cupName = "", cupSpark = [], cupShow = 0;
+const cupEl = document.getElementById("cup");
+const cupNameEl = document.getElementById("cupname");
+const cupSaidEl = document.getElementById("cupsaid");
+
+function startTrophy() {
+  mark("trophy");
+  if (cupOn) return;
+  cupOn = true; cupT = 0; cupShow = 0; cupSpark = [];
+  finCanvas.style.background = "#07070c";
+  finCanvas.style.display = "block";
+  finCanvas.style.cursor = "";
+  if (kbEl) { kbEl.style.pointerEvents = "none"; try { kbEl.blur(); } catch (e) {} }
+  if (cupEl) cupEl.hidden = false;
+  cupChime();
+  setTimeout(() => { try { cupNameEl && cupNameEl.focus({ preventScroll: true }); } catch (e) {} }, 1400);
+}
+
+function trophyFrame(dt) {
+  const W = window.innerWidth, H = window.innerHeight;
+  cupT += dt;
+  cupShow = Math.min(1, cupShow + dt * 0.6);
+  hardClear(finCanvas, fctx);
+  drawTrophyCard(fctx, W, H, cupName, cupT, cupShow);
+
+  /* a little glitter, on and off */
+  if (cupSpark.length < 46 && Math.random() < dt * 22) {
+    const R = Math.min(W, H);
+    cupSpark.push({ x: W * 0.5 + (Math.random() - 0.5) * R * 0.62,
+                    y: H * 0.46 + (Math.random() - 0.5) * R * 0.62,
+                    t: 0, life: 0.7 + Math.random() * 1.1,
+                    s: R * (0.004 + Math.random() * 0.008) });
+  }
+  for (let i = cupSpark.length - 1; i >= 0; i--) {
+    const s = cupSpark[i];
+    s.t += dt;
+    if (s.t > s.life) { cupSpark.splice(i, 1); continue; }
+    const p = s.t / s.life, a = Math.sin(p * Math.PI) * 0.85 * cupShow;
+    fctx.strokeStyle = `rgba(255,238,190,${a.toFixed(3)})`;
+    fctx.lineWidth = Math.max(1, s.s * 0.22);
+    fctx.lineCap = "round";
+    fctx.beginPath();
+    fctx.moveTo(s.x - s.s, s.y); fctx.lineTo(s.x + s.s, s.y);
+    fctx.moveTo(s.x, s.y - s.s); fctx.lineTo(s.x, s.y + s.s);
+    fctx.stroke();
+  }
+  natFrame(dt);
+}
+
+/* Drawn into whichever context it is handed, so the picture you share is
+   the same picture you are looking at. */
+function drawTrophyCard(x, W, H, name, t, show) {
+  const R = Math.min(W, H);
+  const cx = W * 0.5, cy = H * 0.44;
+  const s = R * 0.30;
+  t = t || 0; show = show === undefined ? 1 : show;
+
+  const bg = x.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, "#07070c");
+  bg.addColorStop(0.62, "#0d0b12");
+  bg.addColorStop(1, "#171019");
+  x.fillStyle = bg; x.fillRect(0, 0, W, H);
+  const halo = x.createRadialGradient(cx, cy, 0, cx, cy, R * 0.86);
+  halo.addColorStop(0, `rgba(226,178,88,${(0.20 * show).toFixed(3)})`);
+  halo.addColorStop(0.45, `rgba(180,130,60,${(0.07 * show).toFixed(3)})`);
+  halo.addColorStop(1, "rgba(120,80,40,0)");
+  x.fillStyle = halo; x.fillRect(0, 0, W, H);
+
+  x.save();
+  x.globalAlpha = show;
+  x.translate(cx, cy + (1 - show) * R * 0.08);
+
+  const gold = (a, b) => {
+    const g = x.createLinearGradient(-s * 0.9, 0, s * 0.9, 0);
+    g.addColorStop(0, a); g.addColorStop(0.28, b);
+    g.addColorStop(0.5, "#fff0c0"); g.addColorStop(0.72, b);
+    g.addColorStop(1, a);
+    return g;
+  };
+
+  /* handles */
+  x.strokeStyle = gold("#7a5518", "#d9a441");
+  x.lineWidth = s * 0.085;
+  x.lineCap = "round";
+  for (const d of [-1, 1]) {
+    x.beginPath();
+    x.moveTo(d * s * 0.50, -s * 0.62);
+    x.bezierCurveTo(d * s * 0.98, -s * 0.62, d * s * 0.98, -s * 0.02, d * s * 0.48, -s * 0.06);
+    x.stroke();
+  }
+
+  /* the bowl */
+  x.fillStyle = gold("#6d4a14", "#d9a441");
+  x.beginPath();
+  x.moveTo(-s * 0.56, -s * 0.70);
+  x.lineTo(s * 0.56, -s * 0.70);
+  x.quadraticCurveTo(s * 0.52, s * 0.10, 0, s * 0.24);
+  x.quadraticCurveTo(-s * 0.52, s * 0.10, -s * 0.56, -s * 0.70);
+  x.closePath();
+  x.fill();
+  /* the shine, travelling — under the lip, or it paints a grey tab on it */
+  const sh = Math.sin(t * 0.7) * s * 0.22;
+  x.save();
+  x.beginPath();
+  x.moveTo(-s * 0.56, -s * 0.70);
+  x.lineTo(s * 0.56, -s * 0.70);
+  x.quadraticCurveTo(s * 0.52, s * 0.10, 0, s * 0.24);
+  x.quadraticCurveTo(-s * 0.52, s * 0.10, -s * 0.56, -s * 0.70);
+  x.closePath();
+  x.clip();
+  x.fillStyle = "rgba(255,248,214,0.26)";
+  x.beginPath();
+  x.moveTo(-s * 0.20 + sh, -s * 0.62);
+  x.lineTo(-s * 0.05 + sh, -s * 0.62);
+  x.lineTo(-s * 0.10 + sh, s * 0.24);
+  x.lineTo(-s * 0.22 + sh, s * 0.24);
+  x.closePath(); x.fill();
+  x.restore();
+  /* the lip */
+  x.fillStyle = gold("#8a6a1e", "#f4dc9a");
+  x.beginPath();
+  x.ellipse(0, -s * 0.70, s * 0.58, s * 0.11, 0, 0, 6.3);
+  x.fill();
+  x.fillStyle = "rgba(60,40,10,0.55)";
+  x.beginPath();
+  x.ellipse(0, -s * 0.70, s * 0.50, s * 0.075, 0, 0, 6.3);
+  x.fill();
+
+  /* stem and foot */
+  x.fillStyle = gold("#6d4a14", "#c99a3c");
+  x.beginPath();
+  x.moveTo(-s * 0.09, s * 0.22);
+  x.lineTo(s * 0.09, s * 0.22);
+  x.lineTo(s * 0.07, s * 0.46);
+  x.lineTo(-s * 0.07, s * 0.46);
+  x.closePath(); x.fill();
+  x.beginPath();
+  x.ellipse(0, s * 0.48, s * 0.26, s * 0.07, 0, 0, 6.3);
+  x.fill();
+
+  /* the plinth, and the name on it */
+  const pw = s * 1.30, ph = s * 0.42, py = s * 0.52;
+  const wood = x.createLinearGradient(0, py, 0, py + ph);
+  wood.addColorStop(0, "#4b2f16");
+  wood.addColorStop(0.5, "#37220f");
+  wood.addColorStop(1, "#241609");
+  x.fillStyle = wood;
+  x.fillRect(-pw / 2, py, pw, ph);
+  x.fillStyle = "rgba(255,220,150,0.10)";
+  x.fillRect(-pw / 2, py, pw, s * 0.02);
+
+  const plw = pw * 0.86, plh = ph * 0.52, ply = py + ph * 0.24;
+  const plate = x.createLinearGradient(0, ply, 0, ply + plh);
+  plate.addColorStop(0, "#f0dca6");
+  plate.addColorStop(0.5, "#cfa757");
+  plate.addColorStop(1, "#a8802f");
+  x.fillStyle = plate;
+  x.fillRect(-plw / 2, ply, plw, plh);
+  x.strokeStyle = "rgba(90,62,20,0.55)";
+  x.lineWidth = Math.max(1, s * 0.008);
+  x.strokeRect(-plw / 2, ply, plw, plh);
+
+  const nm = (name || "").trim().toUpperCase();
+  x.textAlign = "center"; x.textBaseline = "middle";
+  let fs = plh * 0.50;
+  x.font = `700 ${Math.round(fs)}px Georgia, "Times New Roman", serif`;
+  const label = nm || "YOUR NAME";
+  while (fs > 7 && x.measureText(label).width > plw * 0.86) {
+    fs -= 1;
+    x.font = `700 ${Math.round(fs)}px Georgia, "Times New Roman", serif`;
+  }
+  x.fillStyle = nm ? "rgba(64,42,12,0.92)" : "rgba(84,60,26,0.34)";
+  x.fillText(label, 0, ply + plh * 0.5);
+
+  x.restore();
+
+  /* what it is for */
+  x.save();
+  x.globalAlpha = show;
+  x.textAlign = "center"; x.textBaseline = "middle";
+  const ts = Math.min(W * 0.034, 19);
+  x.font = `400 ${Math.round(ts)}px Georgia, "Times New Roman", serif`;
+  x.fillStyle = "rgba(238,222,186,0.62)";
+  x.fillText("MINK LINK", cx, cy - s * 1.28);
+  x.font = `400 ${Math.round(ts * 0.72)}px Georgia, "Times New Roman", serif`;
+  x.fillStyle = "rgba(226,206,166,0.36)";
+  x.fillText("solved", cx, cy - s * 1.28 + ts * 1.35);
+  x.restore();
+}
+
+/* --- sharing --- */
+function cupSay(msg) {
+  if (!cupSaidEl) return;
+  cupSaidEl.textContent = msg;
+  clearTimeout(cupSay._t);
+  cupSay._t = setTimeout(() => { cupSaidEl.textContent = ""; }, 3600);
+}
+function cupUrl() { return location.origin + location.pathname; }
+function cupLine() {
+  const n = (cupNameEl && cupNameEl.value || "").trim();
+  return (n ? n + " got" : "I got") + " to the end of it. MINK LINK.";
+}
+function cupCanvas() {
+  const c = document.createElement("canvas");
+  const w = 1200, h = 1200;
+  c.width = w; c.height = h;
+  drawTrophyCard(c.getContext("2d"), w, h, cupNameEl ? cupNameEl.value : "", 0, 1);
+  return c;
+}
+function cupBlob() {
+  return new Promise((res) => {
+    try { cupCanvas().toBlob(res, "image/png"); } catch (e) { res(null); }
+  });
+}
+
+if (cupNameEl) {
+  cupNameEl.addEventListener("input", () => { cupName = cupNameEl.value; });
+}
+const cupShareEl = document.getElementById("cupshare");
+if (cupShareEl) cupShareEl.addEventListener("click", async () => {
+  const text = cupLine(), url = cupUrl();
+  try {
+    const blob = await cupBlob();
+    const file = blob ? new File([blob], "trophy.png", { type: "image/png" }) : null;
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], text, url });
+      return;
+    }
+    if (navigator.share) { await navigator.share({ text, url }); return; }
+  } catch (e) { if (e && e.name === "AbortError") return; }
+  try {
+    await navigator.clipboard.writeText(text + " " + url);
+    cupSay("copied — paste it anywhere");
+  } catch (e) { cupSay(url); }
+});
+const cupTextEl = document.getElementById("cuptext");
+if (cupTextEl) cupTextEl.addEventListener("click", () => {
+  const body = encodeURIComponent(cupLine() + " " + cupUrl());
+  location.href = "sms:?&body=" + body;
+});
+const cupSaveEl = document.getElementById("cupsave");
+if (cupSaveEl) cupSaveEl.addEventListener("click", async () => {
+  const blob = await cupBlob();
+  if (!blob) { cupSay("could not make the picture"); return; }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "trophy.png";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  cupSay("saved");
+});
+
+/* ---------- sound ---------- */
+function bossRoom() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  /* a room tone that sits under everything and does not resolve */
+  for (const [f, v, d] of [[41.2, 0.055, 0], [61.7, 0.038, 0.02], [92.5, 0.016, 0.05]]) {
+    const o = ac.createOscillator(); o.type = "sawtooth";
+    o.frequency.value = f;
+    const lp = ac.createBiquadFilter(); lp.type = "lowpass";
+    lp.frequency.value = 240; lp.Q.value = 3;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t0 + d);
+    g.gain.linearRampToValueAtTime(v, t0 + d + 3.4);
+    const lfo = ac.createOscillator(); lfo.type = "sine";
+    lfo.frequency.value = 0.07 + Math.random() * 0.06;
+    const lg = ac.createGain(); lg.gain.value = f * 0.006;
+    lfo.connect(lg); lg.connect(o.frequency);
+    o.connect(lp); lp.connect(g); g.connect(BUS);
+    o.start(t0 + d); lfo.start(t0 + d);
+    hold("boss", { gain: g.gain, stop: () => { try { o.stop(); lfo.stop(); } catch (e) {} } });
+  }
+  const w = ac.createBufferSource(); w.buffer = noise(ac); w.loop = true;
+  const wf = ac.createBiquadFilter(); wf.type = "bandpass";
+  wf.frequency.value = 320; wf.Q.value = 0.6;
+  const wg = ac.createGain();
+  wg.gain.setValueAtTime(0.0001, t0);
+  wg.gain.linearRampToValueAtTime(0.020, t0 + 4);
+  w.connect(wf); wf.connect(wg); wg.connect(BUS);
+  w.start(t0);
+  hold("boss", { gain: wg.gain, stop: () => { try { w.stop(); } catch (e) {} } });
+}
+const RID_LADDER = [261.6, 311.1, 349.2, 392.0, 466.2, 523.3, 622.3, 698.5];
+function ridGood(i) {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const f = RID_LADDER[Math.min(RID_LADDER.length - 1, i)];
+  for (const [m, v] of [[1, 0.16], [2, 0.07], [3, 0.028]]) {
+    const o = ac.createOscillator(); o.type = "triangle";
+    o.frequency.setValueAtTime(f * m, t0);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(v, t0 + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.1);
+    o.connect(g); g.connect(BUS);
+    o.start(t0); o.stop(t0 + 1.2);
+  }
+}
+function ridBad() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const o = ac.createOscillator(); o.type = "sine";
+  o.frequency.setValueAtTime(148, t0);
+  o.frequency.exponentialRampToValueAtTime(52, t0 + 0.7);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.20, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.85);
+  o.connect(g); g.connect(BUS);
+  o.start(t0); o.stop(t0 + 0.9);
+  /* the drip of it running off */
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 3;
+  bp.frequency.setValueAtTime(900, t0 + 0.08);
+  bp.frequency.exponentialRampToValueAtTime(180, t0 + 1.1);
+  const sg = ac.createGain();
+  sg.gain.setValueAtTime(0.0001, t0 + 0.08);
+  sg.gain.linearRampToValueAtTime(0.05, t0 + 0.2);
+  sg.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.2);
+  s.connect(bp); bp.connect(sg); sg.connect(BUS);
+  s.start(t0 + 0.08); s.stop(t0 + 1.3);
+}
+function bossDie() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass";
+  lp.frequency.setValueAtTime(2400, t0);
+  lp.frequency.exponentialRampToValueAtTime(140, t0 + 2.6);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.42, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 3);
+  s.connect(lp); lp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 3.1);
+  for (const [f, d] of [[65.4, 3.0], [98.0, 2.6], [130.8, 2.2]]) {
+    const o = ac.createOscillator(); o.type = "sine";
+    o.frequency.setValueAtTime(f * 1.6, t0);
+    o.frequency.exponentialRampToValueAtTime(f * 0.55, t0 + d * 0.6);
+    const g2 = ac.createGain();
+    g2.gain.setValueAtTime(0.24, t0);
+    g2.gain.exponentialRampToValueAtTime(0.0001, t0 + d);
+    o.connect(g2); g2.connect(BUS); o.start(t0); o.stop(t0 + d + 0.1);
+  }
+}
+function cupChime() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  bed("paper");
+  [261.6, 329.6, 392.0, 523.3, 659.3].forEach((f, i) => {
+    const d = i * 0.13;
+    for (const [m, v] of [[1, 0.14], [2, 0.05], [4, 0.014]]) {
+      const o = ac.createOscillator(); o.type = "triangle";
+      o.frequency.setValueAtTime(f * m, t0 + d);
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.0001, t0 + d);
+      g.gain.linearRampToValueAtTime(v, t0 + d + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + d + 2.6);
+      o.connect(g); g.connect(BUS);
+      o.start(t0 + d); o.stop(t0 + d + 2.7);
+    }
+  });
 }
 
 function restFrame(dt) {
