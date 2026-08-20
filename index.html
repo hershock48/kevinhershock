@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="build" content="2026-08-20T17:04Z">
+<meta name="build" content="2026-08-20T17:28Z">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Kevin Hershock</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎈</text></svg>">
@@ -978,6 +978,7 @@ const CHAPTERS = [
   { k: "wood",   go: () => { openCanvas(); startWood(); } },
   { k: "river",  go: () => { openCanvas(); startRiver(); } },
   { k: "pan",    go: () => { openCanvas(); startPan(); } },
+  { k: "bingo",  go: () => { openCanvas(); startBingo(); } },
 ];
 const CHAPTER_AT = (k) => CHAPTERS.findIndex(c => c.k === k);
 
@@ -4748,6 +4749,7 @@ function drawNight(dt) {
   nightT += dt;
   if (chainEnd) { restFrame(dt); return; }
   if (panOn) { panFrame(dt); return; }
+  if (bgOn) { bingoFrame(dt); return; }
   if (rivOn) { riverFrame(dt); return; }
   if (woodOn) { woodFrame(dt); return; }
   if (beaconOn) { beaconFrame(dt); return; }
@@ -9535,8 +9537,9 @@ function panFrame(dt) {
       if (b >= 1 && panPhase === 4) {
         panPhase = 5;
         release("pan");
-        panOn = false; chainEnd = true; restT = 0;
-        finCanvas.style.cursor = "";
+        panOn = false;
+        /* everything ran together and came back down as a card */
+        startBingo();
       }
     }
   }
@@ -9726,6 +9729,503 @@ function plip(rate, px) {
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.4);
   o.connect(g); g.connect(at(px) || BUS);
   o.start(t0); o.stop(t0 + 0.42);
+}
+
+/* ================= the card =================
+   The spin runs everything together and it comes back down as a bingo card:
+   the grid rules itself in, then the letters and the numbers fall out of the
+   sky and land in it.
+
+   There is a key down the side. B has a number, I has a number, and so on —
+   and past O it keeps going, K, E, V. Five daubs makes a bingo.
+
+   The line across the middle of the card is B, I, N, G, O. It is a real
+   line, it is the obvious thing to do, and it is not the answer. */
+
+let bgOn = false, bgT = 0, bgPhase = 0, bgCells = [], bgKey = [], bgDaub = [];
+let bgWin = [], bgDecoy = [], bgMsg = 0, bgMsgKind = 0, bgHint = 0;
+let bgConf = [], bgIdle = 0, bgDone = 0;
+const BG_LETTERS = ["B", "I", "N", "G", "O"];
+const KEY_LETTERS = ["B", "I", "N", "G", "O", "K", "E", "V"];
+const KEVIN = ["K", "E", "V", "I", "N"];
+
+function bgGeom() {
+  const W = window.innerWidth, H = window.innerHeight;
+  const tall = H > W * 1.05;
+  /* the key sits beside the card on a wide screen and under it on a tall one */
+  const cell = tall ? Math.min(W * 0.90 / 5, H * 0.50 / 6)
+                    : Math.min(W * 0.56 / 5, H * 0.84 / 6);
+  const cardW = cell * 5;
+  const cardH = cell * 6;                       /* five rows and a header */
+  const cx = tall ? W * 0.5 : W * 0.36;
+  const cy = tall ? H * 0.36 : H * 0.5;
+  const x0 = cx - cardW / 2, y0 = cy - cardH / 2;
+  const keyX = tall ? W * 0.5 : cx + cardW / 2 + Math.min(W * 0.06, 60);
+  const keyY = tall ? y0 + cardH + H * 0.045 : cy - cell * 2.9;
+  /* eight rows, not five — the last two used to fall off the bottom */
+  const keyRow = tall ? Math.min(cell * 0.50, (H - keyY - 10) / 8.3) : cell * 0.72;
+  return { W, H, tall, cardW, cardH, cell, x0, y0, keyX, keyY, keyRow };
+}
+
+function startBingo() {
+  mark("bingo");
+  if (bgOn) return;
+  bgOn = true; bgT = 0; bgPhase = 0; bgMsg = 0; bgHint = 0; bgIdle = 0; bgDone = 0;
+  bgDaub = []; bgConf = [];
+
+  /* a real card: each column keeps to its own fifteen */
+  bgCells = [];
+  for (let c = 0; c < 5; c++) {
+    const lo = c * 15 + 1, pool = [];
+    for (let n = 0; n < 15; n++) pool.push(lo + n);
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = (rnd() * (i + 1)) | 0;
+      const t = pool[i]; pool[i] = pool[j]; pool[j] = t;
+    }
+    for (let r = 0; r < 5; r++)
+      bgCells.push({ c, r, n: pool[r], fall: -1.1 - rnd() * 1.4, rot: (rnd() - 0.5) * 0.7,
+                     de: 0.5 + rnd() * 1.1, landed: 0 });
+  }
+  const at = (c, r) => bgCells.find(x => x.c === c && x.r === r);
+
+  /* B I N G O lie across the middle, one per column — a proper line, and
+     the wrong answer */
+  bgKey = [];
+  for (let c = 0; c < 5; c++) bgKey.push({ L: BG_LETTERS[c], n: at(c, 2).n, cell: at(c, 2) });
+
+  /* K, E and V are somewhere else on it */
+  const spare = [];
+  for (let c = 0; c < 5; c++) for (let r = 0; r < 5; r++) if (r !== 2) spare.push([c, r]);
+  for (let i = spare.length - 1; i > 0; i--) {
+    const j = (rnd() * (i + 1)) | 0;
+    const t = spare[i]; spare[i] = spare[j]; spare[j] = t;
+  }
+  ["K", "E", "V"].forEach((L, i) => {
+    const [c, r] = spare[i];
+    bgKey.push({ L, n: at(c, r).n, cell: at(c, r) });
+  });
+  bgKey.sort((a, b) => KEY_LETTERS.indexOf(a.L) - KEY_LETTERS.indexOf(b.L));
+
+  const num = (L) => bgKey.find(k => k.L === L).n;
+  bgDecoy = BG_LETTERS.map(num).sort((a, b) => a - b);
+  bgWin = KEVIN.map(num).sort((a, b) => a - b);
+
+  finCanvas.style.background = "#0d0c10";
+  finCanvas.style.display = "block";
+  sizeFinale();
+  finCanvas.style.cursor = "pointer";
+  bed("paper");
+  cardArrive();
+}
+
+const bgSame = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+
+function bgFont(px, bold, serif) {
+  return `${bold ? "700 " : ""}${Math.round(px)}px ` +
+    (serif ? 'Georgia, "Times New Roman", serif'
+           : '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif');
+}
+
+function bingoFrame(dt) {
+  const W = window.innerWidth, H = window.innerHeight;
+  const G = bgGeom();
+  bgT += dt;
+  hardClear(finCanvas, fctx);
+
+  /* a table under a lamp */
+  const room = fctx.createRadialGradient(G.x0 + G.cardW / 2, G.y0 + G.cardH / 2, 0,
+                                         G.x0 + G.cardW / 2, G.y0 + G.cardH / 2, Math.max(W, H) * 0.8);
+  room.addColorStop(0, "#23202a");
+  room.addColorStop(1, "#0a0a0e");
+  fctx.fillStyle = room;
+  fctx.fillRect(0, 0, W, H);
+
+  /* ---------- the card ---------- */
+  const draw = Math.min(1, bgT / 0.9);
+  fctx.save();
+  fctx.shadowColor = "rgba(0,0,0,0.55)";
+  fctx.shadowBlur = G.cell * 0.45;
+  fctx.shadowOffsetY = G.cell * 0.12;
+  fctx.fillStyle = "#f6f1e4";
+  fctx.beginPath();
+  fctx.roundRect(G.x0, G.y0, G.cardW, G.cardH * draw, G.cell * 0.08);
+  fctx.fill();
+  fctx.restore();
+  if (draw < 1) { bgRules(G, draw); natFrame(dt); return; }
+
+  /* the header band */
+  const hg = fctx.createLinearGradient(0, G.y0, 0, G.y0 + G.cell);
+  hg.addColorStop(0, "#c0332f");
+  hg.addColorStop(1, "#9d2521");
+  fctx.save();
+  fctx.beginPath();
+  fctx.roundRect(G.x0, G.y0, G.cardW, G.cell, [G.cell * 0.08, G.cell * 0.08, 0, 0]);
+  fctx.clip();
+  fctx.fillStyle = hg;
+  fctx.fillRect(G.x0, G.y0, G.cardW, G.cell);
+  fctx.restore();
+
+  bgRules(G, 1);
+
+  /* ---------- what falls into it ---------- */
+  fctx.textAlign = "center";
+  fctx.textBaseline = "middle";
+  /* the five letters */
+  for (let c = 0; c < 5; c++) {
+    const t = Math.max(0, (bgT - 0.9 - c * 0.10) / 0.55);
+    if (t <= 0) continue;
+    const e = t >= 1 ? 1 : 1 - Math.pow(1 - t, 3);
+    const bounce = t >= 1 ? 0 : Math.sin(Math.min(1, t) * Math.PI) * -G.cell * 0.10;
+    const x = G.x0 + G.cell * (c + 0.5);
+    const y = G.y0 + G.cell * 0.5 + (1 - e) * -H * 0.55 + bounce;
+    fctx.fillStyle = "#fdf6e6";
+    fctx.font = bgFont(G.cell * 0.62, true, true);
+    fctx.save();
+    fctx.translate(x, y);
+    fctx.rotate((1 - e) * 0.5);
+    fctx.fillText(BG_LETTERS[c], 0, 0);
+    fctx.restore();
+    if (t >= 1 && t < 1.06) tick(760 + c * 90, x);
+  }
+  /* and the twenty-five numbers */
+  let allDown = true;
+  for (const cl of bgCells) {
+    const t = Math.max(0, (bgT - 1.3 - cl.de) / 0.5);
+    if (t < 1) allDown = false;
+    if (t <= 0) continue;
+    const e = t >= 1 ? 1 : 1 - Math.pow(1 - t, 3);
+    const x = G.x0 + G.cell * (cl.c + 0.5);
+    const y0c = G.y0 + G.cell * (cl.r + 1.5);
+    const y = y0c + (1 - e) * -H * 0.7;
+    if (t >= 1 && !cl.landed) { cl.landed = 1; tick(420 + cl.c * 70 + cl.r * 18, x); }
+    fctx.save();
+    fctx.translate(x, y);
+    fctx.rotate((1 - e) * cl.rot);
+    fctx.fillStyle = "#241f1c";
+    fctx.font = bgFont(G.cell * 0.42, true, false);
+    fctx.fillText(String(cl.n), 0, 0);
+    fctx.restore();
+  }
+  if (bgPhase === 0 && allDown && bgT > 2.4) { bgPhase = 1; bgIdle = 0; }
+
+  /* ---------- the daubs ---------- */
+  for (const d of bgDaub) {
+    d.t = Math.min(1, d.t + dt * 5);
+    const cl = d.cell;
+    const x = G.x0 + G.cell * (cl.c + 0.5), y = G.y0 + G.cell * (cl.r + 1.5);
+    const r = G.cell * 0.34 * (1 - Math.pow(1 - d.t, 3)) * (d.off ? 1 - d.off : 1);
+    if (r <= 0.5) continue;
+    fctx.save();
+    fctx.globalAlpha = 0.52 * (d.off ? 1 - d.off : 1);
+    fctx.fillStyle = d.col;
+    fctx.beginPath();
+    /* a dauber leaves a soft round blot, not a circle */
+    for (let i = 0; i <= 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      const rr = r * (0.92 + 0.10 * Math.sin(a * 3 + d.seed));
+      const px = x + Math.cos(a) * rr, py = y + Math.sin(a) * rr;
+      i ? fctx.lineTo(px, py) : fctx.moveTo(px, py);
+    }
+    fctx.closePath();
+    fctx.fill();
+    fctx.globalAlpha = 0.26 * (d.off ? 1 - d.off : 1);
+    fctx.fillStyle = "#ffffff";
+    fctx.beginPath();
+    fctx.ellipse(x - r * 0.3, y - r * 0.34, r * 0.24, r * 0.16, -0.5, 0, 6.3);
+    fctx.fill();
+    /* and the number reads through it, the way it does under a real dauber */
+    fctx.globalAlpha = 0.85 * (d.off ? 1 - d.off : 1) * d.t;
+    fctx.fillStyle = "#14213f";
+    fctx.textAlign = "center"; fctx.textBaseline = "middle";
+    fctx.font = bgFont(G.cell * 0.42, true, false);
+    fctx.fillText(String(cl.n), x, y);
+    fctx.restore();
+    if (d.off !== undefined) d.off = Math.min(1, d.off + dt * 1.6);
+  }
+  bgDaub = bgDaub.filter(d => d.off === undefined || d.off < 1);
+
+  /* ---------- the key ---------- */
+  bgDrawKey(G);
+
+  /* ---------- what it says back ---------- */
+  if (bgMsg > 0) {
+    bgMsg = Math.max(0, bgMsg - dt);
+    const a = Math.min(1, bgMsg / 0.6) * Math.min(1, (2.8 - bgMsg) / 0.35);
+    const cx = G.x0 + G.cardW / 2, cy = G.y0 + G.cell * 2.0;
+    fctx.save();
+    fctx.globalAlpha = Math.max(0, a);
+    fctx.translate(cx, cy);
+    fctx.rotate(-0.06);
+    if (bgMsgKind === 1) {
+      fctx.fillStyle = "rgba(150,42,38,0.92)";
+      fctx.font = bgFont(G.cell * 0.30, true, true);
+      fctx.fillText("not a good bingo", 0, -G.cell * 0.20);
+      fctx.font = bgFont(G.cell * 0.24, false, true);
+      fctx.fillText("try again", 0, G.cell * 0.22);
+      fctx.strokeStyle = "rgba(150,42,38,0.55)";
+      fctx.lineWidth = Math.max(2, G.cell * 0.035);
+      fctx.beginPath();
+      fctx.roundRect(-G.cell * 1.55, -G.cell * 0.62, G.cell * 3.1, G.cell * 1.16, G.cell * 0.12);
+      fctx.stroke();
+    }
+    fctx.restore();
+  }
+
+  /* ---------- the one that counts ---------- */
+  if (bgPhase === 3) {
+    bgDone += dt;
+    /* a line through the five, in the order they spell */
+    const pts = KEVIN.map(L => {
+      const k = bgKey.find(q => q.L === L);
+      return { x: G.x0 + G.cell * (k.cell.c + 0.5), y: G.y0 + G.cell * (k.cell.r + 1.5) };
+    });
+    const prog = Math.min(1, bgDone / 1.1) * (pts.length - 1);
+    fctx.save();
+    fctx.strokeStyle = "rgba(196,42,38,0.85)";
+    fctx.lineWidth = Math.max(3, G.cell * 0.075);
+    fctx.lineCap = "round"; fctx.lineJoin = "round";
+    fctx.beginPath();
+    fctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) {
+      const f = Math.max(0, Math.min(1, prog - (i - 1)));
+      if (f <= 0) break;
+      fctx.lineTo(pts[i - 1].x + (pts[i].x - pts[i - 1].x) * f,
+                  pts[i - 1].y + (pts[i].y - pts[i - 1].y) * f);
+    }
+    fctx.stroke();
+    fctx.restore();
+    if (bgDone > 1.0) {
+      const a = Math.min(1, (bgDone - 1.0) / 0.5);
+      const pop = 1 + Math.sin(Math.min(1, (bgDone - 1.0) / 0.35) * Math.PI) * 0.18;
+      fctx.save();
+      fctx.globalAlpha = a;
+      fctx.translate(G.x0 + G.cardW / 2, G.y0 + G.cell * 1.55);
+      fctx.rotate(-0.05);
+      fctx.scale(pop, pop);
+      fctx.font = bgFont(G.cell * 0.66, true, true);
+      fctx.textAlign = "center"; fctx.textBaseline = "middle";
+      /* outlined, so it reads over the daubs and the line and the confetti */
+      fctx.lineWidth = G.cell * 0.13;
+      fctx.lineJoin = "round";
+      fctx.strokeStyle = "rgba(250,246,236,0.95)";
+      fctx.strokeText("BINGO!", 0, 0);
+      fctx.fillStyle = "#c02a26";
+      fctx.fillText("BINGO!", 0, 0);
+      fctx.restore();
+    }
+    /* something to throw in the air */
+    if (bgDone > 1.0 && bgConf.length < 150 && Math.random() < 0.7) {
+      for (let i = 0; i < 3; i++)
+        bgConf.push({ x: G.x0 + G.cardW * Math.random(), y: G.y0 + G.cardH * 0.5,
+                      vx: (Math.random() - 0.5) * 620, vy: -280 - Math.random() * 460,
+                      rot: Math.random() * 6.3, spin: (Math.random() - 0.5) * 12,
+                      c: `hsl(${(Math.random() * 360) | 0},78%,60%)`,
+                      s: G.cell * (0.05 + Math.random() * 0.07), life: 1 });
+    }
+    if (bgDone > 5.2) {
+      const f = Math.min(1, (bgDone - 5.2) / 2.2);
+      fctx.fillStyle = `rgba(250,248,244,${(f * f).toFixed(3)})`;
+      fctx.fillRect(0, 0, W, H);
+      if (f >= 1) { bgOn = false; release("bingo"); chainEnd = true; restT = 0;
+                    finCanvas.style.cursor = ""; }
+    }
+  }
+  for (let i = bgConf.length - 1; i >= 0; i--) {
+    const q = bgConf[i];
+    q.vy += 900 * dt; q.x += q.vx * dt; q.y += q.vy * dt; q.rot += q.spin * dt;
+    q.life -= dt * 0.35;
+    if (q.life <= 0 || q.y > H + 40) { bgConf.splice(i, 1); continue; }
+    fctx.save();
+    fctx.translate(q.x, q.y); fctx.rotate(q.rot);
+    fctx.globalAlpha = Math.min(1, q.life * 2);
+    fctx.fillStyle = q.c;
+    fctx.fillRect(-q.s, -q.s * 0.4, q.s * 2, q.s * 0.8);
+    fctx.restore();
+  }
+
+  /* ---------- a nudge toward the key ---------- */
+  if (bgPhase === 1) {
+    bgIdle += dt;
+    if (bgIdle > 7 && bgDaub.length === 0) bgHint = Math.min(1, bgHint + dt * 0.6);
+  }
+
+  natFrame(dt);
+}
+
+function bgRules(G, a) {
+  fctx.save();
+  fctx.globalAlpha = a;
+  fctx.strokeStyle = "rgba(60,50,40,0.30)";
+  fctx.lineWidth = Math.max(1, G.cell * 0.014);
+  for (let i = 0; i <= 5; i++) {
+    const x = G.x0 + G.cell * i;
+    fctx.beginPath(); fctx.moveTo(x, G.y0); fctx.lineTo(x, G.y0 + G.cardH * a); fctx.stroke();
+  }
+  for (let j = 0; j <= 6; j++) {
+    const y = G.y0 + G.cell * j;
+    if (y > G.y0 + G.cardH * a) break;
+    fctx.beginPath(); fctx.moveTo(G.x0, y); fctx.lineTo(G.x0 + G.cardW, y); fctx.stroke();
+  }
+  fctx.restore();
+}
+
+function bgDrawKey(G) {
+  const rowH = G.keyRow;
+  const inKevin = (L) => KEVIN.indexOf(L) >= 0;
+  fctx.save();
+  fctx.textAlign = "left";
+  fctx.textBaseline = "middle";
+  for (let i = 0; i < bgKey.length; i++) {
+    const k = bgKey[i];
+    const y = G.keyY + rowH * i + rowH * 0.5;
+    const x = G.tall ? G.keyX - rowH * 2.6 : G.keyX;
+    const lit = bgHint > 0 && inKevin(k.L)
+      ? bgHint * (0.5 + 0.5 * Math.sin(bgT * 3 + i))
+      : 0;
+    if (lit > 0.01) {
+      fctx.fillStyle = `rgba(214,178,72,${(0.16 * lit).toFixed(3)})`;
+      fctx.beginPath();
+      fctx.roundRect(x - rowH * 0.22, y - rowH * 0.40, rowH * 3.0, rowH * 0.80, rowH * 0.16);
+      fctx.fill();
+    }
+    fctx.fillStyle = "rgba(246,241,228,0.92)";
+    fctx.font = bgFont(rowH * 0.56, true, true);
+    fctx.fillText(k.L, x, y);
+    fctx.fillStyle = "rgba(150,142,128,0.65)";
+    fctx.font = bgFont(rowH * 0.34, false, false);
+    fctx.fillText("—", x + rowH * 0.62, y);
+    fctx.fillStyle = "rgba(240,236,226,0.88)";
+    fctx.font = bgFont(rowH * 0.46, true, false);
+    fctx.fillText(String(k.n), x + rowH * 1.20, y);
+  }
+  fctx.restore();
+}
+
+/* ---------- daubing ---------- */
+window.addEventListener("pointerdown", (e) => {
+  if (!bgOn || bgPhase !== 1) return;
+  const G = bgGeom();
+  const cx = Math.floor((e.clientX - G.x0) / G.cell);
+  const cy = Math.floor((e.clientY - G.y0 - G.cell) / G.cell);
+  if (cx < 0 || cx > 4 || cy < 0 || cy > 4) return;
+  bgIdle = 0;
+  const cell = bgCells.find(c => c.c === cx && c.r === cy);
+  if (!cell) return;
+  const had = bgDaub.findIndex(d => d.cell === cell && d.off === undefined);
+  if (had >= 0) {
+    /* lift it off again — nobody should be stuck with a wrong dot */
+    bgDaub[had].off = 0.0001;
+    daubOff();
+    return;
+  }
+  bgDaub.push({ cell, t: 0, col: "#2b56c8", seed: Math.random() * 6.3 });
+  daubOn(e.clientX);
+
+  const live = bgDaub.filter(d => d.off === undefined).map(d => d.cell.n).sort((a, b) => a - b);
+  if (bgSame(live, bgWin)) {
+    bgPhase = 3; bgDone = 0; bingoHit();
+  } else if (bgSame(live, bgDecoy)) {
+    bgMsg = 2.8; bgMsgKind = 1;
+    bgHint = Math.max(bgHint, 0.85);       /* now the key is worth reading */
+    notQuite();
+    setTimeout(() => {
+      for (const d of bgDaub) if (d.off === undefined) d.off = 0.0001;
+    }, 1500);
+  }
+}, { passive: true });
+
+/* ---------- sound ---------- */
+function cardArrive() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 0.7;
+  bp.frequency.setValueAtTime(1800, t0);
+  bp.frequency.exponentialRampToValueAtTime(500, t0 + 0.7);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(0.075, t0 + 0.08);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9);
+  s.connect(bp); bp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 0.95);
+}
+function tick(f, px) {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const o = ac.createOscillator(); o.type = "triangle";
+  o.frequency.setValueAtTime(f, t0);
+  o.frequency.exponentialRampToValueAtTime(f * 0.62, t0 + 0.06);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.028, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.14);
+  o.connect(g); g.connect(at(px) || BUS);
+  o.start(t0); o.stop(t0 + 0.16);
+}
+function daubOn(px) {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 700;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.16, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.13);
+  s.connect(lp); lp.connect(g); g.connect(at(px) || BUS);
+  s.start(t0); s.stop(t0 + 0.15);
+  const o = ac.createOscillator(); o.type = "sine";
+  o.frequency.setValueAtTime(180, t0);
+  o.frequency.exponentialRampToValueAtTime(72, t0 + 0.1);
+  const g2 = ac.createGain();
+  g2.gain.setValueAtTime(0.055, t0);
+  g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+  o.connect(g2); g2.connect(BUS); o.start(t0); o.stop(t0 + 0.18);
+}
+function daubOff() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const o = ac.createOscillator(); o.type = "sine";
+  o.frequency.setValueAtTime(520, t0);
+  o.frequency.exponentialRampToValueAtTime(880, t0 + 0.09);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.026, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.13);
+  o.connect(g); g.connect(BUS); o.start(t0); o.stop(t0 + 0.15);
+}
+function notQuite() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  /* not a buzzer. Two notes down, the sound of a thing politely declining. */
+  [[392, 0], [311, 0.20]].forEach(([f, d]) => {
+    const o = ac.createOscillator(); o.type = "triangle";
+    o.frequency.value = f;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t0 + d);
+    g.gain.linearRampToValueAtTime(0.055, t0 + d + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + d + 0.7);
+    o.connect(g); g.connect(BUS); o.start(t0 + d); o.stop(t0 + d + 0.75);
+  });
+}
+function bingoHit() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  [261.6, 329.6, 392, 523.3, 659.3].forEach((f, i) => {
+    const o = ac.createOscillator(); o.type = i > 2 ? "sine" : "triangle";
+    o.frequency.value = f;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t0 + i * 0.075);
+    g.gain.linearRampToValueAtTime(0.060, t0 + i * 0.075 + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.4);
+    o.connect(g); g.connect(BUS); o.start(t0 + i * 0.075); o.stop(t0 + 3.5);
+  });
+  for (let i = 0; i < 26; i++) {
+    const t = t0 + 0.9 + Math.random() * 1.6;
+    const o = ac.createOscillator(); o.type = "sine";
+    o.frequency.value = 1200 + Math.random() * 2400;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.020, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+    o.connect(g); g.connect(at(Math.random() * window.innerWidth) || BUS);
+    o.start(t); o.stop(t + 0.2);
+  }
 }
 
 function restFrame(dt) {
