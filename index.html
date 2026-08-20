@@ -667,7 +667,7 @@
        autocapitalize="characters" spellcheck="false" maxlength="1" inputmode="text">
 <div id="cup" hidden>
   <input id="cupname" type="text" maxlength="18" placeholder="your name"
-         aria-label="the name on the trophy" autocomplete="off" spellcheck="false">
+         aria-label="the name on your club pass" autocomplete="off" spellcheck="false">
   <div id="cupbtns">
     <button id="cupshare" type="button">Share</button>
     <button id="cuptext" type="button">Text it</button>
@@ -12467,7 +12467,7 @@ function cupBaseY() {
 }
 
 let cupOn = false, cupT = 0, cupName = "", cupSpark = [], cupShow = 0;
-let cupRise = 1, cupPool = null;
+let cupRise = 1, cupPool = null, cupWrite = 1;
 const cupEl = document.getElementById("cup");
 const cupNameEl = document.getElementById("cupname");
 const cupSaidEl = document.getElementById("cupsaid");
@@ -12476,15 +12476,17 @@ function startTrophy(pool) {
   mark("trophy");
   if (cupOn) return;
   cupOn = true; cupT = 0; cupShow = 0; cupSpark = [];
-  cupPool = pool || null; cupRise = pool ? 0 : 1;
+  cupPool = pool || null; cupRise = pool ? 0 : 1; cupWrite = pool ? 0 : 1;
   finCanvas.style.background = "#07070c";
   finCanvas.style.display = "block";
   finCanvas.style.cursor = "";
   if (kbEl) { kbEl.style.pointerEvents = "none"; try { kbEl.blur(); } catch (e) {} }
   if (cupEl) cupEl.hidden = false;
   cupChime();
+  /* leave it alone until the marker has finished — nobody wants a keyboard
+     up over the joke landing */
   setTimeout(() => { try { cupNameEl && cupNameEl.focus({ preventScroll: true }); } catch (e) {} },
-             pool ? 2600 : 1400);
+             pool ? 5200 : 1400);
 }
 
 function trophyFrame(dt) {
@@ -12492,10 +12494,20 @@ function trophyFrame(dt) {
   cupT += dt;
   cupRise = Math.min(1, cupRise + dt * 0.62);
   cupShow = Math.min(1, cupShow + dt * (cupPool ? 0.9 : 0.6));
+  /* the hand has to be all the way up before anyone writes on it */
+  if (cupRise > 0.92) {
+    const was = cupWrite;
+    cupWrite = Math.min(1, cupWrite + dt * 0.46);
+    /* the squeak lands on each stroke starting, not on a timer */
+    const a = passStrokeAt(was), b = passStrokeAt(cupWrite);
+    if (b > a && cupWrite < 1) markerSqueak(b);
+    if (was < 1 && cupWrite >= 1) capClick();
+  }
   hardClear(finCanvas, fctx);
   /* it comes up out of what the beast melted into, so the two scenes are
      one move and not a cut */
-  drawTrophyCard(fctx, W, H, cupName, cupT, cupShow, cupPool ? cupRise : 1, cupPool);
+  drawPassCard(fctx, W, H, cupName, cupT, cupShow,
+               cupPool ? cupRise : 1, cupPool, cupWrite, false);
 
   /* a little glitter, on and off */
   if (cupSpark.length < 46 && Math.random() < dt * 22) {
@@ -12523,15 +12535,133 @@ function trophyFrame(dt) {
 
 /* Drawn into whichever context it is handed, so the picture you share is
    the same picture you are looking at. */
-function drawTrophyCard(x, W, H, name, t, show, rise, pool) {
+/* The back of a hand. Wrist at the bottom, four fingers up, thumb off to
+   the left. The fingers are generated rather than typed out so they are all
+   the same shape and only the length and the base move — the bingo fist
+   taught me that a finger drawn as its own shape reads as pasted on. */
+function passHand() {
+  /* the knuckle line sits at 0.50 — fingers are about half a hand, and
+     putting the bases up at 0.30 was what made the first one a mitten */
+  const F = [                 /* centre x, half width, tip y */
+    [0.328, 0.060, 0.150],    /* index */
+    [0.458, 0.062, 0.070],    /* middle */
+    [0.586, 0.060, 0.110],    /* ring */
+    [0.700, 0.052, 0.230],    /* little */
+  ];
+  const WEB = [0.450, 0.440, 0.475];
+  return unitPath((put, quad) => {
+    put(0.340, 1.000);                              /* the wrist, left */
+    quad(0.300, 0.900, 0.276, 0.800);
+    /* the thumb. It comes off the side of the palm low down and lies out
+       and away — up beside the index it is just a fifth short finger. */
+    quad(0.250, 0.762, 0.190, 0.742);
+    quad(0.100, 0.716, 0.052, 0.652, 7);
+    quad(0.010, 0.594, 0.046, 0.554, 6);            /* round the tip */
+    quad(0.084, 0.516, 0.134, 0.566, 6);
+    quad(0.180, 0.612, 0.238, 0.630, 7);            /* into the web of it */
+    quad(0.246, 0.564, 0.250, 0.500, 6);            /* up to the index */
+    for (let i = 0; i < 4; i++) {
+      const cx = F[i][0], hw = F[i][1], ty = F[i][2];
+      quad(cx - hw - 0.012, ty + 0.190, cx - hw, ty + 0.068, 8);   /* up one side */
+      quad(cx - hw, ty - 0.028, cx, ty - 0.030, 6);                /* over the tip */
+      quad(cx + hw, ty - 0.028, cx + hw, ty + 0.068, 6);           /* and down */
+      if (i < 3)
+        quad(cx + hw + 0.006, WEB[i] - 0.060,
+             (cx + hw + F[i + 1][0] - F[i + 1][1]) / 2, WEB[i], 7); /* the web */
+    }
+    quad(0.788, 0.470, 0.800, 0.620);               /* the outside edge */
+    quad(0.796, 0.820, 0.660, 1.000);               /* down to the wrist */
+  });
+}
+const PASS_HAND = passHand();
+/* the fingertips, for the nails — you can see them from the back, and that
+   is most of what tells you this is the back of a hand and not the palm */
+const PASS_NAILS = [[0.328, 0.060, 0.150], [0.458, 0.062, 0.070],
+                    [0.586, 0.060, 0.110], [0.700, 0.052, 0.230]];
+
+/* PEN15, as the strokes you would actually make writing it, in the order
+   you would make them. Each is a polyline in a 0..1 box per character. */
+const PEN15 = [
+  { w: 0.80, s: [[[0.06, 0.00], [0.06, 1.00]],
+                 [[0.06, 0.02], [0.52, 0.00], [0.70, 0.14], [0.70, 0.32],
+                  [0.52, 0.46], [0.06, 0.48]]] },                       /* P */
+  { w: 0.76, s: [[[0.08, 0.00], [0.08, 1.00]],
+                 [[0.08, 0.02], [0.68, 0.00]],
+                 [[0.08, 0.49], [0.56, 0.47]],
+                 [[0.08, 0.99], [0.70, 1.00]]] },                       /* E */
+  { w: 0.82, s: [[[0.06, 1.00], [0.06, 0.00], [0.72, 1.00], [0.72, 0.00]]] }, /* N */
+  { w: 0.52, s: [[[0.04, 0.24], [0.30, 0.02], [0.32, 1.00]],
+                 [[0.06, 1.00], [0.58, 0.99]]] },                       /* 1 */
+  { w: 0.78, s: [[[0.70, 0.03], [0.14, 0.02], [0.10, 0.44], [0.38, 0.36],
+                  [0.62, 0.46], [0.68, 0.72], [0.48, 0.98], [0.14, 0.92]]] }, /* 5 */
+];
+
+/* lay the word out once: every stroke resampled, with the running length
+   along it, so the marker can be stopped anywhere partway through */
+function passWord() {
+  const tr = 0.16;                       /* the gap between characters */
+  let X = 0;
+  const out = [];
+  for (let c = 0; c < PEN15.length; c++) {
+    for (const raw of PEN15[c].s) {
+      const pts = [];
+      let len = 0;
+      for (let i = 0; i < raw.length - 1; i++) {
+        const a = raw[i], b = raw[i + 1];
+        const seg = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        const n = Math.max(3, Math.round(seg * 26));
+        for (let k = 0; k < n; k++) {
+          const u = k / n;
+          /* a wobble, so it is a hand holding a marker and not a plotter */
+          const px = X + a[0] + (b[0] - a[0]) * u;
+          const py = a[1] + (b[1] - a[1]) * u;
+          const wob = Math.sin((px * 9 + py * 13) * 2.1) * 0.008;
+          if (pts.length) len += Math.hypot(px + wob - pts[pts.length - 1][0],
+                                            py + wob - pts[pts.length - 1][1]);
+          pts.push([px + wob, py + wob, len]);
+        }
+      }
+      const b = raw[raw.length - 1];
+      len += Math.hypot(X + b[0] - pts[pts.length - 1][0], b[1] - pts[pts.length - 1][1]);
+      pts.push([X + b[0], b[1], len]);
+      out.push({ pts, len });
+    }
+    X += PEN15[c].w + tr;
+  }
+  const total = out.reduce((a, s) => a + s.len, 0);
+  return { strokes: out, total, width: X - tr };
+}
+const PASS_WORD = passWord();
+
+/* how many strokes are finished at this much of the word — the squeak of
+   the marker lands on each one starting, so the sound needs to know */
+function passStrokeAt(p) {
+  let run = 0;
+  for (let i = 0; i < PASS_WORD.strokes.length; i++) {
+    run += PASS_WORD.strokes[i].len;
+    if (p * PASS_WORD.total < run) return i;
+  }
+  return PASS_WORD.strokes.length;
+}
+
+/* ---------- the pass ----------
+   Not a trophy. A gold hand comes up out of what the beast melted into,
+   and then PEN15 goes on the back of it in marker, which is the whole and
+   entire way anyone has ever joined this club. */
+/* plate: draw the name and the url onto the picture itself. True for the
+   file that gets shared, because that has to stand alone. False on screen,
+   where the real HTML input is the name field — drawing both put a painted
+   KEVIN underneath a typed one. */
+function drawPassCard(x, W, H, name, t, show, rise, pool, write, plate) {
+  plate = plate === undefined ? true : !!plate;
   const R = Math.min(W, H);
-  const cx = W * 0.5, cy = H * 0.44;
+  const cx = W * 0.5, cy = H * (plate ? 0.40 : 0.355);
   const s = R * 0.30;
   t = t || 0; show = show === undefined ? 1 : show;
   rise = rise === undefined ? 1 : Math.max(0, Math.min(1, rise));
-  /* eased, and it overshoots a hair coming out of the gold */
+  write = write === undefined ? 1 : Math.max(0, Math.min(1, write));
   const ri = 1 - Math.pow(1 - rise, 3);
-  const lift = (1 - ri) * s * 1.7;
+  const lift = (1 - ri) * s * 1.9;
 
   const bg = x.createLinearGradient(0, 0, 0, H);
   bg.addColorStop(0, "#07070c");
@@ -12544,118 +12674,141 @@ function drawTrophyCard(x, W, H, name, t, show, rise, pool) {
   halo.addColorStop(1, "rgba(120,80,40,0)");
   x.fillStyle = halo; x.fillRect(0, 0, W, H);
 
+  /* the hand box. It is cast in the same gold, because it came out of it. */
+  const hw = Math.min(W * 0.46, H * 0.40);
+  const hh = hw * 1.30;
+  const hx = cx - hw / 2, hy = cy - hh * 0.52 + lift;
+  const P = (i) => [hx + PASS_HAND[i][0] * hw, hy + PASS_HAND[i][1] * hh];
+
   x.save();
-  /* while it is rising, everything below the pool line is still molten,
-     so the trophy is clipped off at it */
-  if (rise < 1 && pool) {
-    x.beginPath();
-    x.rect(0, 0, W, pool.y);
-    x.clip();
-  }
+  if (rise < 1 && pool) { x.beginPath(); x.rect(0, 0, W, pool.y); x.clip(); }
   x.globalAlpha = show;
-  x.translate(cx, cy + (1 - show) * R * 0.08 + lift);
 
-  const gold = (a, b) => {
-    const g = x.createLinearGradient(-s * 0.9, 0, s * 0.9, 0);
-    g.addColorStop(0, a); g.addColorStop(0.28, b);
-    g.addColorStop(0.5, "#fff0c0"); g.addColorStop(0.72, b);
-    g.addColorStop(1, a);
-    return g;
-  };
+  /* the shadow it throws down onto the plinth of light */
+  x.save();
+  x.globalAlpha = show * 0.35 * ri;
+  x.fillStyle = "rgba(28,16,6,0.9)";
+  x.beginPath();
+  x.ellipse(cx, hy + hh * 0.99, hw * 0.40, hh * 0.035, 0, 0, 6.3);
+  x.fill();
+  x.restore();
 
-  /* handles */
-  x.strokeStyle = gold("#7a5518", "#d9a441");
-  x.lineWidth = s * 0.085;
+  x.beginPath();
+  for (let i = 0; i < PASS_HAND.length; i++) {
+    const p = P(i);
+    i ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1]);
+  }
+  x.closePath();
+
+  const gg = x.createLinearGradient(hx, hy, hx + hw, hy + hh);
+  gg.addColorStop(0.00, "#f6e2a6");
+  gg.addColorStop(0.22, "#e8bd5c");
+  gg.addColorStop(0.46, "#c99327");
+  gg.addColorStop(0.60, "#f2dd9c");
+  gg.addColorStop(0.80, "#bf861f");
+  gg.addColorStop(1.00, "#8a5c12");
+  x.fillStyle = gg;
+  x.fill();
+  x.strokeStyle = "rgba(94,62,12,0.55)";
+  x.lineWidth = Math.max(1, R * 0.0035);
+  x.stroke();
+
+  /* it is cast metal, so it wants a highlight down the light side and the
+     tendons showing across the back */
+  x.save();
+  x.clip();
+  const sh = x.createLinearGradient(hx, hy, hx + hw * 0.9, hy + hh);
+  sh.addColorStop(0, "rgba(255,248,214,0.34)");
+  sh.addColorStop(0.35, "rgba(255,240,190,0)");
+  sh.addColorStop(0.72, "rgba(70,44,6,0)");
+  sh.addColorStop(1, "rgba(58,36,4,0.34)");
+  x.fillStyle = sh;
+  x.fillRect(hx, hy, hw, hh);
+  /* tendons, running from the wrist out to each knuckle */
+  x.strokeStyle = "rgba(120,80,14,0.13)";
+  x.lineWidth = Math.max(1, hw * 0.007);
   x.lineCap = "round";
-  for (const d of [-1, 1]) {
+  for (const n of PASS_NAILS) {
     x.beginPath();
-    x.moveTo(d * s * 0.50, -s * 0.62);
-    x.bezierCurveTo(d * s * 0.98, -s * 0.62, d * s * 0.98, -s * 0.02, d * s * 0.48, -s * 0.06);
+    x.moveTo(hx + (0.44 + (n[0] - 0.5) * 0.30) * hw, hy + 0.86 * hh);
+    x.quadraticCurveTo(hx + (n[0] - 0.01) * hw, hy + 0.62 * hh,
+                       hx + n[0] * hw, hy + (n[2] + 0.20) * hh);
     x.stroke();
   }
-
-  /* the bowl */
-  x.fillStyle = gold("#6d4a14", "#d9a441");
-  x.beginPath();
-  x.moveTo(-s * 0.56, -s * 0.70);
-  x.lineTo(s * 0.56, -s * 0.70);
-  x.quadraticCurveTo(s * 0.52, s * 0.10, 0, s * 0.24);
-  x.quadraticCurveTo(-s * 0.52, s * 0.10, -s * 0.56, -s * 0.70);
-  x.closePath();
-  x.fill();
-  /* the shine, travelling — under the lip, or it paints a grey tab on it */
-  const sh = Math.sin(t * 0.7) * s * 0.22;
-  x.save();
-  x.beginPath();
-  x.moveTo(-s * 0.56, -s * 0.70);
-  x.lineTo(s * 0.56, -s * 0.70);
-  x.quadraticCurveTo(s * 0.52, s * 0.10, 0, s * 0.24);
-  x.quadraticCurveTo(-s * 0.52, s * 0.10, -s * 0.56, -s * 0.70);
-  x.closePath();
-  x.clip();
-  x.fillStyle = "rgba(255,248,214,0.26)";
-  x.beginPath();
-  x.moveTo(-s * 0.20 + sh, -s * 0.62);
-  x.lineTo(-s * 0.05 + sh, -s * 0.62);
-  x.lineTo(-s * 0.10 + sh, s * 0.24);
-  x.lineTo(-s * 0.22 + sh, s * 0.24);
-  x.closePath(); x.fill();
-  x.restore();
-  /* the lip */
-  x.fillStyle = gold("#8a6a1e", "#f4dc9a");
-  x.beginPath();
-  x.ellipse(0, -s * 0.70, s * 0.58, s * 0.11, 0, 0, 6.3);
-  x.fill();
-  x.fillStyle = "rgba(60,40,10,0.55)";
-  x.beginPath();
-  x.ellipse(0, -s * 0.70, s * 0.50, s * 0.075, 0, 0, 6.3);
-  x.fill();
-
-  /* stem and foot */
-  x.fillStyle = gold("#6d4a14", "#c99a3c");
-  x.beginPath();
-  x.moveTo(-s * 0.09, s * 0.22);
-  x.lineTo(s * 0.09, s * 0.22);
-  x.lineTo(s * 0.07, s * 0.46);
-  x.lineTo(-s * 0.07, s * 0.46);
-  x.closePath(); x.fill();
-  x.beginPath();
-  x.ellipse(0, s * 0.48, s * 0.26, s * 0.07, 0, 0, 6.3);
-  x.fill();
-
-  /* the plinth, and the name on it */
-  const pw = s * 1.30, ph = s * 0.42, py = s * 0.52;
-  const wood = x.createLinearGradient(0, py, 0, py + ph);
-  wood.addColorStop(0, "#4b2f16");
-  wood.addColorStop(0.5, "#37220f");
-  wood.addColorStop(1, "#241609");
-  x.fillStyle = wood;
-  x.fillRect(-pw / 2, py, pw, ph);
-  x.fillStyle = "rgba(255,220,150,0.10)";
-  x.fillRect(-pw / 2, py, pw, s * 0.02);
-
-  const plw = pw * 0.86, plh = ph * 0.52, ply = py + ph * 0.24;
-  const plate = x.createLinearGradient(0, ply, 0, ply + plh);
-  plate.addColorStop(0, "#f0dca6");
-  plate.addColorStop(0.5, "#cfa757");
-  plate.addColorStop(1, "#a8802f");
-  x.fillStyle = plate;
-  x.fillRect(-plw / 2, ply, plw, plh);
-  x.strokeStyle = "rgba(90,62,20,0.55)";
-  x.lineWidth = Math.max(1, s * 0.008);
-  x.strokeRect(-plw / 2, ply, plw, plh);
-
-  const nm = (name || "").trim().toUpperCase();
-  x.textAlign = "center"; x.textBaseline = "middle";
-  let fs = plh * 0.50;
-  x.font = `700 ${Math.round(fs)}px Georgia, "Times New Roman", serif`;
-  const label = nm || "YOUR NAME";
-  while (fs > 7 && x.measureText(label).width > plw * 0.86) {
-    fs -= 1;
-    x.font = `700 ${Math.round(fs)}px Georgia, "Times New Roman", serif`;
+  /* the knuckles — wide and faint. Round and bright reads as a rivet. */
+  x.fillStyle = "rgba(255,244,206,0.10)";
+  for (const n of PASS_NAILS) {
+    x.beginPath();
+    x.ellipse(hx + n[0] * hw, hy + (n[2] + 0.215) * hh,
+              hw * n[1] * 1.05, hh * 0.013, 0, 0, 6.3);
+    x.fill();
   }
-  x.fillStyle = nm ? "rgba(64,42,12,0.92)" : "rgba(84,60,26,0.34)";
-  x.fillText(label, 0, ply + plh * 0.5);
+  x.restore();
+
+  /* the nails. This is the line that says back of a hand, not palm — so
+     they have to be ovals lying across the finger, not beads on it. */
+  const nail = (nx, ny, nw, nh, rot) => {
+    x.save();
+    x.translate(nx, ny); if (rot) x.rotate(rot);
+    const ng = x.createLinearGradient(0, -nh, 0, nh);
+    ng.addColorStop(0, "rgba(255,250,226,0.40)");
+    ng.addColorStop(1, "rgba(150,104,22,0.22)");
+    x.fillStyle = ng;
+    x.beginPath(); x.ellipse(0, 0, nw, nh, 0, 0, 6.3); x.fill();
+    x.strokeStyle = "rgba(96,64,12,0.26)";
+    x.lineWidth = Math.max(1, R * 0.0020);
+    x.stroke();
+    x.restore();
+  };
+  for (const n of PASS_NAILS)
+    nail(hx + n[0] * hw, hy + (n[2] + 0.034) * hh, hw * n[1] * 0.60, hh * 0.019, 0);
+  nail(hx + 0.072 * hw, hy + 0.578 * hh, hw * 0.036, hh * 0.020, -1.15);
+
+  /* ---- PEN15, in marker, across the back of it ---- */
+  if (write > 0.001) {
+    const mw = hw * 0.485;                          /* how wide the word sits */
+    const sc = mw / PASS_WORD.width;
+    const ROT = -0.11;
+    const mx = hx + hw * 0.262, my = hy + hh * 0.690;
+    const drawn = write * PASS_WORD.total;
+    x.save();
+    x.translate(mx, my);
+    x.rotate(ROT);                                  /* written at a slant */
+    x.scale(sc, sc);
+    x.lineCap = "round"; x.lineJoin = "round";
+    let run = 0, tip = null;
+    for (const st of PASS_WORD.strokes) {
+      if (run >= drawn) break;
+      const upto = Math.min(st.len, drawn - run);
+      x.beginPath();
+      let started = false;
+      for (const p of st.pts) {
+        if (p[2] > upto) break;
+        started ? x.lineTo(p[0], p[1]) : (x.moveTo(p[0], p[1]), started = true);
+        tip = p;
+      }
+      if (started) {
+        /* the ink bleeds a touch under the stroke, the way a marker does */
+        x.strokeStyle = "rgba(22,26,52,0.22)";
+        x.lineWidth = 0.185;
+        x.stroke();
+        x.strokeStyle = "rgba(18,22,48,0.94)";
+        x.lineWidth = 0.125;
+        x.stroke();
+      }
+      run += st.len;
+    }
+    x.restore();
+    /* the felt tip itself, while it is still going */
+    if (write < 1 && tip) {
+      const px = mx + (tip[0] * Math.cos(ROT) - tip[1] * Math.sin(ROT)) * sc;
+      const py = my + (tip[0] * Math.sin(ROT) + tip[1] * Math.cos(ROT)) * sc;
+      x.save();
+      x.fillStyle = "rgba(20,24,50,0.9)";
+      x.beginPath(); x.arc(px, py, sc * 0.075, 0, 6.3); x.fill();
+      x.restore();
+    }
+  }
 
   x.restore();
 
@@ -12670,23 +12823,70 @@ function drawTrophyCard(x, W, H, name, t, show, rise, pool) {
     pg.addColorStop(1, `rgba(150,88,18,${(0.5 * pf).toFixed(3)})`);
     x.fillStyle = pg;
     x.beginPath(); x.ellipse(pool.x, pool.y, pw, pht, 0, 0, 6.3); x.fill();
-    const gg = x.createRadialGradient(pool.x, pool.y, 0, pool.x, pool.y, pw * 2.6);
-    gg.addColorStop(0, `rgba(255,196,86,${(0.30 * pf).toFixed(3)})`);
-    gg.addColorStop(1, "rgba(180,110,30,0)");
-    x.fillStyle = gg;
+    const gl2 = x.createRadialGradient(pool.x, pool.y, 0, pool.x, pool.y, pw * 2.6);
+    gl2.addColorStop(0, `rgba(255,196,86,${(0.30 * pf).toFixed(3)})`);
+    gl2.addColorStop(1, "rgba(180,110,30,0)");
+    x.fillStyle = gl2;
     x.beginPath(); x.arc(pool.x, pool.y, pw * 2.6, 0, 6.3); x.fill();
     x.restore();
   }
 
-  /* whose it is. Not what the answer was — this gets shared. */
-  x.save();
-  x.globalAlpha = show * ri;
-  x.textAlign = "center"; x.textBaseline = "middle";
-  const ts = Math.min(W * 0.034, 19);
-  x.font = `400 ${Math.round(ts)}px Georgia, "Times New Roman", serif`;
-  x.fillStyle = "rgba(238,222,186,0.58)";
-  x.fillText("kevinhershock.com", cx, cy - s * 1.28);
-  x.restore();
+  /* ---- the words. This is the bit that gets forwarded. ---- */
+  const said = Math.max(0, Math.min(1, (write - 0.82) / 0.18)) * ri;
+  if (said > 0.01) {
+    x.save();
+    x.globalAlpha = show * said;
+    x.textAlign = "center"; x.textBaseline = "middle";
+    const ty = hy + hh * 1.10;
+    const f1 = Math.min(W * 0.040, R * 0.040, 30);
+    x.font = `400 ${Math.round(f1)}px Georgia, "Times New Roman", serif`;
+    x.fillStyle = "rgba(226,208,168,0.62)";
+    x.fillText("I AM A MEMBER OF THE", cx, ty);
+    const f2 = Math.min(W * 0.105, R * 0.105, 78);
+    x.font = `700 ${Math.round(f2)}px Georgia, "Times New Roman", serif`;
+    const wg = x.createLinearGradient(cx - R * 0.30, 0, cx + R * 0.30, 0);
+    wg.addColorStop(0, "#c99327");
+    wg.addColorStop(0.42, "#f8ebbe");
+    wg.addColorStop(0.58, "#f8ebbe");
+    wg.addColorStop(1, "#bf861f");
+    x.fillStyle = wg;
+    x.fillText("PEN15 CLUB", cx, ty + f1 * 0.72 + f2 * 0.60);
+
+    /* on screen the input below does this job */
+    if (!plate) { x.restore(); return; }
+    /* the name goes on the line, the way it would on a card. null means
+       nobody in particular — the link preview, which has no member yet. */
+    const nm = name === null ? null : (name || "").trim().toUpperCase();
+    const lyy = ty + f1 * 0.72 + f2 * 1.32;
+    const f3 = Math.min(W * 0.036, R * 0.036, 26);
+    if (nm === null) {
+      x.font = `400 ${Math.round(f3 * 0.66)}px Georgia, "Times New Roman", serif`;
+      x.fillStyle = "rgba(212,190,150,0.34)";
+      x.fillText("kevinhershock.com", cx, lyy + f3 * 0.60);
+      x.restore();
+      return;
+    }
+    x.font = `400 ${Math.round(f3)}px Georgia, "Times New Roman", serif`;
+    const lw = Math.min(W * 0.52, R * 0.56);
+    x.strokeStyle = "rgba(196,150,70,0.34)";
+    x.lineWidth = Math.max(1, R * 0.0022);
+    x.beginPath();
+    x.moveTo(cx - lw / 2, lyy + f3 * 0.74);
+    x.lineTo(cx + lw / 2, lyy + f3 * 0.74);
+    x.stroke();
+    x.fillStyle = nm ? "rgba(240,226,190,0.90)" : "rgba(206,182,138,0.28)";
+    let f3b = f3;
+    while (f3b > 9 && x.measureText(nm || "YOUR NAME").width > lw * 0.88) {
+      f3b -= 1;
+      x.font = `400 ${Math.round(f3b)}px Georgia, "Times New Roman", serif`;
+    }
+    x.fillText(nm || "YOUR NAME", cx, lyy);
+
+    x.font = `400 ${Math.round(f3 * 0.66)}px Georgia, "Times New Roman", serif`;
+    x.fillStyle = "rgba(212,190,150,0.34)";
+    x.fillText("kevinhershock.com", cx, lyy + f3 * 2.00);
+    x.restore();
+  }
 }
 
 /* --- sharing --- */
@@ -12696,17 +12896,21 @@ function cupSay(msg) {
   clearTimeout(cupSay._t);
   cupSay._t = setTimeout(() => { cupSaidEl.textContent = ""; }, 3600);
 }
-function cupUrl() { return location.origin + location.pathname; }
-function cupLine() {
-  const n = (cupNameEl && cupNameEl.value || "").trim();
-  /* no answer in here either — this is the thing that gets forwarded */
-  return (n ? n + " got" : "I got") + " to the end of it.";
+/* Two doors. The site link unfurls the two kids on the couch; what a
+   member shares is their own page, which unfurls the hand. Sending the
+   site link with the pass would put Kevin's photo on somebody else's
+   membership, which is the opposite of the point. */
+function cupUrl() {
+  const o = location.origin;
+  if (!o || o === "null") return "https://kevinhershock.com/club";
+  return o + "/club";
 }
+function cupLine() { return "I AM A MEMBER OF THE PEN15 CLUB!"; }
 function cupCanvas() {
   const c = document.createElement("canvas");
   const w = 1200, h = 1200;
   c.width = w; c.height = h;
-  drawTrophyCard(c.getContext("2d"), w, h, cupNameEl ? cupNameEl.value : "", 0, 1);
+  drawPassCard(c.getContext("2d"), w, h, cupNameEl ? cupNameEl.value : "", 0, 1, 1, null, 1);
   return c;
 }
 function cupBlob() {
@@ -12723,9 +12927,13 @@ if (cupShareEl) cupShareEl.addEventListener("click", async () => {
   const text = cupLine(), url = cupUrl();
   try {
     const blob = await cupBlob();
-    const file = blob ? new File([blob], "trophy.png", { type: "image/png" }) : null;
+    const file = blob ? new File([blob], "pen15-club.png", { type: "image/png" }) : null;
     if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], text, url });
+      /* NO url alongside the file. Sending both lets the receiving app throw
+         away the card and unfurl the link instead, and what comes up then is
+         the og image — which is Kevin's photo, not the member's pass. The
+         picture IS the message here, so it goes on its own. */
+      await navigator.share({ files: [file], text });
       return;
     }
     if (navigator.share) { await navigator.share({ text, url }); return; }
@@ -12746,11 +12954,44 @@ if (cupSaveEl) cupSaveEl.addEventListener("click", async () => {
   if (!blob) { cupSay("could not make the picture"); return; }
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = "trophy.png";
+  a.download = "pen15-club.png";
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   cupSay("saved");
 });
+
+/* a felt tip dragging on something hard. Filtered noise with a bit of tone
+   in it, panned across as the word goes left to right. */
+function markerSqueak(i) {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const n = ac.createBufferSource(); n.buffer = noise(ac);
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass";
+  bp.frequency.setValueAtTime(900 + (i % 5) * 180, t0);
+  bp.frequency.exponentialRampToValueAtTime(1700 + (i % 3) * 300, t0 + 0.16);
+  bp.Q.value = 3.2;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(0.085, t0 + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
+  const pan = at(window.innerWidth * (0.42 + (i / 10) * 0.16));
+  n.connect(bp); bp.connect(g); g.connect(pan || BUS);
+  if (pan) pan.connect(BUS);
+  n.start(t0); n.stop(t0 + 0.26);
+}
+/* the cap going back on */
+function capClick() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime + 0.10;
+  const o = ac.createOscillator(); o.type = "triangle";
+  o.frequency.setValueAtTime(760, t0);
+  o.frequency.exponentialRampToValueAtTime(240, t0 + 0.05);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.10, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.10);
+  o.connect(g); g.connect(BUS);
+  o.start(t0); o.stop(t0 + 0.14);
+}
 
 /* ---------- sound ---------- */
 function bossRoom() {
