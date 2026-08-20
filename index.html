@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="build" content="2026-08-20T16:32Z">
+<meta name="build" content="2026-08-20T17:04Z">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Kevin Hershock</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎈</text></svg>">
@@ -5771,7 +5771,10 @@ function digAt(x, y, dx, dt) {
     let wsum = 0;
     for (let k = -span; k <= span; k++) wsum += Math.max(0, 1 - Math.abs(k) / span);
     const G2 = digGeom();
-    const ceil = G2.top - (G2.H - G2.top) * 0.16;      /* piles are not mountains */
+    /* piles are not mountains, and they are certainly not out at sea —
+       spoil thrown above the waterline stood up as hard triangles against
+       the water behind it */
+    const ceil = G2.top + 4;
     const side = dx >= 0 ? 1 : -1;
     for (const [j0, share] of [[li, side < 0 ? 0.6 : 0.4], [ri, side > 0 ? 0.6 : 0.4]]) {
       for (let k = -span; k <= span; k++) {
@@ -6017,6 +6020,45 @@ function drawDig(dt) {
   }
   fctx.restore();
 
+  /* The X. You have just followed a map with an X on it to this beach, and
+     the beach used to arrive with no mark on it at all — a thousand pixels
+     of identical sand and a chest buried in the middle of it with nothing to
+     say so. On a phone you tend to dig in the middle anyway. On a desktop
+     there is three times as much beach to miss, which is why this read as
+     impossible rather than merely hard.
+
+     So the X came with you: scratched in the sand, where it was on the
+     paper, and it goes as you dig it away. */
+  {
+    const mx = G.lidX, my = sandH[Math.max(0, Math.min(digN - 1, Math.round(mx / digCol)))];
+    const gone = Math.min(1, lidSeen * 2.6 + lidClear);
+    if (gone < 1) {
+      const xr = G.lidR * 0.30;
+      const puls = 0.5 + 0.5 * Math.sin(digT * 2.0);
+      /* a stronger pulse if they have not started, then it settles down */
+      const call = digT > 3.5 && lidSeen < 0.02 ? 0.30 * puls : 0.10 * puls;
+      const a = (1 - gone) * (0.34 + call);
+      fctx.save();
+      fctx.translate(mx, my + xr * 1.05);
+      fctx.scale(1, 0.46);                       /* it lies on the ground */
+      fctx.strokeStyle = `rgba(126,92,52,${a.toFixed(3)})`;
+      fctx.lineWidth = Math.max(3, G.lidR * 0.055);
+      fctx.lineCap = "round";
+      fctx.beginPath();
+      fctx.moveTo(-xr, -xr); fctx.lineTo(xr, xr);
+      fctx.moveTo(xr, -xr); fctx.lineTo(-xr, xr);
+      fctx.stroke();
+      /* the light catching the edge of the scratch */
+      fctx.strokeStyle = `rgba(255,244,214,${(a * 0.5).toFixed(3)})`;
+      fctx.lineWidth = Math.max(1.4, G.lidR * 0.022);
+      fctx.beginPath();
+      fctx.moveTo(-xr, -xr - 2); fctx.lineTo(xr, xr - 2);
+      fctx.moveTo(xr, -xr - 2); fctx.lineTo(-xr, xr - 2);
+      fctx.stroke();
+      fctx.restore();
+    }
+  }
+
   /* a rim of shadow where the pit wall meets the light */
   fctx.strokeStyle = "rgba(70,48,24,0.30)";
   fctx.lineWidth = 2;
@@ -6056,28 +6098,68 @@ function drawDig(dt) {
 }
 
 /* --- the shovel --- */
+/* Where the sand actually is under a given x, taking the highest point the
+   blade would touch across its width. */
+function sandUnder(x) {
+  if (!sandH) return null;
+  const span = Math.max(2, Math.round(Math.max(30, 48 * UIS) / digCol));
+  const c = Math.max(0, Math.min(digN - 1, Math.round(x / digCol)));
+  let lo = -1e9;
+  for (let i = c - span; i <= c + span; i++)
+    if (i >= 0 && i < digN) lo = Math.max(lo, sandH[i]);
+  return lo > -1e8 ? lo : null;
+}
+
+/* THE BUG THIS FIXES, because it is worth writing down: the blade was
+   ignored if it sat more than about sixty pixels above the sand, and digging
+   is the act of moving the sand DOWN and away from where your hand is. So
+   you got one bite, the hole dropped out from under the shovel, and every
+   stroke after that was through thin air. On a phone you chase the hole with
+   your finger without thinking about it. On a mouse it read as broken, and
+   it was.
+
+   The blade goes where the sand is now, not where your hand was when you
+   started. Sweep anywhere over the beach and it bites. */
+function digBlade(e) {
+  const G = digGeom();
+  const floorY = sandUnder(e.clientX);
+  if (floorY === null) return null;
+  if (e.clientY < G.top - (G.H - G.top) * 0.30) return null;   /* that is sky */
+  return Math.max(e.clientY, floorY - 4);
+}
+
 function digPointer(e) {
   if (digPhase !== 1) return;
+  const by = digBlade(e);
   const sh = document.getElementById("shovel");
-  if (sh) { sh.style.left = e.clientX + "px"; sh.style.top = e.clientY + "px"; }
-  if (!digging) return;
+  /* the shovel rests on the sand, so you can see it is in contact */
+  if (sh) { sh.style.left = e.clientX + "px"; sh.style.top = (by === null ? e.clientY : by) + "px"; }
+  if (!digging || by === null) return;
   const dx = e.clientX - digging.x;
-  digAt(e.clientX, e.clientY, dx, Math.min(0.05, Math.max(0.008, (performance.now() - digging.t) / 1000)));
-  digging = { x: e.clientX, y: e.clientY, t: performance.now() };
+  digAt(e.clientX, by, dx, Math.min(0.05, Math.max(0.008, (performance.now() - digging.t) / 1000)));
+  digging = { x: e.clientX, y: by, t: performance.now() };
   if (e.cancelable) e.preventDefault();
 }
 window.addEventListener("pointerdown", (e) => {
   if (digPhase !== 1) return;
-  /* if they are tapping the wood rather than dragging the shovel, take that
-     as intent and brush the sand off it — a tap on the thing you are trying
-     to uncover should never do nothing */
-  const G0 = digGeom();
-  if (Math.abs(e.clientX - G0.lidX) < G0.lidR &&
-      Math.abs(e.clientY - lidTopAt(e.clientX)) < G0.lidR * 0.6) {
-    digAt(e.clientX, lidTopAt(e.clientX) - 4, 0, 0.05);
-    digAt(e.clientX, lidTopAt(e.clientX) - 4, 0, 0.05);
+  /* Every pull on this site advances on a tap. A tap anywhere on the beach
+     takes a shovelful out of it — it used to do that only if you happened to
+     press on the buried lid, which nobody can see. */
+  const by = digBlade(e);
+  if (by !== null) {
+    /* A press is one shovelful, and a shovelful is a scoop across the width
+       of the blade — not a poke at one column. Pressing used to clear a
+       narrow slot in the middle of a lid three blades wide, so the sand
+       either side slumped straight back into it and you could press all day
+       without ever uncovering anything. */
+    const R = Math.max(30, 48 * UIS);
+    for (let k = -2; k <= 2; k++) {
+      const x = e.clientX + k * R * 0.62;
+      const y2 = digBlade({ clientX: x, clientY: e.clientY });
+      if (y2 !== null) digAt(x, y2, k * 12, 0.042);
+    }
   }
-  digging = { x: e.clientX, y: e.clientY, t: performance.now() };
+  digging = { x: e.clientX, y: by === null ? e.clientY : by, t: performance.now() };
   const sh = document.getElementById("shovel");
   if (sh) sh.classList.add("dig");
   if (e.cancelable) e.preventDefault();
