@@ -13431,7 +13431,7 @@ let bankStones = [], rivHanded = false, rivNode = null, crossed = 0;
 let reeds = [], tufts = [], rivDir = 1, rivGlow = 0;
 let barCool = null, barWarm = null, rivVig = null, rivVigW = 0, rivVigH = 0;
 let hills = [], rivClouds = [], rivBirds = [], mist = [];
-let moonUp = 0, moonX = 0, moonDrop = -1, rivDone = 0;
+let moonUp = 0, moonX = 0, moonDrop = -1, rivDone = 0, rivPath = null;
 
 /* A soft-ended bar. The current and the reflection were each building a fresh
    linear gradient per streak per frame — about a hundred and eighty objects a
@@ -13470,6 +13470,7 @@ function startRiver() {
   mark("river");
   if (rivOn) return;
   rivOn = true; rivT = 0; crossed = 0; rivHanded = false; rivGlow = 0;
+  rivPath = null;
   stones = []; foam = [];
   const G = rivGeom();
   rivDir = RUN.windDir >= 0 ? 1 : -1;        /* it runs the way the wind did */
@@ -13890,7 +13891,11 @@ function riverFrame(dt) {
   }
 
   /* ---------- the stones you put up ---------- */
-  for (const s of stones) {
+  /* the ones that make the route get a little warmth on them, so once the
+     way across exists you can see which stones it goes over */
+  const onPath = new Set(rivPath || []);
+  for (let si = 0; si < stones.length; si++) {
+    const s = stones[si];
     s.rise = Math.min(1, s.rise + dt * 1.9);
     const e = 1 - Math.pow(1 - s.rise, 3);
     const sc = rivScale(G, s.t) * s.s;
@@ -13908,6 +13913,14 @@ function riverFrame(dt) {
     fctx.ellipse(s.x, y + sc * 0.44, sc * (1.02 + 0.07 * Math.sin(rivT * 4 + s.seed)),
                  sc * 0.22, 0, 0, 6.3);
     fctx.fill();
+    if (onPath.has(si)) {
+      const gl = 0.16 + 0.10 * Math.sin(rivT * 2.2 + si * 1.3);
+      const rg = fctx.createRadialGradient(s.x, y - sc * 0.3, 0, s.x, y - sc * 0.3, sc * 2.4);
+      rg.addColorStop(0, `rgba(255,214,150,${(gl * rivGlow + gl * 0.5).toFixed(3)})`);
+      rg.addColorStop(1, "rgba(255,190,110,0)");
+      fctx.fillStyle = rg;
+      fctx.beginPath(); fctx.arc(s.x, y - sc * 0.3, sc * 2.4, 0, 6.3); fctx.fill();
+    }
     drawRock(s.x, y - sc * (0.30 * e), sc, s.rot, s.seed, true);
     /* a dry top, because it has been up long enough to drain */
     if (e > 0.6) {
@@ -13988,7 +14001,8 @@ function riverFrame(dt) {
   }
 
   /* ---------- across? ---------- */
-  crossed = crossingOK(G) ? 1 : 0;
+  rivPath = crossingOK(G);
+  crossed = rivPath ? 1 : 0;
   if (crossed) {
     rivGlow = Math.min(1, rivGlow + dt * 0.5);
     fctx.fillStyle = `rgba(255,214,150,${(rivGlow * 0.10).toFixed(3)})`;
@@ -14046,16 +14060,45 @@ function riverFrame(dt) {
 /* A crossing is a chain from this bank to that one: something to step on
    near your feet, something near the far side, and no gap in between that
    you would not jump. It does not have to be straight. */
+/* THE HUNDRED-STONE BUG. This used to sort every stone by depth and demand
+   that each consecutive pair be within one step of the last — which grades
+   the whole set as if it were the route. So one stone dropped off to the
+   side broke a crossing that was already finished, and every extra stone
+   was another link that could fail. Putting more stones in the river made
+   it strictly harder to get across, which is the exact opposite of what the
+   scene tells you to do. Somebody put about a hundred in and never crossed.
+
+   A crossing is not a property of all the stones. It is a path through
+   some of them. So: walk out from every stone within a step of your bank
+   and see whether any of them reach the far one. Extra stones can now only
+   ever help, and the route it found comes back so the scene can light it. */
+const RIV_DT = 0.38;                       /* how far you will step, in depth */
+const rivDX = (G) => G.W * 0.30;           /*  ...and sideways */
+
 function crossingOK(G) {
-  if (stones.length < 3) return false;
-  const ss = stones.slice().sort((a, b) => b.t - a.t);   /* near first */
-  if (ss[0].t < 0.72) return false;
-  if (ss[ss.length - 1].t > 0.28) return false;
-  for (let i = 1; i < ss.length; i++) {
-    if (ss[i - 1].t - ss[i].t > 0.34) return false;
-    if (Math.abs(ss[i - 1].x - ss[i].x) > G.W * 0.26) return false;
+  const n = stones.length;
+  if (!n) return null;
+  const DX = rivDX(G);
+  const seen = new Array(n).fill(false), from = new Array(n).fill(-1);
+  const q = [];
+  /* anything you can reach from the bank at your feet */
+  for (let i = 0; i < n; i++)
+    if (stones[i].t >= 1 - RIV_DT) { seen[i] = true; q.push(i); }
+  let end = -1;
+  for (let h = 0; h < q.length; h++) {
+    const i = q[h];
+    if (stones[i].t <= RIV_DT) { end = i; break; }   /* and off onto the far bank */
+    for (let j = 0; j < n; j++) {
+      if (seen[j]) continue;
+      if (Math.abs(stones[i].t - stones[j].t) > RIV_DT) continue;
+      if (Math.abs(stones[i].x - stones[j].x) > DX) continue;
+      seen[j] = true; from[j] = i; q.push(j);
+    }
   }
-  return true;
+  if (end < 0) return null;
+  const path = [];
+  for (let i = end; i >= 0; i = from[i]) path.push(i);
+  return path;                              /* far bank first, back to yours */
 }
 
 window.addEventListener("pointerdown", (e) => {
