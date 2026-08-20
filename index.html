@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="build" content="2026-08-20T17:51Z">
+<meta name="build" content="2026-08-20T18:25Z">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Kevin Hershock</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎈</text></svg>">
@@ -979,6 +979,8 @@ const CHAPTERS = [
   { k: "river",  go: () => { openCanvas(); startRiver(); } },
   { k: "pan",    go: () => { openCanvas(); startPan(); } },
   { k: "bingo",  go: () => { openCanvas(); startBingo(); } },
+  { k: "sundae", go: () => { openCanvas(); startSundae(null); } },
+  { k: "golf",   go: () => { openCanvas(); startGolf(null); } },
 ];
 const CHAPTER_AT = (k) => CHAPTERS.findIndex(c => c.k === k);
 
@@ -4750,6 +4752,8 @@ function drawNight(dt) {
   if (chainEnd) { restFrame(dt); return; }
   if (panOn) { panFrame(dt); return; }
   if (bgOn) { bingoFrame(dt); return; }
+  if (sunOn) { sundaeFrame(dt); return; }
+  if (glfOn) { golfFrame(dt); return; }
   if (rivOn) { riverFrame(dt); return; }
   if (woodOn) { woodFrame(dt); return; }
   if (beaconOn) { beaconFrame(dt); return; }
@@ -10022,22 +10026,36 @@ function bingoFrame(dt) {
            drawing that is only an outline */
         if (k >= F.length - 1) {
           bgReady = true;
-          drawFinger(G, g2);
+          bgUp = bgCrank;
+          /* the whole hand, finger and all, as one outline at the height it
+             has been wound to */
+          const L = handOutline(bgUp);
+          const p0 = at(L, 0);
           fctx.fillStyle = "#f6f1e4";
           fctx.beginPath();
-          fctx.moveTo(s0[0], s0[1]);
-          for (let i = 1; i < F.length; i++) { const q = at(F, i); fctx.lineTo(q[0], q[1]); }
+          fctx.moveTo(p0[0], p0[1]);
+          for (let i = 1; i < L.length; i++) { const q = at(L, i); fctx.lineTo(q[0], q[1]); }
           fctx.closePath();
           fctx.fill();
-        }
-        fctx.beginPath();
-        fctx.moveTo(s0[0], s0[1]);
-        for (let i = 1; i <= n; i++) { const q = at(F, i); fctx.lineTo(q[0], q[1]); }
-        if (n < F.length - 1) {
-          const f = k - n, a1 = at(F, n), b1 = at(F, n + 1);
+          fctx.stroke();
+          /* a crease across it once there is enough finger to crease */
+          if (bgUp > 0.45) {
+            const fx = g2.x + g2.w * 0.47, fy = g2.y + g2.h * (0.34 - bgUp * 0.60 + 0.20);
+            fctx.lineWidth = Math.max(1.5, G.cell * 0.038);
+            fctx.beginPath();
+            fctx.moveTo(fx - g2.w * 0.045, fy);
+            fctx.lineTo(fx + g2.w * 0.045, fy);
+            fctx.stroke();
+            fctx.lineWidth = Math.max(3, G.cell * 0.085);
+          }
+        } else {
+          fctx.beginPath();
+          fctx.moveTo(s0[0], s0[1]);
+          for (let i = 1; i <= n; i++) { const q = at(F, i); fctx.lineTo(q[0], q[1]); }
+          const f = k - n, a1 = at(F, n), b1 = at(F, Math.min(F.length - 1, n + 1));
           fctx.lineTo(a1[0] + (b1[0] - a1[0]) * f, a1[1] + (b1[1] - a1[1]) * f);
+          fctx.stroke();
         }
-        fctx.stroke();
         if (bgReady) {
           fctx.lineWidth = Math.max(2, G.cell * 0.050);
           for (const T2 of bgThumb) {
@@ -10083,12 +10101,12 @@ function bingoFrame(dt) {
                       c: `hsl(${(Math.random() * 360) | 0},78%,60%)`,
                       s: G.cell * (0.05 + Math.random() * 0.07), life: 1 });
     }
-    if (bgHold > 4.2) {
-      const f = Math.min(1, (bgHold - 4.2) / 2.2);
-      fctx.fillStyle = `rgba(250,248,244,${(f * f).toFixed(3)})`;
-      fctx.fillRect(0, 0, W, H);
-      if (f >= 1) { bgOn = false; release("bingo"); chainEnd = true; restT = 0;
-                    finCanvas.style.cursor = ""; }
+    /* it goes for a second and then it stops being confetti */
+    if (bgHold > 1.9) {
+      bgOn = false; release("bingo");
+      finCanvas.style.cursor = "";
+      startSundae(bgConf);
+      return;
     }
   }
   for (let i = bgConf.length - 1; i >= 0; i--) {
@@ -10131,28 +10149,40 @@ function unitPath(build) {
   build(put, quad);
   return P;
 }
-function fistPath() {
-  if (bgFist) return bgFist;
-  bgFist = unitPath((put, quad) => {
-    put(0.20, 0.97);                     /* the heel */
+/* THE FIX THAT MATTERED: the finger used to be its own shape drawn behind a
+   filled fist, so where it met the knuckles there was a hard horizontal cut
+   and it read as pasted on. It is part of the outline now — the stroke runs
+   up the knuckles, out along one side of the finger, round the tip, back
+   down the other side and on to the next knuckle. One continuous line, so it
+   cannot help but be attached. At rest it is a knuckle like the others. */
+function handOutline(up) {
+  const tipY = 0.34 - up * 0.60;
+  const midY = (0.36 + tipY) / 2;
+  return unitPath((put, quad) => {
+    put(0.20, 0.97);                          /* the heel */
     quad(0.08, 0.90, 0.08, 0.72);
-    quad(0.08, 0.56, 0.16, 0.50);
-    /* four knuckles, and they have to actually be knuckles */
-    quad(0.20, 0.36, 0.30, 0.40, 7);
-    quad(0.36, 0.28, 0.46, 0.34, 7);
-    quad(0.54, 0.26, 0.63, 0.33, 7);
-    quad(0.72, 0.30, 0.78, 0.42, 7);
-    quad(0.87, 0.52, 0.87, 0.70);
-    quad(0.87, 0.89, 0.74, 0.96);
+    quad(0.08, 0.56, 0.17, 0.48);
+    quad(0.21, 0.36, 0.31, 0.40, 7);          /* index knuckle */
+    quad(0.35, 0.31, 0.40, 0.36, 6);          /* into the base of it */
+    quad(0.393, midY, 0.404, tipY + 0.055, 9);/* up the left of it */
+    quad(0.404, tipY - 0.034, 0.470, tipY - 0.036, 6);   /* over the tip */
+    quad(0.536, tipY - 0.034, 0.536, tipY + 0.055, 6);
+    quad(0.547, midY, 0.552, 0.36, 9);        /* and back down */
+    quad(0.59, 0.30, 0.67, 0.35, 7);          /* ring knuckle */
+    quad(0.75, 0.32, 0.81, 0.44, 7);          /* little knuckle */
+    quad(0.88, 0.54, 0.88, 0.71);
+    quad(0.88, 0.90, 0.74, 0.96);
     quad(0.50, 1.02, 0.20, 0.97);
   });
-  /* the folds between the fingers — three short creases, which say "closed
-     hand" far more plainly than a thumb drawn across it, which just read as
-     a frown */
+}
+function fistPath() {
+  if (bgFist) return bgFist;
+  bgFist = handOutline(0);
+  /* the folds of the three fingers that stayed down */
   bgThumb = [
-    unitPath((put, quad) => { put(0.29, 0.42); quad(0.31, 0.55, 0.30, 0.66, 6); }),
-    unitPath((put, quad) => { put(0.46, 0.36); quad(0.48, 0.52, 0.47, 0.64, 6); }),
-    unitPath((put, quad) => { put(0.63, 0.35); quad(0.66, 0.51, 0.65, 0.63, 6); }),
+    unitPath((put, quad) => { put(0.26, 0.42); quad(0.28, 0.55, 0.27, 0.67, 6); }),
+    unitPath((put, quad) => { put(0.63, 0.38); quad(0.66, 0.53, 0.65, 0.65, 6); }),
+    unitPath((put, quad) => { put(0.77, 0.44); quad(0.79, 0.58, 0.78, 0.69, 6); }),
   ];
   return bgFist;
 }
@@ -10166,39 +10196,6 @@ function bgHandBox(G) {
 function bgAxle(G) {
   const g2 = bgHandBox(G);
   return { x: g2.x + g2.w * 1.20, y: g2.y + g2.h * 0.64, r: g2.w * 0.28 };
-}
-
-/* it comes up out of the top of the fist as you wind */
-function drawFinger(G, g2) {
-  bgUp = bgCrank;
-  /* it starts below the knuckle line, so at rest there is nothing showing */
-  const len = g2.h * 0.78 * bgUp;
-  const bx = g2.x + g2.w * 0.48;
-  const by = g2.y + g2.h * 0.56;
-  const wdt = g2.w * 0.115;
-  fctx.save();
-  fctx.strokeStyle = "rgba(196,42,38,0.92)";
-  fctx.lineWidth = Math.max(3, G.cell * 0.085);
-  fctx.lineCap = "round"; fctx.lineJoin = "round";
-  fctx.fillStyle = "#f6f1e4";
-  fctx.beginPath();
-  fctx.moveTo(bx - wdt, by);
-  fctx.lineTo(bx - wdt, by - len + wdt);
-  fctx.quadraticCurveTo(bx - wdt, by - len - wdt * 0.5, bx, by - len - wdt * 0.5);
-  fctx.quadraticCurveTo(bx + wdt, by - len - wdt * 0.5, bx + wdt, by - len + wdt);
-  fctx.lineTo(bx + wdt, by);
-  fctx.closePath();
-  fctx.fill();
-  fctx.stroke();
-  /* a crease, once there is enough of it to crease */
-  if (bgUp > 0.45) {
-    fctx.lineWidth = Math.max(1.5, G.cell * 0.035);
-    fctx.beginPath();
-    fctx.moveTo(bx - wdt * 0.45, by - len * 0.42);
-    fctx.lineTo(bx + wdt * 0.45, by - len * 0.42);
-    fctx.stroke();
-  }
-  fctx.restore();
 }
 
 /* the handle. It idles round a few degrees on its own, the way the
@@ -10486,6 +10483,865 @@ function bingoHit() {
     o.connect(g); g.connect(at(Math.random() * window.innerWidth) || BUS);
     o.start(t); o.stop(t + 0.2);
   }
+}
+
+/* ================= what the sprinkles were for =================
+   The confetti off the bingo goes for a second and then it stops being
+   confetti. The card fades out from under it, a glass comes up from the
+   bottom with three scoops in it, and the same falling things keep falling.
+
+   Move the glass. Catch them. They stick where they land. */
+
+let sunOn = false, sunT = 0, sunX = 0, sunAim = 0, sunCaught = 0, sunDone = 0;
+let sprinkles = [], stuck = [], scoops = [], sunFade = 0, sunIdle = 0, sunLift = 0;
+const SUN_TARGET = 34;
+const SPRINKLE_COLS = ["#ef476f", "#ffd166", "#06d6a0", "#4cc9f0", "#b892ff", "#ff8fab", "#fdfcdc"];
+
+function sunGeom2() {
+  const W = window.innerWidth, H = window.innerHeight;
+  const R = Math.min(W * 0.16, H * 0.15);       /* the bowl's radius */
+  return { W, H, R, y: H * 0.74 };
+}
+
+function startSundae(carry) {
+  mark("sundae");
+  if (sunOn) return;
+  sunOn = true; sunT = 0; sunCaught = 0; sunDone = 0; sunFade = 0;
+  sunIdle = 0; sunLift = 0; stuck = [];
+  const G = sunGeom2();
+  sunX = G.W * 0.5; sunAim = G.W * 0.5;
+
+  /* three scoops, and never the same three */
+  const flav = [["#f6e0c8", "#e8c39a"], ["#f2b8c6", "#dd8fa6"], ["#c8a882", "#a9835c"],
+                ["#cfe8d5", "#a8cdb4"], ["#e9d9f2", "#c9aede"], ["#f5e6a8", "#dcc673"]];
+  for (let i = flav.length - 1; i > 0; i--) {
+    const j = (rnd() * (i + 1)) | 0; const t = flav[i]; flav[i] = flav[j]; flav[j] = t;
+  }
+  scoops = [
+    { dx: -0.44, dy: -0.30, r: 0.46, c: flav[0] },
+    { dx:  0.44, dy: -0.26, r: 0.44, c: flav[1] },
+    { dx:  0.00, dy: -0.62, r: 0.50, c: flav[2] },
+  ];
+
+  /* whatever was still in the air comes with us */
+  sprinkles = [];
+  if (carry && carry.length) {
+    for (const c of carry)
+      sprinkles.push({ x: c.x, y: c.y, vx: c.vx * 0.30, vy: Math.max(60, c.vy * 0.4 + 120),
+                       rot: c.rot, spin: c.spin * 0.5, c: c.c, s: Math.min(G.R * 0.10, c.s) });
+  }
+  /* and the card goes out from under them */
+  try { natCapture(finCanvas); } catch (e) {}
+  sunFade = 1;
+
+  finCanvas.style.background = "#100b14";
+  finCanvas.style.display = "block";
+  sizeFinale();
+  finCanvas.style.cursor = "grab";
+  bed("paper");
+  sundaeRoom();
+}
+
+function drawBowl(G, bx, by) {
+  const R = G.R;
+  fctx.save();
+  fctx.translate(bx, by);
+
+  /* the scoops, mounded above the rim */
+  for (const s of scoops) {
+    const sx = s.dx * R, sy = s.dy * R, sr = s.r * R;
+    const g = fctx.createRadialGradient(sx - sr * 0.34, sy - sr * 0.40, 0, sx, sy, sr * 1.15);
+    g.addColorStop(0, s.c[0]);
+    g.addColorStop(1, s.c[1]);
+    fctx.fillStyle = g;
+    /* A scoop is not a polygon. Sampling a wobble and joining the points with
+       straight lines made faceted wedges; the curve has to be carried through
+       the midpoints so the lobes stay round. */
+    const N = 14;
+    const rAt = (i) => sr * (0.95 + 0.085 * Math.sin((i / N) * Math.PI * 2 * 3 + s.dx * 9));
+    const px = (i) => sx + Math.cos((i / N) * Math.PI * 2) * rAt(i);
+    const py = (i) => sy + Math.sin((i / N) * Math.PI * 2) * rAt(i) * 0.94;
+    fctx.beginPath();
+    fctx.moveTo(px(0), py(0));
+    for (let i = 0; i < N; i++) {
+      const a0 = (i / N) * Math.PI * 2, a1 = ((i + 1) / N) * Math.PI * 2;
+      const am = (a0 + a1) / 2, rm = (rAt(i) + rAt(i + 1)) / 2 * 1.02;
+      fctx.quadraticCurveTo(sx + Math.cos(am) * rm, sy + Math.sin(am) * rm * 0.94,
+                            px(i + 1), py(i + 1));
+    }
+    fctx.closePath();
+    fctx.fill();
+    /* the shine off the top of it */
+    fctx.save();
+    fctx.globalAlpha = 0.30;
+    fctx.fillStyle = "#ffffff";
+    fctx.beginPath();
+    fctx.ellipse(sx - sr * 0.30, sy - sr * 0.42, sr * 0.30, sr * 0.16, -0.5, 0, 6.3);
+    fctx.fill();
+    fctx.restore();
+  }
+  /* what has landed on them, held in the bowl's own frame so it travels */
+  for (const p of stuck) {
+    fctx.save();
+    fctx.translate(p.x * R, p.y * R);
+    fctx.rotate(p.rot);
+    fctx.fillStyle = p.c;
+    fctx.fillRect(-p.s, -p.s * 0.38, p.s * 2, p.s * 0.76);
+    fctx.restore();
+  }
+
+  /* the glass, over the front of the ice cream */
+  const gw = R * 1.02, gh = R * 0.62;
+  const gg = fctx.createLinearGradient(-gw, 0, gw, 0);
+  gg.addColorStop(0, "rgba(214,232,240,0.30)");
+  gg.addColorStop(0.22, "rgba(246,252,255,0.16)");
+  gg.addColorStop(0.5, "rgba(190,214,226,0.13)");
+  gg.addColorStop(0.80, "rgba(246,252,255,0.16)");
+  gg.addColorStop(1, "rgba(214,232,240,0.30)");
+  fctx.fillStyle = gg;
+  fctx.beginPath();
+  fctx.moveTo(-gw, 0);
+  fctx.quadraticCurveTo(-gw * 0.92, gh * 1.30, 0, gh * 1.34);
+  fctx.quadraticCurveTo(gw * 0.92, gh * 1.30, gw, 0);
+  fctx.closePath();
+  fctx.fill();
+  fctx.strokeStyle = "rgba(236,248,255,0.42)";
+  fctx.lineWidth = Math.max(1.6, R * 0.026);
+  fctx.stroke();
+  /* the rim, and a highlight down one side */
+  fctx.strokeStyle = "rgba(250,255,255,0.55)";
+  fctx.lineWidth = Math.max(2, R * 0.034);
+  fctx.beginPath();
+  fctx.ellipse(0, 0, gw, gh * 0.30, 0, 0, 6.3);
+  fctx.stroke();
+  fctx.strokeStyle = "rgba(255,255,255,0.22)";
+  fctx.lineWidth = Math.max(1.2, R * 0.020);
+  fctx.beginPath();
+  fctx.moveTo(-gw * 0.72, gh * 0.30);
+  fctx.quadraticCurveTo(-gw * 0.60, gh * 0.95, -gw * 0.26, gh * 1.18);
+  fctx.stroke();
+  /* stem and foot */
+  fctx.fillStyle = "rgba(220,238,246,0.26)";
+  fctx.fillRect(-R * 0.09, gh * 1.30, R * 0.18, R * 0.34);
+  fctx.beginPath();
+  fctx.ellipse(0, gh * 1.30 + R * 0.36, R * 0.36, R * 0.10, 0, 0, 6.3);
+  fctx.fill();
+  fctx.strokeStyle = "rgba(240,250,255,0.34)";
+  fctx.lineWidth = Math.max(1.4, R * 0.020);
+  fctx.stroke();
+  fctx.restore();
+}
+
+function sundaeFrame(dt) {
+  const W = window.innerWidth, H = window.innerHeight;
+  const G = sunGeom2();
+  sunT += dt;
+
+  hardClear(finCanvas, fctx);
+  /* a counter under a light */
+  const room = fctx.createRadialGradient(W * 0.5, G.y, 0, W * 0.5, G.y, Math.max(W, H) * 0.85);
+  room.addColorStop(0, "#241a2b");
+  room.addColorStop(0.55, "#150f1c");
+  room.addColorStop(1, "#08060c");
+  fctx.fillStyle = room;
+  fctx.fillRect(0, 0, W, H);
+
+  /* the bowl comes up out of the bottom as the card goes */
+  const rise = Math.min(1, sunT / 1.2);
+  const by = G.y + (1 - (1 - Math.pow(1 - rise, 3))) * H * 0.42 - sunLift * H * 0.10;
+  sunX += (sunAim - sunX) * Math.min(1, dt * 9);
+  const bx = Math.max(G.R * 1.1, Math.min(W - G.R * 1.1, sunX));
+
+  /* ---------- what is falling ---------- */
+  if (sunDone < 0.001) {
+    const want = 3.4 + Math.min(2.6, sunT * 0.10);
+    if (Math.random() < want * dt)
+      sprinkles.push({ x: Math.random() * W, y: -20,
+                       vx: (Math.random() - 0.5) * 60, vy: 120 + Math.random() * 110,
+                       rot: Math.random() * 6.3, spin: (Math.random() - 0.5) * 7,
+                       c: SPRINKLE_COLS[(Math.random() * SPRINKLE_COLS.length) | 0],
+                       s: G.R * (0.055 + Math.random() * 0.030) });
+  }
+  for (let i = sprinkles.length - 1; i >= 0; i--) {
+    const p = sprinkles[i];
+    p.vy += 240 * dt;
+    p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.spin * dt;
+    /* did it land on the ice cream? */
+    let hit = false;
+    for (const s of scoops) {
+      const sx = bx + s.dx * G.R, sy = by + s.dy * G.R;
+      if (Math.hypot(p.x - sx, (p.y - sy) / 0.94) < s.r * G.R * 0.98) { hit = true; break; }
+    }
+    if (hit) {
+      stuck.push({ x: (p.x - bx) / G.R, y: (p.y - by) / G.R, rot: p.rot, c: p.c, s: p.s });
+      sprinkles.splice(i, 1);
+      sunCaught++;
+      catchTick(sunCaught / SUN_TARGET, p.x);
+      continue;
+    }
+    if (p.y > H + 30) { sprinkles.splice(i, 1); continue; }
+    fctx.save();
+    fctx.translate(p.x, p.y); fctx.rotate(p.rot);
+    fctx.fillStyle = p.c;
+    fctx.fillRect(-p.s, -p.s * 0.38, p.s * 2, p.s * 0.76);
+    fctx.restore();
+  }
+
+  drawBowl(G, bx, by);
+
+  /* ---------- how full it is, said without a number ---------- */
+  {
+    const f = Math.min(1, sunCaught / SUN_TARGET);
+    const w = Math.min(W * 0.30, G.R * 2.4), x = W * 0.5 - w / 2, y = H * 0.935;
+    fctx.strokeStyle = "rgba(236,226,242,0.20)";
+    fctx.lineWidth = Math.max(2, G.R * 0.030);
+    fctx.lineCap = "round";
+    fctx.beginPath(); fctx.moveTo(x, y); fctx.lineTo(x + w, y); fctx.stroke();
+    fctx.strokeStyle = "rgba(255,214,102,0.80)";
+    fctx.beginPath(); fctx.moveTo(x, y); fctx.lineTo(x + w * f, y); fctx.stroke();
+  }
+
+  /* ---------- a nudge, if they have not moved it ---------- */
+  sunIdle += dt;
+  if (sunIdle > 5 && sunCaught === 0) {
+    const p = 0.5 + 0.5 * Math.sin(sunT * 2.2);
+    fctx.strokeStyle = `rgba(246,236,252,${(0.08 + 0.14 * p).toFixed(3)})`;
+    fctx.lineWidth = Math.max(2.5, G.R * 0.035);
+    fctx.lineCap = "round";
+    const y = by + G.R * 0.95;
+    fctx.beginPath();
+    fctx.moveTo(bx - G.R * 1.5, y); fctx.lineTo(bx + G.R * 1.5, y);
+    fctx.moveTo(bx + G.R * 1.5 - G.R * 0.22, y - G.R * 0.16);
+    fctx.lineTo(bx + G.R * 1.5, y);
+    fctx.lineTo(bx + G.R * 1.5 - G.R * 0.22, y + G.R * 0.16);
+    fctx.stroke();
+  }
+
+  /* ---------- the card, going ---------- */
+  if (sunFade > 0.001 && natC) {
+    sunFade = Math.max(0, sunFade - dt * 0.9);
+    fctx.globalAlpha = sunFade;
+    try { fctx.drawImage(natC, 0, 0, W, H); } catch (e) {}
+    fctx.globalAlpha = 1;
+  }
+
+  /* ---------- enough ---------- */
+  if (sunCaught >= SUN_TARGET && sunDone < 0.001) { sunDone = 0.0001; sundaeDone(); }
+  if (sunDone > 0) {
+    sunDone += dt;
+    sunLift = Math.min(1, sunLift + dt * 0.5);
+    fctx.fillStyle = `rgba(255,222,168,${(Math.min(1, sunDone / 3) * 0.14).toFixed(3)})`;
+    fctx.fillRect(0, 0, W, H);
+    /* the two front scoops go over the side and take the scene with them */
+    if (sunDone > 1.6) {
+      sunOn = false; release("sundae", 1.8);
+      finCanvas.style.cursor = "";
+      startGolf([
+        { x: bx + scoops[0].dx * G.R, y: by + scoops[0].dy * G.R, col: scoops[0].c[0] },
+        { x: bx + scoops[1].dx * G.R, y: by + scoops[1].dy * G.R, col: scoops[1].c[0] },
+      ]);
+      return;
+    }
+  }
+  natFrame(dt);
+}
+
+/* move it with your hand; a tap sends it there */
+window.addEventListener("pointerdown", (e) => {
+  if (!sunOn || sunDone > 0) return;
+  sunAim = e.clientX; sunIdle = 0;
+  finCanvas.style.cursor = "grabbing";
+}, { passive: true });
+window.addEventListener("pointermove", (e) => {
+  if (!sunOn || sunDone > 0) return;
+  /* it follows whether you are holding or not — this is a catching game and
+     making people hold a button down to play it would be a tax */
+  sunAim = e.clientX; sunIdle = 0;
+}, { passive: true });
+window.addEventListener("pointerup", () => {
+  if (sunOn) finCanvas.style.cursor = "grab";
+});
+
+/* ---------- sound ---------- */
+let sunBed = null;
+function sundaeRoom() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noise(ac); s.loop = true;
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 340;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(0.032, t0 + 3);
+  s.connect(lp); lp.connect(g); g.connect(BUS);
+  s.start(t0);
+  sunBed = { g };
+  hold("sundae", { gain: g, src: s });
+}
+function catchTick(f, px) {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  /* it climbs a scale as the glass fills, so you can hear how close you are */
+  const scale = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24];
+  const n = scale[Math.min(scale.length - 1, Math.floor(f * scale.length))];
+  const o = ac.createOscillator(); o.type = "sine";
+  o.frequency.value = 587.3 * Math.pow(2, n / 12);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(0.042, t0 + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.42);
+  o.connect(g); g.connect(at(px) || BUS);
+  o.start(t0); o.stop(t0 + 0.45);
+  const s2 = ac.createBufferSource(); s2.buffer = noise(ac);
+  const hp = ac.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 4200;
+  const g2 = ac.createGain();
+  g2.gain.setValueAtTime(0.022, t0);
+  g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.05);
+  s2.connect(hp); hp.connect(g2); g2.connect(at(px) || BUS);
+  s2.start(t0); s2.stop(t0 + 0.06);
+}
+function sundaeDone() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  [523.3, 659.3, 784, 1046.5].forEach((f, i) => {
+    const o = ac.createOscillator(); o.type = i > 1 ? "sine" : "triangle";
+    o.frequency.value = f;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t0 + i * 0.09);
+    g.gain.linearRampToValueAtTime(0.055, t0 + i * 0.09 + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.6);
+    o.connect(g); g.connect(BUS); o.start(t0 + i * 0.09); o.stop(t0 + 3.7);
+  });
+}
+
+/* ================= two tees =================
+   The scoops come out of the glass and land on a pair of tees.
+
+   The one on the left has KORY written down it. Swing at that one and the
+   ball goes about four feet sideways and stops, the way it does.
+
+   The one on the right says KEVIN. */
+
+let glfOn = false, glfT = 0, glfPhase = 0;       /* 0 drop, 1 kory, 2 shanked, 3 kevin, 4 flight, 5 bang */
+let glfBalls = [], glfSwing = 0, glfGrab = null, glfAimed = -1;
+let glfShot = null, glfBird = null, glfBoom = 0, glfShake = 0, glfIdle = 0;
+let glfDebris = [], glfFeathers = [], glfDone = 0, glfFlash = 0;
+const TEE_WORDS = ["KORY", "KEVIN"];
+
+function glfGeom() {
+  const W = window.innerWidth, H = window.innerHeight;
+  const ground = H * 0.80;
+  const teeH = Math.min(H * 0.20, W * 0.11);
+  return { W, H, ground, teeH,
+           tx: [W * 0.30, W * 0.62],
+           br: Math.min(W, H) * 0.030 };
+}
+
+function startGolf(fromScoops) {
+  mark("golf");
+  if (glfOn) return;
+  glfOn = true; glfT = 0; glfPhase = 0;
+  glfSwing = 0; glfGrab = null; glfAimed = -1; glfShot = null;
+  glfBoom = 0; glfShake = 0; glfIdle = 0; glfDone = 0; glfFlash = 0;
+  glfDebris = []; glfFeathers = [];
+  const G = glfGeom();
+  /* the two scoops come down out of the frame above and land on the tees */
+  glfBalls = [0, 1].map(i => ({
+    x: (fromScoops && fromScoops[i] ? fromScoops[i].x : G.tx[i]),
+    y: (fromScoops && fromScoops[i] ? fromScoops[i].y : -G.br * 4),
+    vy: 0, on: false, gone: false, tx: G.tx[i],
+    ty: G.ground - G.teeH - G.br * 0.85,
+    col: (fromScoops && fromScoops[i] ? fromScoops[i].col : "#f6efe2"),
+  }));
+  glfBird = { x: -0.1, y: 0.20, ph: 0, alive: 1 };
+  finCanvas.style.background = "#0b1018";
+  finCanvas.style.display = "block";
+  sizeFinale();
+  finCanvas.style.cursor = "pointer";
+  bed("sand");
+  courseRoom();
+}
+
+function drawTee(G, i, lit) {
+  const x = G.tx[i], top = G.ground - G.teeH;
+  fctx.save();
+  /* the peg */
+  const w = G.teeH * 0.13;
+  const tg = fctx.createLinearGradient(x - w, 0, x + w, 0);
+  tg.addColorStop(0, "#6b5334");
+  tg.addColorStop(0.4, "#c9a86a");
+  tg.addColorStop(1, "#5d4728");
+  fctx.fillStyle = tg;
+  fctx.beginPath();
+  fctx.moveTo(x - w * 1.7, top);
+  fctx.lineTo(x + w * 1.7, top);
+  fctx.lineTo(x + w * 0.55, top + G.teeH * 0.78);
+  fctx.quadraticCurveTo(x, top + G.teeH * 1.02, x - w * 0.55, top + G.teeH * 0.78);
+  fctx.closePath();
+  fctx.fill();
+  /* the cup at the top of it */
+  fctx.fillStyle = "#4a3a22";
+  fctx.beginPath();
+  fctx.ellipse(x, top, w * 1.7, w * 0.55, 0, 0, 6.3);
+  fctx.fill();
+  /* the name, down the peg */
+  const word = TEE_WORDS[i];
+  fctx.fillStyle = lit ? "rgba(255,244,206,0.96)" : "rgba(236,226,200,0.62)";
+  fctx.textAlign = "center"; fctx.textBaseline = "middle";
+  const fs = Math.min(G.teeH * 0.115, w * 1.5);
+  fctx.font = `700 ${Math.round(fs)}px Georgia, "Times New Roman", serif`;
+  for (let k = 0; k < word.length; k++) {
+    const f = (k + 0.9) / (word.length + 0.6);
+    fctx.fillText(word[k], x, top + G.teeH * 0.14 + f * G.teeH * 0.66);
+  }
+  if (lit) {
+    const p = 0.5 + 0.5 * Math.sin(glfT * 2.4);
+    fctx.strokeStyle = `rgba(255,232,160,${(0.18 + 0.28 * p).toFixed(3)})`;
+    fctx.lineWidth = Math.max(2, G.br * 0.16);
+    fctx.beginPath();
+    fctx.arc(x, top - G.br * 0.85, G.br * (2.0 + 0.4 * p), 0, 6.3);
+    fctx.stroke();
+  }
+  fctx.restore();
+}
+
+function golfFrame(dt) {
+  const W = window.innerWidth, H = window.innerHeight;
+  const G = glfGeom();
+  glfT += dt;
+  hardClear(finCanvas, fctx);
+
+  glfShake = Math.max(0, glfShake - dt * 2.4);
+  fctx.save();
+  if (glfShake > 0.001)
+    fctx.translate((Math.random() - 0.5) * glfShake * W * 0.06,
+                   (Math.random() - 0.5) * glfShake * H * 0.06);
+
+  /* ---------- morning on a course ---------- */
+  const sky = fctx.createLinearGradient(0, 0, 0, G.ground);
+  sky.addColorStop(0, "#16243c");
+  sky.addColorStop(0.55, "#3a5570");
+  sky.addColorStop(1, "#9db4a8");
+  fctx.fillStyle = sky;
+  fctx.fillRect(0, 0, W, G.ground);
+  /* hills behind */
+  for (let r = 0; r < 2; r++) {
+    fctx.fillStyle = r ? "rgba(56,80,66,0.95)" : "rgba(74,98,84,0.75)";
+    fctx.beginPath();
+    fctx.moveTo(0, G.ground);
+    for (let x = 0; x <= W; x += 26)
+      fctx.lineTo(x, G.ground - H * (0.05 + r * 0.03)
+                   - Math.sin(x * 0.0035 + r * 2.1) * H * (0.045 - r * 0.015)
+                   - Math.sin(x * 0.011 + r) * H * 0.012);
+    fctx.lineTo(W, G.ground);
+    fctx.closePath();
+    fctx.fill();
+  }
+  /* the fairway */
+  const gr = fctx.createLinearGradient(0, G.ground, 0, H);
+  gr.addColorStop(0, "#3f6b45");
+  gr.addColorStop(1, "#223d28");
+  fctx.fillStyle = gr;
+  fctx.fillRect(0, G.ground, W, H - G.ground);
+  for (let i = 0; i < 130; i++) {
+    const j = Math.sin(i * 12.9898) * 43758.5453, r1 = j - Math.floor(j);
+    const k = Math.sin(i * 78.233) * 43758.5453, r2 = k - Math.floor(k);
+    const gx = r1 * W, gy = G.ground + r2 * (H - G.ground);
+    fctx.strokeStyle = `rgba(150,186,138,${(0.06 + r2 * 0.12).toFixed(3)})`;
+    fctx.lineWidth = 1.2;
+    fctx.beginPath();
+    fctx.moveTo(gx, gy);
+    fctx.lineTo(gx + Math.sin(glfT * 1.1 + i) * 3, gy - 4 - r2 * 7);
+    fctx.stroke();
+  }
+
+  /* ---------- the bird, minding its own business ---------- */
+  if (glfBird.alive) {
+    glfBird.x += dt * 0.045;
+    if (glfBird.x > 1.15) glfBird.x = -0.15;
+    const bx = glfBird.x * W, by = glfBird.y * H + Math.sin(glfT * 0.7) * H * 0.015;
+    const flap = Math.sin(glfT * 7);
+    const bs = Math.min(W, H) * 0.020;
+    fctx.strokeStyle = "rgba(22,28,36,0.72)";
+    fctx.lineWidth = Math.max(1.5, bs * 0.20);
+    fctx.lineCap = "round";
+    fctx.beginPath();
+    fctx.moveTo(bx - bs, by + flap * bs * 0.5);
+    fctx.quadraticCurveTo(bx, by - bs * 0.30, bx + bs, by + flap * bs * 0.5);
+    fctx.stroke();
+    glfBird.sx = bx; glfBird.sy = by; glfBird.r = bs * 1.6;
+  }
+
+  /* ---------- the tees ---------- */
+  drawTee(G, 0, glfPhase === 1);
+  drawTee(G, 1, glfPhase === 3);
+
+  /* ---------- the two scoops, on their way down and then sitting there --- */
+  for (let i = 0; i < glfBalls.length; i++) {
+    const b = glfBalls[i];
+    if (b.gone) continue;
+    if (!b.on) {
+      b.vy += 1500 * dt;
+      b.y += b.vy * dt;
+      b.x += (b.tx - b.x) * Math.min(1, dt * 3.2);
+      if (b.y >= b.ty) { b.y = b.ty; b.on = true; teeDrop(b.x); }
+    }
+    /* it is a scoop until it is hit, and then it is a golf ball */
+    const r = G.br;
+    const g = fctx.createRadialGradient(b.x - r * 0.35, b.y - r * 0.4, 0, b.x, b.y, r * 1.2);
+    g.addColorStop(0, "#ffffff");
+    g.addColorStop(0.55, b.col);
+    g.addColorStop(1, "#c9bda8");
+    fctx.fillStyle = g;
+    fctx.beginPath(); fctx.arc(b.x, b.y, r, 0, 6.3); fctx.fill();
+    /* dimples */
+    fctx.fillStyle = "rgba(150,140,120,0.30)";
+    for (let d = 0; d < 7; d++) {
+      const a = d * 1.9 + 0.4, rr = r * (0.28 + (d % 3) * 0.22);
+      fctx.beginPath();
+      fctx.arc(b.x + Math.cos(a) * rr, b.y + Math.sin(a) * rr, r * 0.11, 0, 6.3);
+      fctx.fill();
+    }
+  }
+  if (glfPhase === 0 && glfBalls.every(b => b.on)) { glfPhase = 1; glfIdle = 0; }
+
+  /* ---------- the ball that is in the air ---------- */
+  if (glfShot) {
+    const s = glfShot;
+    s.t += dt;
+    s.x += s.vx * dt;
+    s.y += s.vy * dt;
+    s.vy += 900 * dt;
+    if (s.shank) {
+      /* it goes nowhere. It bounces twice and sits there looking at you. */
+      if (s.y > G.ground - G.br * 0.6) {
+        s.y = G.ground - G.br * 0.6;
+        s.vy = -s.vy * 0.34;
+        s.vx *= 0.5;
+        if (Math.abs(s.vy) < 40) { s.vy = 0; s.vx = 0; s.rest = (s.rest || 0) + dt; }
+        if (!s.thud) { s.thud = 1; shankThud(s.x); }
+      }
+      if (s.rest > 1.4 && glfPhase === 2) { glfPhase = 3; glfIdle = 0; }
+    } else {
+      /* And this one is on line, because it has to be. A struck ball that
+         happened to miss would be a different joke and not as good a one. */
+      s.p = Math.min(1, (s.p || 0) + dt / 1.15);
+      const e = s.p * s.p * (3 - 2 * s.p);
+      const tx2 = glfBird.sx !== undefined ? glfBird.sx : W * 0.5;
+      const ty2 = glfBird.sy !== undefined ? glfBird.sy : H * 0.2;
+      const px2 = s.x0 + (tx2 - s.x0) * e;
+      const py2 = s.y0 + (ty2 - s.y0) * e - Math.sin(s.p * Math.PI) * H * 0.16;
+      s.vx = (px2 - s.x) / Math.max(dt, 0.001);
+      s.vy = (py2 - s.y) / Math.max(dt, 0.001);
+      s.x = px2; s.y = py2;
+      if (glfBird.alive && (s.p >= 0.995 ||
+          Math.hypot(s.x - glfBird.sx, s.y - glfBird.sy) < glfBird.r + G.br)) {
+        glfBird.alive = 0;
+        glfPhase = 5; glfBoom = 0.0001; glfShake = 1; glfFlash = 1;
+        kaboom();
+        for (let i = 0; i < 90; i++) {
+          const a = Math.random() * 6.3, sp = 120 + Math.random() * 900;
+          glfDebris.push({ x: glfBird.sx, y: glfBird.sy,
+                           vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+                           life: 0.8 + Math.random() * 1.2,
+                           s: Math.min(W, H) * (0.004 + Math.random() * 0.010),
+                           c: `hsl(${(18 + Math.random() * 30) | 0},${(70 + Math.random() * 25) | 0}%,${(50 + Math.random() * 30) | 0}%)` });
+        }
+        for (let i = 0; i < 42; i++) {
+          const a = Math.random() * 6.3, sp = 40 + Math.random() * 260;
+          glfFeathers.push({ x: glfBird.sx, y: glfBird.sy,
+                             vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 60,
+                             rot: Math.random() * 6.3, spin: (Math.random() - 0.5) * 8,
+                             life: 2.4 + Math.random() * 2.2,
+                             s: Math.min(W, H) * (0.008 + Math.random() * 0.012) });
+        }
+        glfShot = null;
+      }
+
+    }
+    if (glfShot) {
+      const r = G.br * 0.86;
+      fctx.fillStyle = "#f8f6ef";
+      fctx.beginPath(); fctx.arc(s.x, s.y, r, 0, 6.3); fctx.fill();
+      /* the line it left behind it */
+      fctx.strokeStyle = "rgba(246,244,236,0.30)";
+      fctx.lineWidth = r * 0.7;
+      fctx.lineCap = "round";
+      fctx.beginPath();
+      fctx.moveTo(s.x - s.vx * 0.055, s.y - s.vy * 0.055);
+      fctx.lineTo(s.x, s.y);
+      fctx.stroke();
+    }
+  }
+
+  /* ---------- the bang ---------- */
+  if (glfBoom > 0) {
+    glfBoom += dt;
+    const bx = glfBird.sx, by = glfBird.sy;
+    const R = Math.min(W, H);
+    /* the flash */
+    if (glfFlash > 0) {
+      glfFlash = Math.max(0, glfFlash - dt * 2.2);
+      fctx.fillStyle = `rgba(255,246,214,${(glfFlash * 0.85).toFixed(3)})`;
+      fctx.fillRect(-W, -H, W * 3, H * 3);
+    }
+    /* the fireball */
+    const fr = R * (0.05 + Math.min(1, glfBoom / 0.7) * 0.52);
+    const fa = Math.max(0, 1 - glfBoom / 1.5);
+    if (fa > 0.01) {
+      const fg = fctx.createRadialGradient(bx, by, 0, bx, by, fr);
+      fg.addColorStop(0, `rgba(255,252,226,${(fa * 0.95).toFixed(3)})`);
+      fg.addColorStop(0.25, `rgba(255,190,80,${(fa * 0.85).toFixed(3)})`);
+      fg.addColorStop(0.6, `rgba(226,86,32,${(fa * 0.55).toFixed(3)})`);
+      fg.addColorStop(1, "rgba(90,30,16,0)");
+      fctx.fillStyle = fg;
+      fctx.beginPath(); fctx.arc(bx, by, fr, 0, 6.3); fctx.fill();
+    }
+    /* The rings going out. One slow fat one read as a stray arc drawn across
+       the whole frame rather than a blast — three quick thin ones that die
+       before they get big are what a shockwave looks like. */
+    for (let k = 0; k < 3; k++) {
+      const tt = glfBoom - k * 0.09;
+      if (tt <= 0) continue;
+      const ra = Math.max(0, 1 - tt / 0.42);
+      if (ra <= 0.01) continue;
+      const rr = R * (0.06 + tt * 1.9);
+      fctx.strokeStyle = `rgba(255,242,206,${(ra * ra * 0.60).toFixed(3)})`;
+      fctx.lineWidth = Math.max(1, R * 0.024 * ra * ra);
+      fctx.beginPath(); fctx.arc(bx, by, rr, 0, 6.3); fctx.stroke();
+    }
+    /* and the smoke that stays */
+    for (let i = 0; i < 9; i++) {
+      const a = i * 0.7 + 0.3;
+      const d = Math.min(1, glfBoom / 2.2);
+      const px = bx + Math.cos(a) * R * 0.18 * d, py = by + Math.sin(a) * R * 0.14 * d - glfBoom * R * 0.05;
+      const pr = R * (0.05 + d * 0.09);
+      const pa = Math.max(0, 0.34 - glfBoom * 0.06);
+      const sg = fctx.createRadialGradient(px, py, 0, px, py, pr);
+      sg.addColorStop(0, `rgba(78,68,62,${pa.toFixed(3)})`);
+      sg.addColorStop(1, "rgba(54,46,42,0)");
+      fctx.fillStyle = sg;
+      fctx.beginPath(); fctx.arc(px, py, pr, 0, 6.3); fctx.fill();
+    }
+  }
+  for (let i = glfDebris.length - 1; i >= 0; i--) {
+    const q = glfDebris[i];
+    q.vy += 1100 * dt; q.x += q.vx * dt; q.y += q.vy * dt; q.life -= dt;
+    if (q.life <= 0) { glfDebris.splice(i, 1); continue; }
+    fctx.globalAlpha = Math.min(1, q.life);
+    fctx.fillStyle = q.c;
+    fctx.fillRect(q.x, q.y, q.s, q.s);
+    fctx.globalAlpha = 1;
+  }
+  for (let i = glfFeathers.length - 1; i >= 0; i--) {
+    const f = glfFeathers[i];
+    f.vy += 130 * dt; f.vx *= 0.985; f.vy *= 0.985;
+    f.x += (f.vx + Math.sin(glfT * 2 + i) * 26) * dt;
+    f.y += f.vy * dt; f.rot += f.spin * dt; f.life -= dt;
+    if (f.life <= 0 || f.y > H + 30) { glfFeathers.splice(i, 1); continue; }
+    fctx.save();
+    fctx.translate(f.x, f.y); fctx.rotate(f.rot);
+    fctx.globalAlpha = Math.min(1, f.life / 1.2);
+    fctx.fillStyle = "rgba(238,236,230,0.9)";
+    fctx.beginPath();
+    fctx.moveTo(0, -f.s);
+    fctx.quadraticCurveTo(f.s * 0.6, 0, 0, f.s);
+    fctx.quadraticCurveTo(-f.s * 0.6, 0, 0, -f.s);
+    fctx.fill();
+    fctx.restore();
+  }
+
+  /* ---------- what to hit ---------- */
+  if (glfPhase === 1 || glfPhase === 3) {
+    glfIdle += dt;
+    if (glfIdle > 3.5) {
+      const i = glfPhase === 1 ? 0 : 1;
+      const p = 0.5 + 0.5 * Math.sin(glfT * 2.2);
+      const bx = G.tx[i], by = G.ground - G.teeH - G.br * 0.85;
+      fctx.strokeStyle = `rgba(255,240,196,${(0.09 + 0.15 * p).toFixed(3)})`;
+      fctx.lineWidth = Math.max(2.5, G.br * 0.22);
+      fctx.lineCap = "round";
+      fctx.beginPath();
+      fctx.moveTo(bx - G.br * 3.4, by + G.br * 2.2 + p * G.br * 0.5);
+      fctx.quadraticCurveTo(bx - G.br * 2.4, by - G.br * 1.2, bx - G.br * 0.6, by);
+      fctx.stroke();
+    }
+  }
+
+  fctx.restore();
+
+  if (glfBoom > 4.6) {
+    glfDone += dt;
+    const f = Math.min(1, glfDone / 2.4);
+    fctx.fillStyle = `rgba(246,244,240,${(f * f).toFixed(3)})`;
+    fctx.fillRect(0, 0, W, H);
+    if (f >= 1) {
+      glfOn = false; release("golf");
+      chainEnd = true; restT = 0;
+      finCanvas.style.cursor = "";
+    }
+  }
+  natFrame(dt);
+}
+
+/* swing at whichever one is live */
+function glfHit(px, py) {
+  const G = glfGeom();
+  const i = glfPhase === 1 ? 0 : glfPhase === 3 ? 1 : -1;
+  if (i < 0) return;
+  const b = glfBalls[i];
+  if (!b || b.gone || !b.on) return;
+  const bx = b.x, by = b.y;
+  if (Math.hypot(px - bx, py - by) > G.br * 6.5) return;
+  b.gone = true;
+  glfIdle = 0;
+  if (i === 0) {
+    /* KORY. It goes about four feet sideways and stops. */
+    glfShot = { x: bx, y: by, vx: -260 - Math.random() * 90, vy: -180, t: 0, shank: true, rest: 0 };
+    glfPhase = 2;
+    shankWhiff();
+  } else {
+    glfShot = { x: bx, y: by, x0: bx, y0: by, vx: 210, vy: -1500, t: 0, p: 0, shank: false };
+    glfPhase = 4;
+    goodStrike();
+  }
+}
+window.addEventListener("pointerdown", (e) => {
+  if (!glfOn) return;
+  glfHit(e.clientX, e.clientY);
+}, { passive: true });
+
+/* ---------- sound ---------- */
+function courseRoom() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noise(ac); s.loop = true;
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass";
+  bp.frequency.value = 420; bp.Q.value = 0.4;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(0.038, t0 + 4);
+  const lfo = ac.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 0.08;
+  const lg = ac.createGain(); lg.gain.value = 0.014;
+  lfo.connect(lg); lg.connect(g.gain); lfo.start(t0);
+  s.connect(bp); bp.connect(g); g.connect(BUS);
+  s.start(t0);
+  hold("golf", { gain: g, src: s });
+  hold("golf", { src: lfo });
+}
+function teeDrop(px) {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const o = ac.createOscillator(); o.type = "sine";
+  o.frequency.setValueAtTime(420, t0);
+  o.frequency.exponentialRampToValueAtTime(160, t0 + 0.09);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.045, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.2);
+  o.connect(g); g.connect(at(px) || BUS); o.start(t0); o.stop(t0 + 0.22);
+}
+function shankWhiff() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  /* a dull one. All of the click and none of the ring. */
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 900;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.20, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.10);
+  s.connect(lp); lp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 0.12);
+  const o = ac.createOscillator(); o.type = "triangle";
+  o.frequency.setValueAtTime(220, t0);
+  o.frequency.exponentialRampToValueAtTime(96, t0 + 0.16);
+  const g2 = ac.createGain();
+  g2.gain.setValueAtTime(0.070, t0);
+  g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.24);
+  o.connect(g2); g2.connect(BUS); o.start(t0); o.stop(t0 + 0.26);
+}
+function shankThud(px) {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 420;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.10, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+  s.connect(lp); lp.connect(g); g.connect(at(px) || BUS);
+  s.start(t0); s.stop(t0 + 0.18);
+}
+function goodStrike() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  /* the one you feel in your hands */
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 1.4;
+  bp.frequency.setValueAtTime(2600, t0);
+  bp.frequency.exponentialRampToValueAtTime(900, t0 + 0.10);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.30, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.14);
+  s.connect(bp); bp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 0.16);
+  for (const [f, v] of [[880, 0.055], [1320, 0.030]]) {
+    const o = ac.createOscillator(); o.type = "sine";
+    o.frequency.setValueAtTime(f, t0);
+    const g2 = ac.createGain();
+    g2.gain.setValueAtTime(v, t0);
+    g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.5);
+    o.connect(g2); g2.connect(BUS); o.start(t0); o.stop(t0 + 0.52);
+  }
+  /* and the whistle going away from you */
+  const w = ac.createBufferSource(); w.buffer = noise(ac);
+  const wb = ac.createBiquadFilter(); wb.type = "bandpass"; wb.Q.value = 6;
+  wb.frequency.setValueAtTime(1800, t0 + 0.05);
+  wb.frequency.exponentialRampToValueAtTime(520, t0 + 1.5);
+  const wg = ac.createGain();
+  wg.gain.setValueAtTime(0.0001, t0 + 0.05);
+  wg.gain.linearRampToValueAtTime(0.048, t0 + 0.2);
+  wg.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.6);
+  w.connect(wb); wb.connect(wg); wg.connect(BUS);
+  w.start(t0 + 0.05); w.stop(t0 + 1.7);
+}
+function kaboom() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  /* the crack */
+  const c = ac.createBufferSource(); c.buffer = noise(ac);
+  const chp = ac.createBiquadFilter(); chp.type = "highpass"; chp.frequency.value = 900;
+  const cg = ac.createGain();
+  cg.gain.setValueAtTime(0.75, t0);
+  cg.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.30);
+  c.connect(chp); chp.connect(cg); cg.connect(BUS);
+  c.start(t0); c.stop(t0 + 0.32);
+  /* the body of it */
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass";
+  lp.frequency.setValueAtTime(1400, t0);
+  lp.frequency.exponentialRampToValueAtTime(90, t0 + 2.4);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.85, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.8);
+  s.connect(lp); lp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 3);
+  /* and the thing you feel rather than hear */
+  for (const [f, v, d] of [[42, 0.55, 2.6], [28, 0.40, 3.2], [63, 0.30, 1.8]]) {
+    const o = ac.createOscillator(); o.type = "sine";
+    o.frequency.setValueAtTime(f * 2.4, t0);
+    o.frequency.exponentialRampToValueAtTime(f * 0.6, t0 + d * 0.5);
+    const g2 = ac.createGain();
+    g2.gain.setValueAtTime(v, t0);
+    g2.gain.exponentialRampToValueAtTime(0.0001, t0 + d);
+    o.connect(g2); g2.connect(BUS); o.start(t0); o.stop(t0 + d + 0.1);
+  }
+  /* the rumble coming back off the hills a beat later */
+  const r = ac.createBufferSource(); r.buffer = noise(ac);
+  const rl = ac.createBiquadFilter(); rl.type = "lowpass"; rl.frequency.value = 220;
+  const rg = ac.createGain();
+  rg.gain.setValueAtTime(0.0001, t0 + 0.45);
+  rg.gain.linearRampToValueAtTime(0.24, t0 + 0.75);
+  rg.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.6);
+  r.connect(rl); rl.connect(rg); rg.connect(BUS);
+  r.start(t0 + 0.45); r.stop(t0 + 3.8);
 }
 
 function restFrame(dt) {
