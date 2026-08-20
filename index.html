@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="build" content="2026-08-20T15:57Z">
+<meta name="build" content="2026-08-20T16:32Z">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Kevin Hershock</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎈</text></svg>">
@@ -977,6 +977,7 @@ const CHAPTERS = [
   { k: "beacon", go: () => { openCanvas(); startBeacon(); } },
   { k: "wood",   go: () => { openCanvas(); startWood(); } },
   { k: "river",  go: () => { openCanvas(); startRiver(); } },
+  { k: "pan",    go: () => { openCanvas(); startPan(); } },
 ];
 const CHAPTER_AT = (k) => CHAPTERS.findIndex(c => c.k === k);
 
@@ -4746,6 +4747,7 @@ function drawNight(dt) {
   const W = window.innerWidth, H = window.innerHeight;
   nightT += dt;
   if (chainEnd) { restFrame(dt); return; }
+  if (panOn) { panFrame(dt); return; }
   if (rivOn) { riverFrame(dt); return; }
   if (woodOn) { woodFrame(dt); return; }
   if (beaconOn) { beaconFrame(dt); return; }
@@ -9016,6 +9018,634 @@ function woodFrame(dt) {
   natFrame(dt);
 }
 
+/* ================= the moon, the pan, and the spin =================
+   You get across the water and the light goes. The sun finishes going down,
+   the stars come back, and a moon comes up over the far bank and lays a
+   second road on the river beside the one the sun left.
+
+   Then it falls out of the sky.
+
+   It lands in a pan, because at that size and that colour it was never
+   really a moon. Cook it, flip it, and the handle comes off in your hand and
+   the whole thing starts to turn — and a pan turning with an egg on it is a
+   sheet of paper on a spinner, which is the oldest and best thing you can do
+   with paint and a motor. */
+
+let panOn = false, panT = 0, panPhase = 0, heat = 0, cook = 0;
+let eggY = -0.3, eggV = 0, eggSpin = 0, eggFlip = 0, flipGrab = null;
+let spinA = 0, spinV = 0, handleGo = 0, pours = [], picked = 0, poured = 0;
+let spinC = null, spinX = null, panIdle = 0, panDone = 0, chips = [];
+const PAINTS = [
+  ["#e8484c", 1.00], ["#3b82f6", 0.84], ["#f2c230", 1.18],
+  ["#22c08a", 0.92], ["#a855f7", 0.76],
+];
+
+function panGeom() {
+  const W = window.innerWidth, H = window.innerHeight;
+  const R = Math.min(W * 0.30, H * 0.34);
+  return { W, H, cx: W * 0.5, cy: H * 0.52, R, squash: 0.62 };
+}
+
+function startPan() {
+  mark("pan");
+  if (panOn) return;
+  panOn = true; panT = 0; panPhase = 0;
+  heat = 0; cook = 0; panIdle = 0; panDone = 0;
+  eggY = -0.35; eggV = 0; eggSpin = 0; eggFlip = 0; flipGrab = null;
+  spinA = 0; spinV = 0; handleGo = 0; pours = []; picked = 0; poured = 0;
+  const G = panGeom();
+  spinC = document.createElement("canvas");
+  spinC.width = spinC.height = Math.round(G.R * 2.2);
+  spinX = spinC.getContext("2d");
+  /* four to choose from, never the same four twice */
+  chips = PAINTS.slice().sort(() => rnd() - 0.5).slice(0, 4);
+  finCanvas.style.background = "#07070a";
+  finCanvas.style.display = "block";
+  sizeFinale();
+  finCanvas.style.cursor = "pointer";
+  bed("night");
+  panRoom();
+}
+
+/* ---------- the pan ---------- */
+function drawPan(G, showHandle) {
+  const { cx, cy, R, squash } = G;
+  /* what is under it, lit by the flame */
+  const und = fctx.createRadialGradient(cx, cy + R * 0.5, 0, cx, cy + R * 0.5, R * 2.4);
+  und.addColorStop(0, `rgba(255,140,52,${(0.20 * heat).toFixed(3)})`);
+  und.addColorStop(0.4, `rgba(200,80,30,${(0.07 * heat).toFixed(3)})`);
+  und.addColorStop(1, "rgba(120,40,20,0)");
+  fctx.fillStyle = und;
+  fctx.fillRect(0, 0, G.W, G.H);
+
+  if (showHandle > 0.001) {
+    fctx.save();
+    fctx.globalAlpha = showHandle;
+    fctx.translate(cx, cy);
+    fctx.rotate(-0.16 + (1 - showHandle) * 0.5);
+    const hl = R * 1.55, hw = R * 0.115;
+    const hg = fctx.createLinearGradient(0, -hw, 0, hw);
+    hg.addColorStop(0, "#4c4a48");
+    hg.addColorStop(0.45, "#26241f");
+    hg.addColorStop(1, "#131110");
+    fctx.fillStyle = hg;
+    fctx.beginPath();
+    fctx.roundRect(R * 0.86, -hw * 0.5, hl, hw, hw * 0.5);
+    fctx.fill();
+    fctx.fillStyle = "rgba(210,200,186,0.10)";
+    fctx.beginPath();
+    fctx.roundRect(R * 0.9, -hw * 0.42, hl * 0.9, hw * 0.22, hw * 0.11);
+    fctx.fill();
+    fctx.restore();
+  }
+
+  /* the body: an iron dish seen from above and a little to one side */
+  const bg = fctx.createLinearGradient(cx, cy - R * squash, cx, cy + R * squash);
+  bg.addColorStop(0, "#3a3733");
+  bg.addColorStop(0.5, "#211f1c");
+  bg.addColorStop(1, "#131110");
+  fctx.fillStyle = bg;
+  fctx.beginPath();
+  fctx.ellipse(cx, cy, R, R * squash, 0, 0, 6.3);
+  fctx.fill();
+  /* the lip, catching what light there is */
+  fctx.strokeStyle = "rgba(196,186,170,0.16)";
+  fctx.lineWidth = Math.max(2, R * 0.035);
+  fctx.beginPath();
+  fctx.ellipse(cx, cy, R * 0.985, R * squash * 0.985, 0, 0, 6.3);
+  fctx.stroke();
+  fctx.strokeStyle = `rgba(255,168,90,${(0.30 * heat).toFixed(3)})`;
+  fctx.lineWidth = Math.max(1.5, R * 0.020);
+  fctx.beginPath();
+  fctx.ellipse(cx, cy, R * 0.985, R * squash * 0.985, 0, 0.4, Math.PI - 0.4);
+  fctx.stroke();
+  /* the floor of it, darker, with the seasoning showing */
+  const fg = fctx.createRadialGradient(cx - R * 0.2, cy - R * squash * 0.3, 0,
+                                       cx, cy, R * 0.92);
+  fg.addColorStop(0, "#2b2823");
+  fg.addColorStop(1, "#15130f");
+  fctx.fillStyle = fg;
+  fctx.beginPath();
+  fctx.ellipse(cx, cy, R * 0.86, R * squash * 0.86, 0, 0, 6.3);
+  fctx.fill();
+}
+
+function drawFlame(G) {
+  if (heat < 0.01) return;
+  const { cx, cy, R } = G;
+  const n = 17;
+  fctx.save();
+  fctx.globalCompositeOperation = "lighter";
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const rr = R * 0.94;
+    const x = cx + Math.cos(a) * rr, y = cy + R * G.squash * 0.58 + Math.sin(a) * rr * G.squash * 0.34;
+    const wob = Math.sin(panT * 9 + i * 1.7) * 0.5 + 0.5;
+    const h = R * (0.14 + 0.30 * heat) * (0.6 + wob * 0.7);
+    const fg = fctx.createLinearGradient(x, y, x, y - h);
+    fg.addColorStop(0, `rgba(120,170,255,${(0.16 * heat).toFixed(3)})`);
+    fg.addColorStop(0.25, `rgba(255,150,50,${(0.34 * heat).toFixed(3)})`);
+    fg.addColorStop(0.62, `rgba(255,196,96,${(0.20 * heat).toFixed(3)})`);
+    fg.addColorStop(1, "rgba(255,230,160,0)");
+    fctx.fillStyle = fg;
+    fctx.beginPath();
+    fctx.moveTo(x - h * 0.30, y + h * 0.10);
+    fctx.bezierCurveTo(x - h * 0.34, y - h * 0.42, x - h * 0.10, y - h * 0.62, x, y - h);
+    fctx.bezierCurveTo(x + h * 0.10, y - h * 0.62, x + h * 0.34, y - h * 0.42, x + h * 0.30, y + h * 0.10);
+    fctx.quadraticCurveTo(x, y + h * 0.30, x - h * 0.30, y + h * 0.10);
+    fctx.closePath();
+    fctx.fill();
+  }
+  fctx.restore();
+}
+
+/* the egg: a white that spreads and sets, and a yolk that domes */
+function drawEgg(G, ex, ey, sc, done) {
+  const { R } = G;
+  const spread = 0.55 + 0.45 * Math.min(1, cook * 1.3);
+  const wr = R * 0.54 * spread * sc;
+  fctx.save();
+  fctx.translate(ex, ey);
+  fctx.scale(1, G.squash * 1.28);
+  /* the white — clear and blue at first, opaque as it sets */
+  const set = Math.min(1, cook * 1.5);
+  fctx.fillStyle = `rgba(${(228 + 27 * set) | 0},${(232 + 22 * set) | 0},${(238 + 10 * set) | 0},${(0.34 + 0.62 * set).toFixed(3)})`;
+  const lobes = 11;
+  const rAt = (i) => {
+    const a = (i / lobes) * Math.PI * 2;
+    return wr * (0.82 + 0.24 * Math.sin(a * 2.3 + 1.1) * Math.sin(a * 1.3 + 0.4));
+  };
+  const pathWhite = () => {
+    fctx.beginPath();
+    for (let i = 0; i <= lobes; i++) {
+      const a0 = (i / lobes) * Math.PI * 2, a1 = ((i + 1) / lobes) * Math.PI * 2;
+      const r0 = rAt(i), r1 = rAt(i + 1);
+      const x0 = Math.cos(a0) * r0, y0 = Math.sin(a0) * r0;
+      const x1 = Math.cos(a1) * r1, y1 = Math.sin(a1) * r1;
+      const am = (a0 + a1) / 2, rm = (r0 + r1) / 2 * 1.06;
+      if (i === 0) fctx.moveTo(x0, y0);
+      fctx.quadraticCurveTo(Math.cos(am) * rm, Math.sin(am) * rm, x1, y1);
+    }
+    fctx.closePath();
+  };
+  pathWhite();
+  fctx.fill();
+  /* the lace round the edge, which is the whole pleasure of a fried egg */
+  if (cook > 0.45) {
+    const l = (cook - 0.45) / 0.55;
+    fctx.strokeStyle = `rgba(${(196 - 40 * l) | 0},${(140 - 46 * l) | 0},${(70 - 24 * l) | 0},${(0.5 * l).toFixed(3)})`;
+    fctx.lineWidth = wr * 0.045 * (0.5 + l);
+    pathWhite();
+    fctx.stroke();
+  }
+  fctx.restore();
+
+  if (done) return;
+  /* the yolk */
+  const yr = R * 0.20 * sc;
+  const yg = fctx.createRadialGradient(ex - yr * 0.35, ey - yr * 0.45, 0, ex, ey, yr * 1.25);
+  yg.addColorStop(0, "#ffe07a");
+  yg.addColorStop(0.5, "#f6ae2d");
+  yg.addColorStop(1, "#d4831a");
+  fctx.fillStyle = yg;
+  fctx.beginPath();
+  fctx.ellipse(ex, ey, yr, yr * (0.86 + 0.14 * G.squash), 0, 0, 6.3);
+  fctx.fill();
+  fctx.fillStyle = "rgba(255,252,230,0.55)";
+  fctx.beginPath();
+  fctx.ellipse(ex - yr * 0.34, ey - yr * 0.40, yr * 0.26, yr * 0.17, -0.5, 0, 6.3);
+  fctx.fill();
+}
+
+function panFrame(dt) {
+  const W = window.innerWidth, H = window.innerHeight;
+  const G = panGeom();
+  panT += dt;
+  hardClear(finCanvas, fctx);
+
+  /* the room: almost nothing, so the pan is the only thing in it */
+  const room = fctx.createRadialGradient(G.cx, G.cy, 0, G.cx, G.cy, Math.max(W, H) * 0.8);
+  room.addColorStop(0, "#14141a");
+  room.addColorStop(1, "#050508");
+  fctx.fillStyle = room;
+  fctx.fillRect(0, 0, W, H);
+
+  /* ---------- 0: it comes down out of the sky ---------- */
+  if (panPhase === 0) {
+    drawFlame(G);
+    drawPan(G, 1);
+    eggV += 2.1 * dt;
+    eggY += eggV * dt;
+    const ey = G.cy + (eggY - 1) * H * 0.55;
+    /* still a moon on the way down, an egg by the time it lands */
+    const land = Math.max(0, Math.min(1, (eggY - 0.55) / 0.45));
+    const mr = Math.min(W, H) * 0.052 * (1 - land * 0.25);
+    const gl = fctx.createRadialGradient(G.cx, ey, 0, G.cx, ey, mr * 6);
+    gl.addColorStop(0, `rgba(226,236,255,${(0.30 * (1 - land)).toFixed(3)})`);
+    gl.addColorStop(1, "rgba(160,190,240,0)");
+    fctx.fillStyle = gl;
+    fctx.beginPath(); fctx.arc(G.cx, ey, mr * 6, 0, 6.3); fctx.fill();
+    const cr = (244 + (246 - 244) * land) | 0;
+    fctx.fillStyle = `rgb(${cr},${(246 - 40 * land) | 0},${(252 - 130 * land) | 0})`;
+    fctx.beginPath(); fctx.arc(G.cx, ey, mr, 0, 6.3); fctx.fill();
+    if (eggY >= 1) {
+      panPhase = 1; eggY = 1; panIdle = 0;
+      eggLand();
+    }
+    natFrame(dt);
+    return;
+  }
+
+  /* ---------- 1 and 2: cooking ---------- */
+  drawFlame(G);
+  drawPan(G, panPhase < 3 ? 1 : 1 - handleGo);
+
+  if (panPhase === 1 || panPhase === 2) {
+    cook = Math.min(1, cook + heat * dt * 0.20);
+    sizzleLevel(heat * (0.35 + cook * 0.65));
+    drawEgg(G, G.cx, G.cy - G.R * 0.04, 1, false);
+    if (cook >= 1 && panPhase === 1) { panPhase = 2; panIdle = 0; readyChime(); }
+
+    panIdle += dt;
+    /* nothing has been touched: the flame wants turning up */
+    if (heat < 0.05 && panIdle > 3.2) {
+      const p = 0.5 + 0.5 * Math.sin(panT * 2.2);
+      fctx.strokeStyle = `rgba(255,178,96,${(0.10 + 0.16 * p).toFixed(3)})`;
+      fctx.lineWidth = Math.max(2, G.R * 0.035);
+      fctx.beginPath();
+      fctx.ellipse(G.cx, G.cy + G.R * G.squash * 1.02, G.R * (0.66 + 0.07 * p),
+                   G.R * 0.10 * (0.66 + 0.07 * p), 0, 0.15, Math.PI - 0.15);
+      fctx.stroke();
+    }
+    /* it is cooked: it wants turning over */
+    if (panPhase === 2) {
+      const p = 0.5 + 0.5 * Math.sin(panT * 2.4);
+      fctx.save();
+      fctx.strokeStyle = `rgba(246,238,214,${(0.12 + 0.20 * p).toFixed(3)})`;
+      fctx.lineWidth = Math.max(2.5, G.R * 0.030);
+      fctx.lineCap = "round";
+      const ax = G.cx, ay = G.cy - G.R * 0.10 - p * G.R * 0.14;
+      fctx.beginPath();
+      fctx.moveTo(ax, ay + G.R * 0.30);
+      fctx.lineTo(ax, ay - G.R * 0.22);
+      fctx.moveTo(ax - G.R * 0.13, ay - G.R * 0.06);
+      fctx.lineTo(ax, ay - G.R * 0.23);
+      fctx.lineTo(ax + G.R * 0.13, ay - G.R * 0.06);
+      fctx.stroke();
+      fctx.restore();
+    }
+    natFrame(dt);
+    return;
+  }
+
+  /* ---------- 3: over it goes ---------- */
+  if (panPhase === 3) {
+    eggFlip = Math.min(1, eggFlip + dt * 0.85);
+    const e = eggFlip;
+    const arc = Math.sin(e * Math.PI);
+    const ey = G.cy - G.R * 0.04 - arc * G.R * 1.5;
+    const sc = 1 + arc * 0.12;
+    eggSpin = e * Math.PI * 2;
+    fctx.save();
+    fctx.translate(G.cx, ey);
+    /* it turns over, which on this camera means squashing through nothing */
+    fctx.scale(1, Math.cos(eggSpin) >= 0 ? 1 : -1);
+    fctx.scale(1, Math.max(0.06, Math.abs(Math.cos(eggSpin))));
+    fctx.translate(-G.cx, -ey);
+    drawEgg(G, G.cx, ey, sc, false);
+    fctx.restore();
+    if (e >= 1) {
+      panPhase = 4; spinV = 0.15; eggSlap(); handleOff();
+      /* it does not start blank. What is already on the pan is the first
+         thing the spin gets hold of. */
+      const c = spinC.width / 2, wr = G.R * 0.54;
+      spinX.save();
+      spinX.translate(c, c);
+      spinX.fillStyle = "#f4f1e6";
+      spinX.beginPath();
+      for (let i = 0; i <= 11; i++) {
+        const a0 = (i / 11) * Math.PI * 2, a1 = ((i + 1) / 11) * Math.PI * 2;
+        const rr0 = wr * (0.82 + 0.24 * Math.sin(a0 * 2.3 + 1.1) * Math.sin(a0 * 1.3 + 0.4));
+        const rr1 = wr * (0.82 + 0.24 * Math.sin(a1 * 2.3 + 1.1) * Math.sin(a1 * 1.3 + 0.4));
+        const am = (a0 + a1) / 2, rm = (rr0 + rr1) / 2 * 1.06;
+        if (i === 0) spinX.moveTo(Math.cos(a0) * rr0, Math.sin(a0) * rr0);
+        spinX.quadraticCurveTo(Math.cos(am) * rm, Math.sin(am) * rm,
+                               Math.cos(a1) * rr1, Math.sin(a1) * rr1);
+      }
+      spinX.closePath(); spinX.fill();
+      spinX.fillStyle = "#f0ab24";
+      spinX.beginPath(); spinX.arc(0, 0, G.R * 0.20, 0, 6.3); spinX.fill();
+      spinX.restore();
+    }
+    natFrame(dt);
+    return;
+  }
+
+  /* ---------- 4: it turns, and you paint on it ---------- */
+  handleGo = Math.min(1, handleGo + dt * 0.6);
+  heat = Math.max(0, heat - dt * 0.9);   /* it has come off the burner */
+  spinV = Math.min(4.4, spinV + dt * (poured >= 3 ? 2.4 : 0.42));
+  spinA += spinV * dt;
+  spinLevel(Math.min(1, spinV / 4.4));
+
+  /* the paint, held in the disc's own frame so it turns with it */
+  for (let i = pours.length - 1; i >= 0; i--) {
+    const p = pours[i];
+    p.life -= dt;
+    if (p.life <= 0) { pours.splice(i, 1); continue; }
+    /* the dropper does not move; the disc moves under it, which is what
+       draws the spiral */
+    const dx = p.sx - G.cx, dy = (p.sy - G.cy) / G.squash;
+    const rr = Math.hypot(dx, dy), aa = Math.atan2(dy, dx) - spinA;
+    const fling = 1 + (p.age) * 0.10;
+    const lx = spinC.width / 2 + Math.cos(aa) * rr * fling;
+    const ly = spinC.height / 2 + Math.sin(aa) * rr * fling;
+    const rad = G.R * 0.062 * (0.30 + p.life / p.total * 1.0);
+    spinX.strokeStyle = p.col;
+    spinX.fillStyle = p.col;
+    spinX.lineCap = "round";
+    spinX.lineJoin = "round";
+    if (p.lx !== undefined) {
+      /* joined up, or it reads as a string of beads instead of a trail */
+      spinX.lineWidth = rad * 2;
+      spinX.beginPath();
+      spinX.moveTo(p.lx, p.ly);
+      spinX.lineTo(lx, ly);
+      spinX.stroke();
+    } else {
+      spinX.beginPath();
+      spinX.arc(lx, ly, rad * 1.5, 0, 6.3);
+      spinX.fill();
+    }
+    p.lx = lx; p.ly = ly;
+    p.age += dt;
+  }
+
+  /* the disc */
+  fctx.save();
+  fctx.translate(G.cx, G.cy);
+  fctx.scale(1, G.squash);
+  fctx.beginPath(); fctx.arc(0, 0, G.R * 0.86, 0, 6.3); fctx.clip();
+  const face = fctx.createRadialGradient(-G.R * 0.2, -G.R * 0.25, 0, 0, 0, G.R * 0.9);
+  face.addColorStop(0, "#2b2823");
+  face.addColorStop(1, "#141210");
+  fctx.fillStyle = face;
+  fctx.fillRect(-G.R, -G.R, G.R * 2, G.R * 2);
+  fctx.rotate(spinA);
+  fctx.drawImage(spinC, -spinC.width / 2, -spinC.height / 2);
+  fctx.restore();
+  /* the pan's own rim over the top of it */
+  fctx.strokeStyle = "rgba(196,186,170,0.16)";
+  fctx.lineWidth = Math.max(2, G.R * 0.035);
+  fctx.beginPath();
+  fctx.ellipse(G.cx, G.cy, G.R * 0.985, G.R * G.squash * 0.985, 0, 0, 6.3);
+  fctx.stroke();
+
+  /* the colours to choose from, down the side */
+  const chH = Math.min(H * 0.11, G.R * 0.34);
+  for (let i = 0; i < chips.length; i++) {
+    const x = W * 0.5 - (chips.length - 1) * chH * 0.9 + i * chH * 1.8;
+    const y = H - chH * 1.5;
+    const on = i === picked;
+    fctx.save();
+    fctx.translate(x, y);
+    fctx.scale(on ? 1.18 : 1, on ? 1.18 : 1);
+    fctx.fillStyle = chips[i][0];
+    fctx.beginPath();
+    fctx.moveTo(0, -chH * 0.62);
+    fctx.quadraticCurveTo(chH * 0.40, -chH * 0.10, chH * 0.30, chH * 0.30);
+    fctx.quadraticCurveTo(0, chH * 0.66, -chH * 0.30, chH * 0.30);
+    fctx.quadraticCurveTo(-chH * 0.40, -chH * 0.10, 0, -chH * 0.62);
+    fctx.closePath();
+    fctx.fill();
+    fctx.fillStyle = "rgba(255,255,255,0.35)";
+    fctx.beginPath();
+    fctx.ellipse(-chH * 0.11, -chH * 0.16, chH * 0.09, chH * 0.16, -0.4, 0, 6.3);
+    fctx.fill();
+    if (on) {
+      fctx.strokeStyle = "rgba(255,255,255,0.55)";
+      fctx.lineWidth = Math.max(1.5, chH * 0.06);
+      fctx.beginPath(); fctx.arc(0, 0, chH * 0.78, 0, 6.3); fctx.stroke();
+    }
+    fctx.restore();
+  }
+
+  /* a nudge, if they have not put anything on it */
+  if (poured === 0 && panT > 2 && spinV > 0.6) {
+    const p = 0.5 + 0.5 * Math.sin(panT * 2.2);
+    fctx.strokeStyle = `rgba(240,240,246,${(0.08 + 0.14 * p).toFixed(3)})`;
+    fctx.lineWidth = Math.max(2, G.R * 0.022);
+    fctx.setLineDash([6, 10]);
+    fctx.beginPath();
+    fctx.moveTo(W * 0.5, H - chH * 2.6);
+    fctx.lineTo(W * 0.5, G.cy + G.R * G.squash * 0.5);
+    fctx.stroke();
+    fctx.setLineDash([]);
+  }
+
+  /* ---------- and it all runs together ---------- */
+  if (poured >= 3) {
+    panDone += dt;
+    if (panDone > 1.2) {
+      const b = Math.min(1, (panDone - 1.2) / 2.4);
+      fctx.fillStyle = `rgba(250,250,252,${(b * b).toFixed(3)})`;
+      fctx.fillRect(0, 0, W, H);
+      if (b >= 1 && panPhase === 4) {
+        panPhase = 5;
+        release("pan");
+        panOn = false; chainEnd = true; restT = 0;
+        finCanvas.style.cursor = "";
+      }
+    }
+  }
+  natFrame(dt);
+}
+
+/* ---------- the hands on it ---------- */
+window.addEventListener("pointerdown", (e) => {
+  if (!panOn) return;
+  const G = panGeom();
+  panIdle = 0;
+  if (panPhase === 1 || panPhase === 2) {
+    /* a tap turns the flame up; a drag up flips it once it is ready */
+    if (panPhase === 2) flipGrab = { y: e.clientY };
+    if (heat < 1) { heat = Math.min(1, heat + 0.34); flameUp(heat); }
+    return;
+  }
+  if (panPhase === 4) {
+    const chH = Math.min(G.H * 0.11, G.R * 0.34);
+    const cy = G.H - chH * 1.5;
+    if (Math.abs(e.clientY - cy) < chH) {
+      for (let i = 0; i < chips.length; i++) {
+        const x = G.W * 0.5 - (chips.length - 1) * chH * 0.9 + i * chH * 1.8;
+        if (Math.abs(e.clientX - x) < chH * 0.9) { picked = i; pickTick(); return; }
+      }
+    }
+    /* on the disc: paint */
+    const dx = e.clientX - G.cx, dy = (e.clientY - G.cy) / G.squash;
+    if (Math.hypot(dx, dy) < G.R * 0.84) {
+      pours.push({ sx: e.clientX, sy: e.clientY, col: chips[picked][0],
+                   life: 1.5, total: 1.5, age: 0 });
+      poured++;
+      plip(chips[picked][1], e.clientX);
+    }
+  }
+}, { passive: true });
+
+window.addEventListener("pointermove", (e) => {
+  if (!panOn || !flipGrab) return;
+  if (flipGrab.y - e.clientY > 46 && panPhase === 2) {
+    flipGrab = null;
+    panPhase = 3; eggFlip = 0;
+    flipWhoosh();
+  }
+}, { passive: true });
+window.addEventListener("pointerup", () => {
+  if (!panOn || !flipGrab) return;
+  /* a tap on a cooked egg turns it over too — everything here takes a tap */
+  flipGrab = null;
+  if (panPhase === 2) { panPhase = 3; eggFlip = 0; flipWhoosh(); }
+}, { passive: true });
+
+/* ---------- sound ---------- */
+let sizNode = null, spinNode = null;
+function panRoom() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  /* the sizzle, sitting at zero until there is heat under it */
+  const s = ac.createBufferSource(); s.buffer = noise(ac); s.loop = true;
+  const hp = ac.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 2400;
+  const pk = ac.createBiquadFilter(); pk.type = "peaking";
+  pk.frequency.value = 5200; pk.gain.value = 6; pk.Q.value = 0.7;
+  const g = ac.createGain(); g.gain.value = 0.0001;
+  s.connect(hp); hp.connect(pk); pk.connect(g); g.connect(BUS);
+  s.start(t0);
+  sizNode = { g };
+  hold("pan", { gain: g, src: s });
+  /* and the burner under it */
+  const b = ac.createBufferSource(); b.buffer = noise(ac); b.loop = true;
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 260;
+  const bg = ac.createGain(); bg.gain.value = 0.0001;
+  b.connect(lp); lp.connect(bg); bg.connect(BUS);
+  b.start(t0);
+  spinNode = { burner: bg };
+  hold("pan", { gain: bg, src: b });
+}
+function sizzleLevel(v) {
+  if (!sizNode || !AC) return;
+  try {
+    sizNode.g.gain.setTargetAtTime(0.001 + v * 0.075, AC.currentTime, 0.25);
+    if (spinNode) spinNode.burner.gain.setTargetAtTime(0.001 + heat * 0.045, AC.currentTime, 0.3);
+  } catch (e) {}
+}
+function spinLevel(v) {
+  if (!sizNode || !AC) return;
+  try { sizNode.g.gain.setTargetAtTime(0.004 + v * 0.030, AC.currentTime, 0.3); } catch (e) {}
+  if (spinNode) { try { spinNode.burner.gain.setTargetAtTime(0.004 + v * 0.055, AC.currentTime, 0.3); } catch (e) {} }
+}
+function flameUp(h) {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass";
+  bp.frequency.setValueAtTime(320, t0);
+  bp.frequency.exponentialRampToValueAtTime(1100, t0 + 0.28);
+  bp.Q.value = 0.8;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(0.09, t0 + 0.05);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.5);
+  s.connect(bp); bp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 0.55);
+  const o = ac.createOscillator(); o.type = "sine";
+  o.frequency.setValueAtTime(120 + h * 90, t0);
+  const g2 = ac.createGain();
+  g2.gain.setValueAtTime(0.030, t0);
+  g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
+  o.connect(g2); g2.connect(BUS); o.start(t0); o.stop(t0 + 0.24);
+}
+function eggLand() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 900;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.22, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.34);
+  s.connect(lp); lp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 0.36);
+}
+function readyChime() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  [659, 988].forEach((f, i) => {
+    const o = ac.createOscillator(); o.type = "sine"; o.frequency.value = f;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t0 + i * 0.09);
+    g.gain.linearRampToValueAtTime(0.042, t0 + i * 0.09 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + i * 0.09 + 1.2);
+    o.connect(g); g.connect(BUS); o.start(t0 + i * 0.09); o.stop(t0 + i * 0.09 + 1.3);
+  });
+}
+function flipWhoosh() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 0.7;
+  bp.frequency.setValueAtTime(500, t0);
+  bp.frequency.exponentialRampToValueAtTime(2400, t0 + 0.5);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(0.07, t0 + 0.12);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.8);
+  s.connect(bp); bp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 0.85);
+}
+function eggSlap() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1400;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.34, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.26);
+  s.connect(lp); lp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 0.28);
+}
+function handleOff() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  [1244, 1864, 2489].forEach((f, i) => {
+    const o = ac.createOscillator(); o.type = "sine"; o.frequency.value = f;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.030 / (i + 1), t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.8);
+    o.connect(g); g.connect(BUS); o.start(t0); o.stop(t0 + 1.9);
+  });
+}
+function pickTick() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const o = ac.createOscillator(); o.type = "triangle"; o.frequency.value = 1320;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.030, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.10);
+  o.connect(g); g.connect(BUS); o.start(t0); o.stop(t0 + 0.12);
+}
+function plip(rate, px) {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const o = ac.createOscillator(); o.type = "sine";
+  o.frequency.setValueAtTime(880 * rate, t0);
+  o.frequency.exponentialRampToValueAtTime(300 * rate, t0 + 0.13);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(0.055, t0 + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.4);
+  o.connect(g); g.connect(at(px) || BUS);
+  o.start(t0); o.stop(t0 + 0.42);
+}
+
 function restFrame(dt) {
   const W = window.innerWidth, H = window.innerHeight;
   restT += dt;
@@ -9130,6 +9760,8 @@ let rivOn = false, rivT = 0, rocks = [], stones = [], rivLeaves = [], foam = [];
 let bankStones = [], rivHanded = false, rivNode = null, crossed = 0;
 let reeds = [], tufts = [], rivDir = 1, rivGlow = 0;
 let barCool = null, barWarm = null, rivVig = null, rivVigW = 0, rivVigH = 0;
+let hills = [], rivClouds = [], rivBirds = [], mist = [];
+let moonUp = 0, moonX = 0, moonDrop = -1, rivDone = 0;
 
 /* A soft-ended bar. The current and the reflection were each building a fresh
    linear gradient per streak per frame — about a hundred and eighty objects a
@@ -9209,6 +9841,38 @@ function startRiver() {
                    h: 0.008 + rnd() * 0.020,
                    ph: rnd() * 6.3, hue: 40 + rnd() * 22 });
   }
+
+  /* Three ranges of hills behind the trees, each one paler and flatter than
+     the last. Aerial perspective is the whole of why a landscape reads as
+     big: distance takes the contrast out of things. */
+  hills = [];
+  for (let r = 0; r < 3; r++) {
+    const pts = [];
+    const n = 9 + r * 4;
+    for (let i = 0; i <= n; i++)
+      pts.push(0.25 + rnd() * 0.75);
+    hills.push({ r, pts, off: rnd() });
+  }
+  /* cloud bars lying along the sky, lit from underneath */
+  rivClouds = [];
+  for (let i = 0; i < (G.W < 620 ? 5 : 8); i++)
+    rivClouds.push({ y: 0.10 + rnd() * 0.62, x: rnd(), w: 0.16 + rnd() * 0.38,
+                     h: 0.006 + rnd() * 0.016, v: 0.004 + rnd() * 0.010,
+                     a: 0.10 + rnd() * 0.26 });
+  /* something alive, a long way off */
+  rivBirds = [];
+  const bn = 5 + ((rnd() * 4) | 0);
+  for (let i = 0; i < bn; i++)
+    rivBirds.push({ o: i / bn, ph: rnd() * 6.3, lift: (rnd() - 0.5) * 0.05,
+                 sp: 0.9 + rnd() * 0.5 });
+  /* and mist lying on the water where it meets the far bank */
+  mist = [];
+  for (let i = 0; i < (G.W < 620 ? 4 : 7); i++)
+    mist.push({ t: 0.01 + rnd() * 0.22, x: rnd(), w: 0.22 + rnd() * 0.40,
+                v: 0.006 + rnd() * 0.014, a: 0.025 + rnd() * 0.055, ph: rnd() * 6.3 });
+
+  moonUp = 0; moonDrop = -1; rivDone = 0;
+  moonX = RUN.sunX > 0.5 ? 0.20 + rnd() * 0.14 : 0.66 + rnd() * 0.14;
 
   rivLeaves = [];
   for (let i = 0; i < (G.W < 620 ? 14 : 24); i++)
@@ -9299,6 +9963,109 @@ function riverFrame(dt) {
   sg.addColorStop(1, "rgba(180,110,70,0)");
   fctx.fillStyle = sg;
   fctx.fillRect(0, 0, W, G.farB);
+
+  /* ---------- the stars, once the sun is properly down ---------- */
+  if (rivHanded) {
+    const st = Math.min(1, Math.max(0, (rivDone - 1) / 5));
+    for (let i = 0; i < 90; i++) {
+      const j = Math.sin(i * 12.9898) * 43758.5453, r1 = j - Math.floor(j);
+      const k = Math.sin(i * 78.233) * 43758.5453, r2 = k - Math.floor(k);
+      const sx2 = r1 * W, sy2 = r2 * G.farB * 0.86;
+      const tw = 0.5 + 0.5 * Math.sin(rivT * (0.6 + r1 * 2) + i);
+      fctx.fillStyle = `rgba(228,238,255,${(st * (0.20 + 0.55 * tw) * (1 - sy2 / G.farB * 0.5)).toFixed(3)})`;
+      fctx.beginPath(); fctx.arc(sx2, sy2, 0.5 + r2 * 1.3, 0, 6.3); fctx.fill();
+    }
+  }
+
+  /* ---------- clouds, lit from underneath ---------- */
+  for (const c of rivClouds) {
+    c.x += c.v * dt * 0.05 * rivDir;
+    if (c.x > 1.3) c.x -= 1.6; if (c.x < -0.3) c.x += 1.6;
+    const y = c.y * G.farB, w = c.w * W, h = c.h * H;
+    const warm = Math.pow(c.y, 1.6);          /* the low ones catch the sun */
+    const cg = fctx.createLinearGradient(0, y - h, 0, y + h);
+    cg.addColorStop(0, `rgba(${(120 + 90 * warm) | 0},${(112 + 60 * warm) | 0},${(126 + 20 * warm) | 0},0)`);
+    cg.addColorStop(0.55, `rgba(${(150 + 100 * warm) | 0},${(130 + 62 * warm) | 0},${(136 + 10 * warm) | 0},${(c.a * (0.4 + warm)).toFixed(3)})`);
+    cg.addColorStop(1, `rgba(${(180 + 70 * warm) | 0},${(140 + 60 * warm) | 0},${(126 + 6 * warm) | 0},0)`);
+    fctx.fillStyle = cg;
+    fctx.beginPath();
+    fctx.ellipse(c.x * W, y, w, h, 0, 0, 6.3);
+    fctx.fill();
+  }
+
+  /* ---------- the moon, once you are across ---------- */
+  if (moonUp > 0.001) {
+    const mr = Math.min(W, H) * 0.052;
+    const my = G.farB - H * 0.06 - moonUp * H * 0.26;
+    const mx = moonX * W;
+    const mg = fctx.createRadialGradient(mx, my, 0, mx, my, mr * 7);
+    mg.addColorStop(0, `rgba(226,236,255,${(0.34 * moonUp).toFixed(3)})`);
+    mg.addColorStop(0.16, `rgba(190,210,246,${(0.13 * moonUp).toFixed(3)})`);
+    mg.addColorStop(1, "rgba(160,190,240,0)");
+    fctx.fillStyle = mg;
+    fctx.beginPath(); fctx.arc(mx, my, mr * 7, 0, 6.3); fctx.fill();
+    fctx.fillStyle = `rgba(244,246,252,${(0.97 * moonUp).toFixed(3)})`;
+    fctx.beginPath(); fctx.arc(mx, my, mr, 0, 6.3); fctx.fill();
+    /* the seas on it, so it is a moon and not a lamp */
+    fctx.fillStyle = `rgba(206,212,226,${(0.55 * moonUp).toFixed(3)})`;
+    for (const [ox, oy, orr] of [[-0.30, -0.22, 0.30], [0.26, 0.10, 0.24], [-0.10, 0.34, 0.18]]) {
+      fctx.beginPath();
+      fctx.ellipse(mx + ox * mr, my + oy * mr, orr * mr, orr * mr * 0.82, 0, 0, 6.3);
+      fctx.fill();
+    }
+    window.__moon = { x: mx, y: my, r: mr };
+  }
+
+  /* ---------- three ranges of hills, each one further off ---------- */
+  for (const hset of hills) {
+    const r = hset.r;
+    const base = G.farB - H * (0.004 + r * 0.001);
+    const amp = H * (0.10 - r * 0.022);
+    const lift = H * (0.030 + r * 0.028);
+    const lum = 20 + r * 22;
+    fctx.fillStyle = `rgba(${lum + 10},${lum + 12},${lum + 26},${(0.97 - r * 0.16).toFixed(2)})`;
+    fctx.beginPath();
+    fctx.moveTo(-10, base);
+    const n = hset.pts.length - 1;
+    for (let i = 0; i <= n; i++) {
+      const x = -10 + (W + 20) * (i / n);
+      const y = base - lift - hset.pts[i] * amp;
+      if (i === 0) fctx.lineTo(x, y);
+      else {
+        const px = -10 + (W + 20) * ((i - 1) / n);
+        const py = base - lift - hset.pts[i - 1] * amp;
+        fctx.quadraticCurveTo((px + x) / 2, (py + y) / 2 - amp * 0.10, x, y);
+      }
+    }
+    fctx.lineTo(W + 10, base);
+    fctx.closePath();
+    fctx.fill();
+    /* the haze that sits in front of everything that far away */
+    const hz = fctx.createLinearGradient(0, base - lift - amp, 0, base);
+    hz.addColorStop(0, `rgba(190,146,108,${(0.02 + r * 0.035).toFixed(3)})`);
+    hz.addColorStop(1, `rgba(222,164,114,${(0.10 + r * 0.07).toFixed(3)})`);
+    fctx.fillStyle = hz;
+    fctx.fillRect(0, base - lift - amp, W, lift + amp);
+  }
+
+  /* ---------- birds ---------- */
+  {
+    const bt = (rivT * 0.020) % 1.5 - 0.25;
+    for (const bd of rivBirds) {
+      const o = bt - bd.o * 0.045;
+      if (o < -0.1 || o > 1.1) continue;
+      const bx = (rivDir > 0 ? o : 1 - o) * W;
+      const by = G.farB * (0.30 + bd.lift) + Math.sin(rivT * 0.5 + bd.ph) * H * 0.012;
+      const flap = Math.sin(rivT * 6.5 * bd.sp + bd.ph);
+      const bs = Math.min(W, H) * 0.008;
+      fctx.strokeStyle = "rgba(24,26,32,0.55)";
+      fctx.lineWidth = Math.max(1, bs * 0.16);
+      fctx.beginPath();
+      fctx.moveTo(bx - bs, by + flap * bs * 0.42);
+      fctx.quadraticCurveTo(bx, by - bs * 0.22, bx + bs, by + flap * bs * 0.42);
+      fctx.stroke();
+    }
+  }
 
   /* ---------- the trees on the other side ---------- */
   const treeBase = G.farB + 1;
@@ -9395,6 +10162,25 @@ function riverFrame(dt) {
   }
   fctx.restore();
 
+  /* the moon lays its own road, colder and narrower than the sun's */
+  if (moonUp > 0.02 && moonDrop < 0) {
+    fctx.save();
+    fctx.globalCompositeOperation = "lighter";
+    const mrows = Math.max(16, Math.round(G.span / (fine ? 11 : 17)));
+    for (let i = 0; i < mrows; i++) {
+      const mt0 = i / mrows, mt1 = (i + 1) / mrows;
+      const my2 = rivYAt(G, mt0);
+      const mfade = Math.pow(1 - mt0, 1.4) * moonUp;
+      if (mfade < 0.02) continue;
+      const mwob = Math.sin(rivT * 1.3 + i * 0.7) * W * 0.010;
+      const mhw = W * (0.026 + 0.15 * mt0);
+      fctx.globalAlpha = 0.30 * mfade;
+      fctx.drawImage(barCool, moonX * W - mhw + mwob, my2, mhw * 2, rivYAt(G, mt1) - my2 + 1);
+    }
+    fctx.globalAlpha = 1;
+    fctx.restore();
+  }
+
   /* The current. Soft-ended streaks running with the flow, quickest down the
      middle, longer and slower-looking the nearer they are — hard little bars
      read as hatching, which is what this was before. */
@@ -9462,6 +10248,22 @@ function riverFrame(dt) {
     }
   }
 
+  /* ---------- mist, lying on it where it meets the far bank ---------- */
+  for (const m of mist) {
+    m.x += m.v * dt * 0.05 * rivDir;
+    if (m.x > 1.4) m.x -= 1.8; if (m.x < -0.4) m.x += 1.8;
+    const y = rivYAt(G, m.t) + Math.sin(rivT * 0.4 + m.ph) * H * 0.004;
+    const w = m.w * W, h = H * (0.004 + m.t * 0.014);
+    const mgg = fctx.createLinearGradient(m.x * W - w, 0, m.x * W + w, 0);
+    mgg.addColorStop(0, "rgba(206,214,224,0)");
+    mgg.addColorStop(0.5, `rgba(214,222,232,${m.a.toFixed(3)})`);
+    mgg.addColorStop(1, "rgba(206,214,224,0)");
+    fctx.fillStyle = mgg;
+    fctx.beginPath();
+    fctx.ellipse(m.x * W, y, w, h, 0, 0, 6.3);
+    fctx.fill();
+  }
+
   /* ---------- your bank, drawn last so it stands in front ---------- */
   const nearTop = (x) => G.nearB + Math.sin(x * 0.010 + 2.1) * H * 0.010
                                  + Math.sin(x * 0.027) * H * 0.005;
@@ -9526,8 +10328,35 @@ function riverFrame(dt) {
     rivHanded = true;
     finCanvas.style.cursor = "";
     crossingDone();
-    release("river");
-    setTimeout(() => natRun("wash", () => { rivOn = false; chainEnd = true; restT = 0; }, 3.6, { at: 0.58 }), 900);
+  }
+  /* Once you are across, the sun finishes going down and a moon comes up
+     over the far bank and lays a second road on the water beside the one
+     the sun left. Then it falls out of the sky, which is how you leave. */
+  if (rivHanded) {
+    rivDone += dt;
+    const dusk = Math.min(1, rivDone / 6);
+    fctx.fillStyle = `rgba(8,10,22,${(dusk * 0.52).toFixed(3)})`;
+    fctx.fillRect(0, 0, W, H);
+    if (rivDone > 1.5) moonUp = Math.min(1, moonUp + dt * 0.26);
+    if (rivDone > 9 && moonDrop < 0) { moonDrop = 0; release("river", 2.4); moonFall(); }
+  }
+  if (moonDrop >= 0) {
+    moonDrop += dt;
+    const m = window.__moon;
+    if (m) {
+      const fall = moonDrop * moonDrop * H * 1.15;
+      const my = m.y + fall;
+      const gl = fctx.createRadialGradient(m.x, my, 0, m.x, my, m.r * 6);
+      gl.addColorStop(0, "rgba(226,236,255,0.34)");
+      gl.addColorStop(1, "rgba(160,190,240,0)");
+      fctx.fillStyle = gl;
+      fctx.beginPath(); fctx.arc(m.x, my, m.r * 6, 0, 6.3); fctx.fill();
+      fctx.fillStyle = "rgba(246,248,254,0.98)";
+      fctx.beginPath(); fctx.arc(m.x, my, m.r, 0, 6.3); fctx.fill();
+      fctx.fillStyle = `rgba(4,5,10,${Math.min(1, moonDrop / 1.5).toFixed(3)})`;
+      fctx.fillRect(0, 0, W, H);
+      if (my > H + m.r * 2) { rivOn = false; startPan(); return; }
+    } else { rivOn = false; startPan(); return; }
   }
 
   /* the corners, so the eye stays on the water */
@@ -9624,6 +10453,31 @@ function stoneUp(px) {
   s.connect(bp); bp.connect(g2); g2.connect(dest);
   s.start(t0); s.stop(t0 + 1.0);
 }
+function moonFall() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  for (const [f, v] of [[74, 0.055], [111, 0.030], [148, 0.018]]) {
+    const o = ac.createOscillator(); o.type = "sine";
+    o.frequency.setValueAtTime(f, t0);
+    o.frequency.exponentialRampToValueAtTime(f * 0.55, t0 + 2.4);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(v, t0 + 0.5);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.8);
+    o.connect(g); g.connect(BUS); o.start(t0); o.stop(t0 + 2.9);
+  }
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 0.6;
+  bp.frequency.setValueAtTime(2200, t0);
+  bp.frequency.exponentialRampToValueAtTime(240, t0 + 2.2);
+  const g2 = ac.createGain();
+  g2.gain.setValueAtTime(0.0001, t0);
+  g2.gain.linearRampToValueAtTime(0.055, t0 + 0.7);
+  g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.6);
+  s.connect(bp); bp.connect(g2); g2.connect(BUS);
+  s.start(t0); s.stop(t0 + 2.7);
+}
+
 function crossingDone() {
   const ac = audio(); if (!ac) return;
   const t0 = ac.currentTime;
