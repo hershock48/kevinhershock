@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="build" content="2026-08-20T04:37Z">
+<meta name="build" content="2026-08-20T10:48Z">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Kevin Hershock</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎈</text></svg>">
@@ -7318,392 +7318,576 @@ function lanternCatch(px, hue) {
   o2.start(t0); o2.stop(t0 + 3.8);
 }
 
-/* ================= the beacon =================
-   The lanterns take you up through the cloud and you come out at the top
-   of a light. A lamp room: fog outside, the sea somewhere under it, and
-   filling the middle of the frame a Fresnel lens — rings of cut glass,
-   dark, waiting.
+/* ================= the light =================
+   The lanterns take you up through the cloud and put you down on a headland
+   at night, with a lighthouse out on the point and a lot of black water in
+   front of it.
 
-   There is one thing in here that moves. Pull it, the contactor drops,
-   the arc strikes, and every ring in that lens takes the light at once.
-   Then it turns, and the beam goes out over the fog, and when it comes
-   round to face you it takes you with it. */
+   The light is already turning, because that is what a light does, and that
+   is the whole of the instruction: the one moving thing on the screen is the
+   one you can take hold of. Swing it out over the water and there is
+   something out there, dark, riding the swell. Hold the beam on it and it
+   answers.
 
-let beaconOn = false, beacT = 0, lampOn = 0, beamA = -Math.PI * 0.55;
-let levY = 0, levGrab2 = null, beacHanded = false, sweeps = 0, lastFacing = 0;
-let fogPuffs = [], beamSprite = null, beamW = 0, beamH = 0;
+   This scene used to be the inside of the lamp room, looking at the back of
+   the lens. It was a beautiful object and it read as a hamster wheel in a
+   cage, because from in there you cannot see the sea, the tower, the boat,
+   or the point of any of it. Outside, it explains itself. */
+
+let beaconOn = false, beacT = 0, lampOn = 0;
+let beamT = 0.5, beamV = 0.26, beamGrab = null, beacHanded = false;
+let shipT = 0.5, shipLock = 0, shipSeen = 0, shipAnswer = 0, beacIdle = 0;
+let swellRows = null, seaStars = null, beacFound = 0;
 
 function beacGeom() {
   const W = window.innerWidth, H = window.innerHeight;
-  const R = Math.min(W * 0.20, H * 0.24);
+  /* a tall screen gets more sea, because the sea is where everything is */
+  const hz = H * (H > W * 1.25 ? 0.365 : 0.46);
+  const tx = W * 0.115;                      /* the tower, off to one side */
+  const base = hz + (H - hz) * 0.30;         /* where its rock meets the water */
+  const th = Math.min(H * 0.40, W * 0.30);   /* how tall it stands */
   return {
-    W, H, cx: W * 0.5, cy: H * 0.47, R,
-    /* the switch: a long brass blade on a pivot, down the right-hand side */
-    lev: { x: W * 0.5 + Math.max(R * 2.0, W * 0.30), y0: H * 0.32, y1: H * 0.60,
-           r: Math.max(17, R * 0.14) },
+    W, H, hz, tx, base, th,
+    lamp: { x: tx, y: base - th },           /* the light itself */
+    tw: Math.max(16, Math.min(W, H) * 0.030), /* tower width at the gallery */
   };
 }
 
 function startBeacon() {
   mark("beacon");
   if (beaconOn) return;
-  beaconOn = true; beacT = 0; lampOn = 0; levY = 0; sweeps = 0; beacHanded = false;
-  beamA = -Math.PI * 0.55;
-  const W = window.innerWidth, H = window.innerHeight;
-  fogPuffs = [];
-  for (let i = 0; i < (W < 620 ? 7 : 10); i++)
-    fogPuffs.push({ x: rnd() * W, y: H * (0.18 + rnd() * 0.62),
-                    r: Math.min(W, H) * (0.14 + rnd() * 0.22),
-                    sp: (rnd() - 0.5) * 9, a: 0.05 + rnd() * 0.08 });
-  bed("night");
-  beaconWind();
+  beaconOn = true; beacT = 0; lampOn = 0; beacHanded = false;
+  beamT = 0.5; beamV = 0.24; beamGrab = null;
+  shipLock = 0; shipSeen = 0; shipAnswer = 0; beacIdle = 0; beacFound = 0;
+  /* it is somewhere out there, and not in the middle, because the middle is
+     where you are already looking */
+  shipT = rnd() < 0.5 ? 0.10 + rnd() * 0.28 : 0.60 + rnd() * 0.30;
+
+  const G = beacGeom();
+  swellRows = [];
+  for (let i = 0; i < 20; i++) {
+    const d = i / 19;
+    swellRows.push({ d, ph: rnd() * 6.3, sp: 0.25 + rnd() * 0.5,
+                     amp: 0.4 + rnd() * 0.9 });
+  }
+  seaStars = [];
+  for (let i = 0; i < 90; i++)
+    seaStars.push({ x: rnd() * G.W, y: rnd() * G.hz * 0.92,
+                    r: 0.4 + rnd() * 1.4, tw: 0.4 + rnd() * 2, ph: rnd() * 6.3 });
+
+  bed("sea");
+  seaBed();
+  finCanvas.style.cursor = "grab";
 }
 
-/* The beam was thirty-odd gradient fans every frame, drawn behind the lens
-   where you could not see it anyway. Built once into a sprite instead, and
-   drawn over the glass, so it costs one rotated drawImage and reads as
-   light leaving. */
-function buildBeam(G) {
-  const reach = Math.round(Math.max(G.W, G.H) * 1.6);
-  beamW = reach; beamH = Math.round(reach * 0.62);
-  const c = document.createElement("canvas");
-  c.width = beamW; c.height = beamH;
-  const x = c.getContext("2d");
-  x.globalCompositeOperation = "lighter";
-  const cy = beamH / 2, spread = 0.28, N = 34;
-  for (let i = 0; i < N; i++) {
-    const u = (i / (N - 1) - 0.5) * 2;
-    const a = u * spread;
-    const fall = Math.pow(Math.cos(u * Math.PI / 2), 2.0);
-    const g = x.createLinearGradient(0, cy, reach, cy);
-    g.addColorStop(0, `rgba(255,244,208,${(0.16 * fall).toFixed(4)})`);
-    g.addColorStop(0.30, `rgba(255,224,158,${(0.085 * fall).toFixed(4)})`);
-    g.addColorStop(1, "rgba(255,196,104,0)");
-    x.fillStyle = g;
-    x.beginPath();
-    x.moveTo(0, cy);
-    x.lineTo(reach, cy + Math.tan(a - 0.012) * reach);
-    x.lineTo(reach, cy + Math.tan(a + 0.012) * reach);
-    x.closePath(); x.fill();
-  }
-  beamSprite = c;
-}
+/* --- where a bearing puts you on the water ---
+   t runs 0 to 1 left to right. The beam lands on the horizon at hx(t), and
+   anything at that bearing sits a little below the horizon, because it is
+   nearer than the sky. */
+const beamHX = (G, t) => G.W * 0.245 + t * G.W * 0.86;
+const shipY = (G) => G.hz + (G.H - G.hz) * 0.10;
 
-function drawFresnel(G, lit, flick) {
-  const c = fctx, { cx, cy, R } = G;
-  /* the drum of rings. Unlit it is cold glass with a few edge glints; lit,
-     every ring takes it at once, which is the whole point of the thing. */
-  const RINGS = 9;
-  for (let i = RINGS; i >= 1; i--) {
-    const f = i / RINGS;
-    const rr = R * f;
-    const ry = rr * 1.28;
-    const g = c.createLinearGradient(cx - rr, 0, cx + rr, 0);
-    const L = lit ? (30 + 62 * lit * flick) : 16;
-    const S = lit ? 64 : 22;
-    const hue = 44;
-    g.addColorStop(0, `hsla(${hue},${S}%,${L * 0.35}%,0.92)`);
-    g.addColorStop(0.30, `hsla(${hue},${S}%,${L}%,0.92)`);
-    g.addColorStop(0.46, `hsla(${hue},${S}%,${Math.min(96, L * 1.7)}%,0.95)`);
-    g.addColorStop(0.62, `hsla(${hue},${S}%,${L * 0.8}%,0.92)`);
-    g.addColorStop(1, `hsla(${hue},${S}%,${L * 0.30}%,0.92)`);
-    c.fillStyle = g;
-    c.beginPath();
-    c.ellipse(cx, cy, rr, ry, 0, 0, 6.3);
-    c.fill();
-    /* the prism cut: a hard bright line at the top of every ring */
-    c.strokeStyle = lit
-      ? `rgba(255,${232 - i * 6 | 0},${170 - i * 8 | 0},${(0.30 + 0.55 * lit * flick).toFixed(3)})`
-      : "rgba(150,178,200,0.20)";
-    c.lineWidth = Math.max(1, R * 0.008);
-    c.beginPath();
-    c.ellipse(cx, cy, rr, ry, 0, 0, 6.3);
-    c.stroke();
+function drawBeam(G, t, a, spread, water) {
+  if (a <= 0.004) return;
+  const L = G.lamp, hx = beamHX(G, t);
+  const M = Math.min(G.W, G.H);
+  /* The beam and the light it lays on the water are one object, not two.
+     They meet at the horizon: the wedge in the air narrows to that point,
+     and the lane on the water opens out from it toward you. Drawn as two
+     shapes that share a vertex, so the eye reads one cone. */
+  const tipW = M * 0.020, w = M * spread;
+  for (let k = 0; k < 3; k++) {
+    const kk = 1 - k * 0.32, sp = 1 + k * 0.9;
+    const g = fctx.createLinearGradient(L.x, L.y, hx, G.hz);
+    g.addColorStop(0, `rgba(255,247,220,${(a * 0.34 * kk).toFixed(3)})`);
+    g.addColorStop(0.45, `rgba(255,240,200,${(a * 0.15 * kk).toFixed(3)})`);
+    g.addColorStop(1, `rgba(250,234,190,${(a * 0.07 * kk).toFixed(3)})`);
+    fctx.fillStyle = g;
+    fctx.beginPath();
+    fctx.moveTo(L.x - w * 0.34 * sp, L.y - w * 0.10);
+    fctx.lineTo(L.x + w * 0.34 * sp, L.y + w * 0.10);
+    fctx.lineTo(hx + tipW * sp, G.hz);
+    fctx.lineTo(hx - tipW * sp, G.hz);
+    fctx.closePath();
+    fctx.fill();
   }
-  /* the bullseye at the middle, and the arc inside it */
-  const core = c.createRadialGradient(cx, cy, 0, cx, cy, R * 0.30);
-  if (lit) {
-    core.addColorStop(0, `rgba(255,255,246,${(0.98 * flick).toFixed(3)})`);
-    core.addColorStop(0.35, `rgba(255,232,168,${(0.85 * flick).toFixed(3)})`);
-    core.addColorStop(1, "rgba(255,190,90,0)");
-  } else {
-    core.addColorStop(0, "rgba(120,140,158,0.30)");
-    core.addColorStop(1, "rgba(90,110,130,0)");
+  if (!water) return;
+  /* The lane is not a triangle with edges — light on water has no edge. It
+     is laid down as rows, each one soft across its width, brightest where
+     the beam comes down and fading out toward you as the water takes it. */
+  const rows = Math.max(24, Math.min(56, Math.round((G.H - G.hz) / 13)));
+  for (let i = 0; i < rows; i++) {
+    const d0 = i / rows, d1 = (i + 1) / rows;
+    const dA = Math.pow(d0, 1.55), dB = Math.pow(d1, 1.55);
+    const yA = G.hz + (G.H - G.hz) * dA, yB = G.hz + (G.H - G.hz) * dB;
+    const hw = tipW + (w * 3.6 - tipW) * dA;
+    const al = a * 0.80 * Math.pow(1 - dA, 1.15);
+    if (al < 0.004) continue;
+    const rg = fctx.createLinearGradient(hx - hw, 0, hx + hw, 0);
+    rg.addColorStop(0, "rgba(255,238,196,0)");
+    rg.addColorStop(0.30, `rgba(255,240,202,${(al * 0.55).toFixed(3)})`);
+    rg.addColorStop(0.5, `rgba(255,246,214,${al.toFixed(3)})`);
+    rg.addColorStop(0.70, `rgba(255,240,202,${(al * 0.55).toFixed(3)})`);
+    rg.addColorStop(1, "rgba(255,238,196,0)");
+    fctx.fillStyle = rg;
+    fctx.fillRect(hx - hw, yA - 0.6, hw * 2, yB - yA + 2.4);
   }
-  c.fillStyle = core;
-  c.fillRect(cx - R * 0.4, cy - R * 0.5, R * 0.8, R);
-
-  /* the cage: brass uprights over the glass */
-  c.strokeStyle = "rgba(96,74,36,0.9)";
-  c.lineWidth = Math.max(3, R * 0.035);
-  for (const u of [-0.86, -0.30, 0.30, 0.86]) {
-    c.beginPath();
-    c.moveTo(cx + u * R * 1.15, cy - R * 1.7);
-    c.lineTo(cx + u * R * 1.15, cy + R * 1.7);
-    c.stroke();
+  /* and the water in it breaks into a road of glints, which is the only
+     reason a beam on the sea is worth looking at */
+  const n = M < 560 ? 60 : 96;
+  for (let i = 0; i < n; i++) {
+    const j2 = Math.sin(i * 4.117 + 2.71) * 21301.7;
+    /* jittered along the lane as well as across it, or they stack up into a
+       ladder instead of scattering like water */
+    const d = Math.pow(Math.min(0.999, (i + 0.15 + (j2 - Math.floor(j2)) * 0.8) / n), 1.75);
+    const y = G.hz + (G.H - G.hz) * d;
+    const hw = tipW + (w * 3.6 - tipW) * d;
+    const j = Math.sin(i * 12.9898 + 7.233) * 43758.5453;
+    const off = (j - Math.floor(j)) - 0.5;
+    const fx = hx + off * 2 * hw;
+    const edge = 1 - Math.min(1, Math.abs(off) * 2.1);        // dimmer at the sides
+    const tw = 0.35 + 0.65 * Math.abs(Math.sin(beacT * (1.1 + (i % 7) * 0.29) + i));
+    const len = (2 + d * 26) * (0.5 + tw);
+    const al = a * (0.08 + 0.40 * tw) * edge * Math.pow(1 - d, 0.5);
+    if (al < 0.006) continue;
+    fctx.fillStyle = `rgba(255,250,228,${al.toFixed(3)})`;
+    fctx.fillRect(fx - len / 2, y, len, Math.max(0.8, 0.5 + d * 2.4));
   }
-  c.strokeStyle = "rgba(126,98,48,0.95)";
-  c.lineWidth = Math.max(4, R * 0.05);
-  c.beginPath();
-  c.moveTo(cx - R * 1.6, cy - R * 1.42); c.lineTo(cx + R * 1.6, cy - R * 1.42);
-  c.moveTo(cx - R * 1.6, cy + R * 1.42); c.lineTo(cx + R * 1.6, cy + R * 1.42);
-  c.stroke();
 }
 
 function beaconFrame(dt) {
-  const G = beacGeom(), W = G.W, H = G.H;
+  const W = window.innerWidth, H = window.innerHeight;
+  const G = beacGeom();
   beacT += dt;
   hardClear(finCanvas, fctx);
 
-  /* ---- outside: fog over black water ---- */
-  const sky = fctx.createLinearGradient(0, 0, 0, H);
-  sky.addColorStop(0, "#05080f");
-  sky.addColorStop(0.55, "#0a1018");
-  sky.addColorStop(1, "#04070c");
-  fctx.fillStyle = sky; fctx.fillRect(0, 0, W, H);
-
-  const flick = lampOn > 0
-    ? 0.90 + 0.10 * Math.sin(beacT * 31) + 0.05 * Math.sin(beacT * 71) : 0;
-
-  if (lampOn > 0.02) {
-    beamA += dt * 0.86;
-    const facing = Math.cos(beamA);                 /* 1 = pointing at you */
-    if (facing < -0.9 && lastFacing >= -0.9) { sweeps++; beaconClick(); }
-    lastFacing = facing;
+  /* ---- sky ---- */
+  const sky = fctx.createLinearGradient(0, 0, 0, G.hz);
+  sky.addColorStop(0, "#070b18");
+  sky.addColorStop(0.62, "#101a2c");
+  sky.addColorStop(1, "#1d2b3e");
+  fctx.fillStyle = sky;
+  fctx.fillRect(0, 0, W, G.hz);
+  for (const s of seaStars) {
+    const tw = 0.5 + 0.5 * Math.sin(beacT * s.tw + s.ph);
+    const alt = 1 - s.y / G.hz;
+    fctx.fillStyle = `rgba(226,238,255,${(0.16 + 0.5 * tw * alt).toFixed(3)})`;
+    fctx.beginPath(); fctx.arc(s.x, s.y, s.r, 0, 6.3); fctx.fill();
   }
 
-  /* ---- fog, lit from behind when the beam is in it ---- */
-  for (const p of fogPuffs) {
-    p.x += p.sp * dt;
-    if (p.x < -p.r * 2) p.x = W + p.r * 2;
-    if (p.x > W + p.r * 2) p.x = -p.r * 2;
-    const toP = Math.atan2((p.y - G.cy) * 2.8, p.x - G.cx);
-    let d = Math.abs(((toP - beamA + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
-    const hitBeam = lampOn * Math.max(0, 1 - d / 0.5) * flick;
-    const g = fctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
-    const a = p.a + hitBeam * 0.26;
-    g.addColorStop(0, `rgba(${196 + 56 * hitBeam | 0},${206 + 30 * hitBeam | 0},${218 - 40 * hitBeam | 0},${a.toFixed(3)})`);
-    g.addColorStop(1, "rgba(180,196,210,0)");
-    fctx.fillStyle = g;
-    fctx.fillRect(p.x - p.r, p.y - p.r, p.r * 2, p.r * 2);
-  }
+  /* ---- sea ---- */
+  const sea = fctx.createLinearGradient(0, G.hz, 0, H);
+  sea.addColorStop(0, "#16233a");
+  sea.addColorStop(0.35, "#0e1929");
+  sea.addColorStop(1, "#070d17");
+  fctx.fillStyle = sea;
+  fctx.fillRect(0, G.hz, W, H - G.hz);
 
-  /* the horizon it is all standing over */
-  fctx.fillStyle = "rgba(2,4,8,0.9)";
-  fctx.fillRect(0, H * 0.80, W, H * 0.20);
-  fctx.fillStyle = `rgba(190,206,224,${(0.05 + 0.10 * lampOn).toFixed(3)})`;
-  fctx.fillRect(0, H * 0.80 - 1, W, 1.6);
-
-  /* ---- the lens ---- */
-  drawFresnel(G, lampOn, flick);
-
-  /* ---- and the light going out of it, both ways, the way a lens does ---- */
-  if (lampOn > 0.02) {
-    if (!beamSprite || beamW < Math.max(W, H)) buildBeam(G);
-    for (const [off, amp] of [[0, 1], [Math.PI, 0.55]]) {
-      fctx.save();
-      fctx.globalCompositeOperation = "lighter";
-      fctx.globalAlpha = lampOn * flick * amp;
-      fctx.translate(G.cx, G.cy);
-      fctx.rotate(beamA + off);
-      fctx.scale(1, 0.34);
-      fctx.drawImage(beamSprite, 0, -beamH / 2);
-      fctx.restore();
+  /* the swell: rows further off are thinner, slower and closer together,
+     which is the whole of sea perspective */
+  /* swell, not ruled paper: rows get fainter and closer together with
+     distance, and each one is a run of separate crests rather than a line
+     ruled across the frame */
+  for (const r of swellRows) {
+    const y = G.hz + (H - G.hz) * Math.pow(r.d, 1.9);
+    const th = 0.5 + r.d * 2.6;
+    const amp = (0.6 + r.d * 8) * r.amp;
+    const step = 60 + r.d * 190;
+    fctx.strokeStyle = `rgba(150,182,218,${(0.010 + 0.135 * Math.pow(r.d, 1.6)).toFixed(3)})`;
+    fctx.lineWidth = th;
+    fctx.lineCap = "round";
+    for (let x = -30; x <= W + 30; x += step) {
+      const ph = x * (0.009 - r.d * 0.004) + beacT * r.sp + r.ph;
+      const run = step * (0.42 + 0.40 * (0.5 + 0.5 * Math.sin(ph * 1.7 + r.ph)));
+      fctx.beginPath();
+      for (let k = 0; k <= 8; k++) {
+        const xx = x + run * k / 8;
+        const yy = y + Math.sin(xx * (0.009 - r.d * 0.004) + beacT * r.sp + r.ph) * amp;
+        k ? fctx.lineTo(xx, yy) : fctx.moveTo(xx, yy);
+      }
+      fctx.stroke();
     }
   }
-  if (lampOn > 0.02) {
-    /* the whole room takes some of it */
+  /* a hard horizon, so the sea has an edge to be a sea against */
+  fctx.fillStyle = "rgba(178,204,232,0.16)";
+  fctx.fillRect(0, G.hz - 1, W, 1.6);
+
+  /* ---- the light: it turns on its own until you take it ---- */
+  lampOn = Math.min(1, lampOn + dt * 0.7);
+  if (!beamGrab && !shipAnswer) {
+    beamT += beamV * dt;
+    if (beamT > 1) { beamT = 1; beamV = -Math.abs(beamV); }
+    if (beamT < 0) { beamT = 0; beamV = Math.abs(beamV); }
+  }
+
+  /* is it on the boat? */
+  const near = Math.abs(beamT - shipT);
+  const onIt = near < 0.052;
+  if (onIt && !shipAnswer) {
+    shipLock = Math.min(1, shipLock + dt * 0.85);
+    if (!beacFound) { beacFound = 1; glintSound(); }
+  } else if (!shipAnswer) {
+    shipLock = Math.max(0, shipLock - dt * 0.55);
+    if (beacFound && near > 0.10) beacFound = 0;
+  }
+  shipSeen = Math.max(0, Math.min(1, 1 - Math.max(0, near - 0.052) / 0.075));
+
+  fctx.save();
+  fctx.globalCompositeOperation = "lighter";
+  drawBeam(G, beamT, lampOn * (0.88 + 0.12 * Math.sin(beacT * 9)), 0.075, true);
+  /* the back beam, because a light has two and one of them is always going
+     away from you */
+  let bt = beamT + 0.5; if (bt > 1) bt -= 1;
+  drawBeam(G, bt, lampOn * 0.13, 0.06, false);
+  fctx.restore();
+
+  /* ---- the boat ---- */
+  const sy = shipY(G), sx = beamHX(G, shipT);
+  const vis = shipAnswer ? 1 : shipSeen;
+  if (vis > 0.01) {
+    const bob = Math.sin(beacT * 1.15) * Math.min(W, H) * 0.006;
+    const sc = Math.min(W, H) * 0.040;
     fctx.save();
-    fctx.globalCompositeOperation = "lighter";
-    const halo = fctx.createRadialGradient(G.cx, G.cy, 0, G.cx, G.cy, G.R * 4.2);
-    halo.addColorStop(0, `rgba(255,224,160,${(0.20 * lampOn * flick).toFixed(3)})`);
-    halo.addColorStop(1, "rgba(255,190,100,0)");
-    fctx.fillStyle = halo;
-    fctx.fillRect(0, 0, W, H);
+    fctx.translate(sx, sy + bob);
+    fctx.rotate(Math.sin(beacT * 0.9) * 0.06);
+    fctx.globalAlpha = Math.min(1, 0.15 + vis * 0.95);
+    /* It is lit by the beam, not by nothing. That is the whole scene: swing
+       the light out, and what was a shape in the dark turns into a boat. */
+    const lv = shipAnswer ? 1 : vis;
+    const mix = (dark, bright) => `rgb(${Math.round(dark[0] + (bright[0] - dark[0]) * lv)},`
+      + `${Math.round(dark[1] + (bright[1] - dark[1]) * lv)},`
+      + `${Math.round(dark[2] + (bright[2] - dark[2]) * lv)})`;
+    /* hull */
+    fctx.fillStyle = mix([16, 22, 32], [96, 74, 50]);
+    fctx.beginPath();
+    fctx.moveTo(-sc, 0);
+    fctx.quadraticCurveTo(-sc * 0.75, sc * 0.52, 0, sc * 0.56);
+    fctx.quadraticCurveTo(sc * 0.75, sc * 0.52, sc, 0);
+    fctx.closePath();
+    fctx.fill();
+    /* mast and a slack sail */
+    fctx.strokeStyle = mix([22, 30, 42], [150, 124, 84]);
+    fctx.lineWidth = Math.max(1.2, sc * 0.08);
+    fctx.beginPath(); fctx.moveTo(0, 0); fctx.lineTo(0, -sc * 1.5); fctx.stroke();
+    fctx.fillStyle = mix([32, 40, 54], [242, 226, 190]);
+    fctx.beginPath();
+    fctx.moveTo(0, -sc * 1.42);
+    fctx.quadraticCurveTo(sc * 0.86, -sc * 0.72, 0, -sc * 0.10);
+    fctx.closePath();
+    fctx.fill();
+    /* the light it puts up in reply */
+    if (shipAnswer > 0.02) {
+      const la = Math.min(1, shipAnswer * 1.6);
+      const lg2 = fctx.createRadialGradient(0, -sc * 1.62, 0, 0, -sc * 1.62, sc * 2.6);
+      lg2.addColorStop(0, `rgba(255,236,176,${(0.95 * la).toFixed(3)})`);
+      lg2.addColorStop(0.2, `rgba(255,214,130,${(0.40 * la).toFixed(3)})`);
+      lg2.addColorStop(1, "rgba(255,200,110,0)");
+      fctx.fillStyle = lg2;
+      fctx.beginPath(); fctx.arc(0, -sc * 1.62, sc * 2.6, 0, 6.3); fctx.fill();
+    }
+    fctx.restore();
+    /* its reflection, broken by the swell */
+    fctx.save();
+    fctx.globalAlpha = Math.min(0.5, vis * 0.5);
+    fctx.fillStyle = shipAnswer ? "rgba(255,222,150,0.55)" : `rgba(214,196,160,${(0.14 + 0.34 * lv).toFixed(3)})`;
+    for (let i = 0; i < 9; i++) {
+      const yy = sy + sc * (0.7 + i * 0.42);
+      const ww = sc * (0.5 + i * 0.16) * (0.6 + 0.4 * Math.sin(beacT * 2.2 + i));
+      fctx.fillRect(sx - ww / 2, yy, ww, Math.max(1, sc * 0.07));
+    }
     fctx.restore();
   }
 
-  /* ---- the switch ---- */
-  const L = G.lev;
-  const ly = L.y0 + (L.y1 - L.y0) * levY;
-  fctx.fillStyle = "rgba(24,20,14,0.9)";
-  fctx.beginPath();
-  fctx.roundRect ? fctx.roundRect(L.x - L.r * 1.5, L.y0 - L.r * 1.3, L.r * 3, (L.y1 - L.y0) + L.r * 2.8, L.r * 0.5)
-                 : fctx.rect(L.x - L.r * 1.5, L.y0 - L.r * 1.3, L.r * 3, (L.y1 - L.y0) + L.r * 2.8);
-  fctx.fill();
-  fctx.strokeStyle = "rgba(120,96,48,0.8)"; fctx.lineWidth = Math.max(2, L.r * 0.14);
-  fctx.stroke();
-  /* the two contacts it bridges */
-  for (const cy2 of [L.y0, L.y1]) {
-    fctx.fillStyle = cy2 === L.y1 && levY > 0.96 ? "#ffd98a" : "#7d6430";
-    fctx.beginPath(); fctx.arc(L.x, cy2, L.r * 0.42, 0, 6.3); fctx.fill();
-  }
-  /* the blade */
-  const bg2 = fctx.createLinearGradient(L.x - L.r, 0, L.x + L.r, 0);
-  bg2.addColorStop(0, "#6b4f18"); bg2.addColorStop(0.35, "#e3bd5c");
-  bg2.addColorStop(0.55, "#fff2c4"); bg2.addColorStop(1, "#5d4514");
-  fctx.strokeStyle = bg2; fctx.lineWidth = L.r * 0.62; fctx.lineCap = "round";
-  fctx.beginPath(); fctx.moveTo(L.x, L.y0); fctx.lineTo(L.x, ly); fctx.stroke();
-  /* the handle */
-  const kg = fctx.createRadialGradient(L.x - L.r * 0.3, ly - L.r * 0.35, 0, L.x, ly, L.r);
-  kg.addColorStop(0, "#2b2b2f"); kg.addColorStop(0.5, "#17171a"); kg.addColorStop(1, "#000");
-  fctx.fillStyle = kg;
-  fctx.beginPath(); fctx.arc(L.x, ly, L.r, 0, 6.3); fctx.fill();
-  fctx.strokeStyle = "rgba(190,160,90,0.55)"; fctx.lineWidth = Math.max(1.5, L.r * 0.10);
-  fctx.stroke();
-
-  if (lampOn < 0.02) {
-    const p = 0.5 + 0.5 * Math.sin(beacT * 2.2);
-    fctx.strokeStyle = `rgba(255,226,150,${(0.18 + 0.34 * p).toFixed(2)})`;
-    fctx.lineWidth = Math.max(2, L.r * 0.14);
-    fctx.beginPath(); fctx.arc(L.x, ly, L.r * (1.55 + 0.45 * p), 0, 6.3); fctx.stroke();
-    fctx.fillStyle = `rgba(255,226,160,${(0.20 + 0.30 * p).toFixed(2)})`;
+  /* the ring that says you have it — the only bit of language in the scene */
+  if (shipLock > 0.01 && shipAnswer < 0.02) {
+    fctx.strokeStyle = `rgba(255,238,190,${(0.20 + 0.45 * shipLock).toFixed(3)})`;
+    fctx.lineWidth = Math.max(1.6, Math.min(W, H) * 0.004);
     fctx.beginPath();
-    const ay = ly + L.r * (2.2 + 0.5 * p);
-    fctx.moveTo(L.x - L.r * 0.34, ay); fctx.lineTo(L.x + L.r * 0.34, ay);
-    fctx.lineTo(L.x, ay + L.r * 0.62); fctx.closePath(); fctx.fill();
+    fctx.arc(sx, sy, Math.min(W, H) * 0.075, -Math.PI / 2,
+             -Math.PI / 2 + 6.283 * shipLock);
+    fctx.stroke();
   }
 
-  if (lampOn > 0 && lampOn < 1) lampOn = Math.min(1, lampOn + dt * 0.55);
+  /* ---- the tower ---- */
+  drawTower(G, lampOn);
 
-  /* three passes, and then the fourth one comes round and takes you */
-  if (sweeps >= 2 && !beacHanded && Math.cos(beamA) > 0.86) {
-    beacHanded = true;
-    release("beacon"); natRun("rain", () => { beaconOn = false; startWood(); }, 3.8, { at: 0.56 });
+  /* ---- the headland you are standing on ---- */
+  const fg = fctx.createLinearGradient(0, H * 0.86, 0, H);
+  fg.addColorStop(0, "rgba(6,9,14,0.72)");
+  fg.addColorStop(1, "#04060a");
+  fctx.fillStyle = fg;
+  fctx.beginPath();
+  fctx.moveTo(0, H);
+  fctx.lineTo(0, H * 0.93);
+  for (let x = 0; x <= W; x += 26) {
+    fctx.lineTo(x, H * 0.93 + Math.sin(x * 0.006 + 1.2) * H * 0.018
+                             + Math.sin(x * 0.021) * H * 0.008);
   }
+  fctx.lineTo(W, H);
+  fctx.closePath();
+  fctx.fill();
+
+  /* ---- a nudge, if they have not taken hold of it ---- */
+  beacIdle += dt;
+  if (beacIdle > 6 && !shipAnswer && !beamGrab) {
+    const p = 0.5 + 0.5 * Math.sin(beacT * 2.0);
+    const hx = beamHX(G, beamT);
+    fctx.strokeStyle = `rgba(255,236,190,${(0.05 + 0.11 * p).toFixed(3)})`;
+    fctx.lineWidth = Math.max(3, Math.min(W, H) * 0.008);
+    fctx.lineCap = "round";
+    const y = G.hz + (H - G.hz) * 0.30;
+    fctx.beginPath();
+    fctx.moveTo(hx - W * 0.12, y);
+    fctx.quadraticCurveTo(hx, y - H * 0.02, hx + W * 0.12, y);
+    fctx.stroke();
+  }
+
+  /* ---- and the answer ---- */
+  if (shipLock >= 1 && !shipAnswer) {
+    shipAnswer = 0.0001;
+    shipBell();
+    release("beacon", 2.6);
+    hornAnswer();
+  }
+  if (shipAnswer) {
+    shipAnswer = Math.min(1, shipAnswer + dt * 0.42);
+    /* the whole frame warms as it comes about */
+    fctx.fillStyle = `rgba(255,206,132,${(shipAnswer * 0.16).toFixed(3)})`;
+    fctx.fillRect(0, 0, W, H);
+    if (shipAnswer > 0.72 && !beacHanded) {
+      beacHanded = true;
+      natRun("rain", () => { beaconOn = false; startWood(); }, 3.8, { at: 0.56 });
+    }
+  }
+
   natFrame(dt);
 }
 
-/* --- throwing the switch --- */
-function beacHit(x, y) {
-  const L = beacGeom().lev;
-  return Math.abs(x - L.x) < Math.max(L.r * 3.0, 52 * UIS) &&
-         y > L.y0 - L.r * 3 && y < L.y1 + L.r * 3;
+function drawTower(G, lit) {
+  const { tx, base, th, tw } = G;
+  const top = base - th;
+  /* the rock it stands on */
+  fctx.fillStyle = "#05080e";
+  fctx.beginPath();
+  fctx.moveTo(tx - tw * 2.6, G.H);
+  fctx.lineTo(tx - tw * 1.75, base + tw * 0.5);
+  fctx.quadraticCurveTo(tx, base - tw * 0.15, tx + tw * 1.75, base + tw * 0.5);
+  fctx.lineTo(tx + tw * 2.6, G.H);
+  fctx.closePath();
+  fctx.fill();
+  /* the tower, tapering, banded, catching a little of its own light */
+  const g = fctx.createLinearGradient(tx - tw, 0, tx + tw, 0);
+  g.addColorStop(0, "#0e131c");
+  g.addColorStop(0.42, "#2e3644");
+  g.addColorStop(0.62, "#3b4553");
+  g.addColorStop(1, "#0b0f16");
+  fctx.fillStyle = g;
+  fctx.beginPath();
+  fctx.moveTo(tx - tw * 1.55, base);
+  fctx.lineTo(tx - tw * 0.72, top + tw * 0.9);
+  fctx.lineTo(tx + tw * 0.72, top + tw * 0.9);
+  fctx.lineTo(tx + tw * 1.55, base);
+  fctx.closePath();
+  fctx.fill();
+  /* one band, because every lighthouse has one and it is what makes the
+     silhouette read as a lighthouse and not a chimney */
+  fctx.fillStyle = "rgba(120,66,52,0.55)";
+  const by = top + th * 0.42, bh = th * 0.13;
+  const wAt = (y) => tw * (0.72 + 0.83 * (y - (top + tw * 0.9)) / (base - top - tw * 0.9));
+  fctx.beginPath();
+  fctx.moveTo(tx - wAt(by), by);
+  fctx.lineTo(tx + wAt(by), by);
+  fctx.lineTo(tx + wAt(by + bh), by + bh);
+  fctx.lineTo(tx - wAt(by + bh), by + bh);
+  fctx.closePath();
+  fctx.fill();
+  /* the gallery rail under the lamp room */
+  fctx.strokeStyle = "#2a3240";
+  fctx.lineWidth = Math.max(1.4, tw * 0.10);
+  fctx.beginPath();
+  fctx.moveTo(tx - tw * 1.20, top + tw * 0.92);
+  fctx.lineTo(tx + tw * 1.20, top + tw * 0.92);
+  fctx.stroke();
+  for (let i = -3; i <= 3; i++) {
+    fctx.beginPath();
+    fctx.moveTo(tx + i * tw * 0.36, top + tw * 0.92);
+    fctx.lineTo(tx + i * tw * 0.36, top + tw * 0.52);
+    fctx.stroke();
+  }
+  /* the lamp room and the lamp */
+  fctx.fillStyle = "#151b26";
+  fctx.fillRect(tx - tw * 0.78, top - tw * 0.42, tw * 1.56, tw * 1.0);
+  fctx.fillStyle = "#0c1017";
+  fctx.beginPath();
+  fctx.moveTo(tx - tw * 0.95, top - tw * 0.42);
+  fctx.lineTo(tx, top - tw * 1.25);
+  fctx.lineTo(tx + tw * 0.95, top - tw * 0.42);
+  fctx.closePath();
+  fctx.fill();
+  if (lit > 0.01) {
+    const flick = 0.88 + 0.12 * Math.sin(beacT * 9);
+    const lg = fctx.createRadialGradient(tx, top, 0, tx, top, tw * 4.0);
+    lg.addColorStop(0, `rgba(255,248,222,${(0.95 * lit * flick).toFixed(3)})`);
+    lg.addColorStop(0.12, `rgba(255,238,186,${(0.45 * lit).toFixed(3)})`);
+    lg.addColorStop(1, "rgba(255,226,160,0)");
+    fctx.fillStyle = lg;
+    fctx.beginPath(); fctx.arc(tx, top, tw * 4.0, 0, 6.3); fctx.fill();
+    fctx.fillStyle = `rgba(255,252,238,${(0.95 * lit).toFixed(3)})`;
+    fctx.beginPath();
+    fctx.ellipse(tx, top, tw * 0.40, tw * 0.30, 0, 0, 6.3);
+    fctx.fill();
+  }
 }
-function beacAdvance(v) {
-  if (!beaconOn || lampOn > 0) return;
-  const n = Math.max(levY, Math.min(1, v));
-  if (n > levY) { levY = n; contactorTick(); }
-  if (levY >= 1) { levGrab2 = null; strikeArc(); lampOn = 0.02; }
+
+/* --- taking hold of it ---
+   Drag anywhere and the light follows your hand. Tap anywhere and it swings
+   there on its own, because a tap has to do something. */
+function beamAim(x) {
+  const G = beacGeom();
+  return Math.max(0, Math.min(1, (x - beamHX(G, 0)) / (beamHX(G, 1) - beamHX(G, 0))));
 }
 window.addEventListener("pointerdown", (e) => {
-  if (!beaconOn || lampOn > 0) return;
-  if (!beacHit(e.clientX, e.clientY)) return;
-  levGrab2 = { y: e.clientY, p0: levY };
-  beacAdvance(levY + 0.26);
-  if (e.cancelable) e.preventDefault();
-}, { passive: false });
+  if (!beaconOn || shipAnswer) return;
+  beacIdle = 0;
+  const want = beamAim(e.clientX);
+  beamGrab = { want };
+  /* a tap is a swing: go most of the way there at once */
+  beamT += (want - beamT) * 0.55;
+  gearTurn(Math.abs(want - beamT));
+}, { passive: true });
 window.addEventListener("pointermove", (e) => {
-  if (!beaconOn) return;
-  finCanvas.style.cursor = (lampOn < 0.02 && beacHit(e.clientX, e.clientY)) ? "grab" : "";
-  if (!levGrab2) return;
-  const L = beacGeom().lev;
-  beacAdvance(levGrab2.p0 + (e.clientY - levGrab2.y) / (L.y1 - L.y0));
-  if (e.cancelable) e.preventDefault();
-}, { passive: false });
-window.addEventListener("pointerup", () => { levGrab2 = null; });
+  if (!beaconOn || shipAnswer) return;
+  if (!beamGrab) {
+    finCanvas.style.cursor = "grab";
+    return;
+  }
+  beacIdle = 0;
+  finCanvas.style.cursor = "grabbing";
+  const want = beamAim(e.clientX);
+  const d = want - beamT;
+  beamT = Math.max(0, Math.min(1, beamT + d * 0.32));
+  beamGrab.want = want;
+  gearTurn(Math.abs(d));
+});
+const beamLetGo = () => {
+  if (!beamGrab) return;
+  beamGrab = null;
+  finCanvas.style.cursor = "grab";
+  /* it picks its own rotation back up, going the way you left it going */
+  beamV = (beamV < 0 ? -1 : 1) * 0.22;
+};
+window.addEventListener("pointerup", beamLetGo);
+window.addEventListener("pointercancel", beamLetGo);
 
 /* --- sound --- */
-function contactorTick() {
+function seaBed() {
   const ac = audio(); if (!ac) return;
   const t0 = ac.currentTime;
-  const s = ac.createBufferSource(); s.buffer = noise(ac);
-  const bp = ac.createBiquadFilter(); bp.type = "bandpass";
-  bp.frequency.value = 1400 + Math.random() * 900; bp.Q.value = 11;
+  /* the sea: noise with a slow filter breathing over it, which is a swell */
+  const s = ac.createBufferSource(); s.buffer = noise(ac); s.loop = true;
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 900;
+  const bp = ac.createBiquadFilter(); bp.type = "highpass"; bp.frequency.value = 140;
   const g = ac.createGain();
   g.gain.setValueAtTime(0.0001, t0);
-  g.gain.exponentialRampToValueAtTime(0.05, t0 + 0.008);
-  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.11);
-  s.connect(bp); bp.connect(g); g.connect(BUS);
-  s.start(t0); s.stop(t0 + 0.13);
-}
-function strikeArc() {
-  const ac = audio(); if (!ac) return;
-  const t0 = ac.currentTime;
-  /* the contactor dropping: a heavy, satisfying clunk */
-  const o = ac.createOscillator(); o.type = "sine";
-  o.frequency.setValueAtTime(180, t0);
-  o.frequency.exponentialRampToValueAtTime(46, t0 + 0.18);
-  const g = ac.createGain();
-  g.gain.setValueAtTime(0.22, t0);
-  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.34);
-  o.connect(g); g.connect(BUS);
-  o.start(t0); o.stop(t0 + 0.36);
-  /* the arc taking: a crackle, then a hum that settles in */
-  const s = ac.createBufferSource(); s.buffer = noise(ac);
-  const hp = ac.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 1800;
-  const sg = ac.createGain();
-  sg.gain.setValueAtTime(0.11, t0 + 0.04);
-  sg.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.75);
-  s.connect(hp); hp.connect(sg); sg.connect(BUS);
-  s.start(t0 + 0.04); s.stop(t0 + 0.8);
-  [100, 150.5, 201].forEach((f, i) => {
-    const h = ac.createOscillator(); h.type = i ? "sine" : "sawtooth";
-    h.frequency.value = f;
-    const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 460;
-    const hg = ac.createGain();
-    hg.gain.setValueAtTime(0.0001, t0 + 0.05);
-    hg.gain.linearRampToValueAtTime(0.030 / (i + 1), t0 + 1.6);
-    h.connect(lp); lp.connect(hg); hg.connect(BUS);
-    h.start(t0 + 0.05);
-    hold("beacon", { gain: hg, src: h });
-  });
-  /* and the gear that turns it, from underneath */
-  const gr = ac.createOscillator(); gr.type = "triangle";
-  gr.frequency.value = 33;
-  const grl = ac.createGain();
-  grl.gain.setValueAtTime(0.0001, t0 + 0.4);
-  grl.gain.linearRampToValueAtTime(0.026, t0 + 3);
-  gr.connect(grl); grl.connect(BUS);
-  gr.start(t0 + 0.4);
-  hold("beacon", { gain: grl, src: gr });
-}
-function beaconClick() {
-  const ac = audio(); if (!ac) return;
-  const t0 = ac.currentTime;
-  const o = ac.createOscillator(); o.type = "sine";
-  o.frequency.setValueAtTime(320, t0);
-  o.frequency.exponentialRampToValueAtTime(150, t0 + 0.07);
-  const g = ac.createGain();
-  g.gain.setValueAtTime(0.05, t0);
-  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.12);
-  o.connect(g); g.connect(BUS);
-  o.start(t0); o.stop(t0 + 0.14);
-  /* every third turn, something answers out in the fog */
-  if (sweeps % 2 === 0) foghorn();
-}
-function foghorn() {
-  const ac = audio(); if (!ac) return;
-  const t0 = ac.currentTime + 1.2;
-  [58.3, 87.3].forEach((f, i) => {
-    const o = ac.createOscillator(); o.type = "sawtooth";
-    o.frequency.value = f;
-    const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 210;
-    const g = ac.createGain();
-    g.gain.setValueAtTime(0.0001, t0 + i * 1.5);
-    g.gain.linearRampToValueAtTime(0.040, t0 + i * 1.5 + 0.35);
-    g.gain.setValueAtTime(0.040, t0 + i * 1.5 + 1.1);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + i * 1.5 + 2.4);
-    o.connect(lp); lp.connect(g); g.connect(BUS);
-    o.start(t0 + i * 1.5); o.stop(t0 + i * 1.5 + 2.5);
-  });
-}
-function beaconWind() {
-  const ac = audio(); if (!ac) return;
-  const t0 = ac.currentTime;
-  const s = ac.createBufferSource(); s.buffer = noise(ac); s.loop = true;
-  const bp = ac.createBiquadFilter(); bp.type = "bandpass";
-  bp.frequency.value = 420; bp.Q.value = 0.5;
-  const g = ac.createGain(); g.gain.value = 0.0001;
-  const lfo = ac.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 0.09;
-  const lg = ac.createGain(); lg.gain.value = 0.018;
-  lfo.connect(lg); lg.connect(g.gain); lfo.start(t0);
-  g.gain.linearRampToValueAtTime(0.038, t0 + 5);
-  s.connect(bp); bp.connect(g); g.connect(BUS);
+  g.gain.linearRampToValueAtTime(0.085, t0 + 4);
+  const lfo = ac.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 0.11;
+  const lg = ac.createGain(); lg.gain.value = 380;
+  lfo.connect(lg); lg.connect(lp.frequency); lfo.start(t0);
+  s.connect(bp); bp.connect(lp); lp.connect(g); g.connect(BUS);
   s.start(t0);
   hold("beacon", { gain: g, src: s });
   hold("beacon", { src: lfo });
+  /* and the wind off it */
+  const w = ac.createBufferSource(); w.buffer = noise(ac); w.loop = true;
+  const wb = ac.createBiquadFilter(); wb.type = "bandpass";
+  wb.frequency.value = 480; wb.Q.value = 0.5;
+  const wg = ac.createGain(); wg.gain.value = 0.0001;
+  const wl = ac.createOscillator(); wl.type = "sine"; wl.frequency.value = 0.07;
+  const wlg = ac.createGain(); wlg.gain.value = 0.016;
+  wl.connect(wlg); wlg.connect(wg.gain); wl.start(t0);
+  wg.gain.linearRampToValueAtTime(0.030, t0 + 6);
+  w.connect(wb); wb.connect(wg); wg.connect(BUS);
+  w.start(t0);
+  hold("beacon", { gain: wg, src: w });
+  hold("beacon", { src: wl });
 }
+
+let lastGear = 0;
+function gearTurn(amt) {
+  const ac = audio(); if (!ac) return;
+  const now = performance.now();
+  if (now - lastGear < 90 || amt < 0.004) return;
+  lastGear = now;
+  const t0 = ac.currentTime;
+  /* the machinery under a light: a low ratcheting, not a whine */
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass";
+  lp.frequency.value = 300 + Math.min(1, amt * 9) * 500;
+  const g = ac.createGain();
+  const v = Math.min(0.05, 0.012 + amt * 0.5);
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(v, t0 + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.20);
+  s.connect(lp); lp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 0.24);
+}
+
+/* the moment the beam first finds it — one note, high, quiet */
+function glintSound() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  for (const [f, d] of [[1568, 0], [2093, 0.06]]) {
+    const o = ac.createOscillator(); o.type = "sine";
+    o.frequency.value = f;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t0 + d);
+    g.gain.linearRampToValueAtTime(0.045, t0 + d + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + d + 0.9);
+    o.connect(g); g.connect(BUS);
+    o.start(t0 + d); o.stop(t0 + d + 1.0);
+  }
+}
+
+/* it rings its bell */
+function shipBell() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  for (let k = 0; k < 2; k++) {
+    const t = t0 + k * 0.62;
+    for (const [f, v] of [[784, 0.055], [1176, 0.030], [2093, 0.016], [2637, 0.010]]) {
+      const o = ac.createOscillator(); o.type = "sine";
+      o.frequency.setValueAtTime(f * (1 + (Math.random() - 0.5) * 0.004), t);
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(v, t + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 2.6);
+      o.connect(g); g.connect(BUS);
+      o.start(t); o.stop(t + 2.7);
+    }
+  }
+}
+
+/* and the light answers it, low, from the other side of the frame */
+function hornAnswer() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime + 1.5;
+  for (const [f, v] of [[97, 0.075], [146, 0.040], [58, 0.055]]) {
+    const o = ac.createOscillator(); o.type = "sawtooth";
+    o.frequency.setValueAtTime(f, t0);
+    o.frequency.linearRampToValueAtTime(f * 0.985, t0 + 1.8);
+    const lp = ac.createBiquadFilter(); lp.type = "lowpass";
+    lp.frequency.setValueAtTime(240, t0);
+    lp.frequency.linearRampToValueAtTime(150, t0 + 2.0);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(v, t0 + 0.35);
+    g.gain.setValueAtTime(v, t0 + 1.2);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.4);
+    o.connect(lp); lp.connect(g); g.connect(BUS);
+    o.start(t0); o.stop(t0 + 2.5);
+  }
+}
+
 
 /* ================= transitions that are things =================
    One effect used at every cut is a slide transition. These are events
