@@ -11961,18 +11961,35 @@ let ridHit = 0, ridShake = 0, ridWrong = 0, ridDead = 0, ridSolved = 0;
 let ridPrompt = 0, ridBossSeed = 0;
 const kbEl = document.getElementById("kb");
 
+/* How much of the page you can actually see. On a phone the keyboard eats
+   the bottom of it, and a line of blanks laid out against innerHeight ends
+   up underneath the keys — which is exactly where you are looking when a
+   wrong letter melts. visualViewport is the only thing that knows. */
+function ridView() {
+  const H = window.innerHeight;
+  const vv = window.visualViewport;
+  if (!vv || !vv.height) return { top: 0, h: H };
+  const h = Math.min(H, vv.height);
+  if (h > H * 0.96) return { top: 0, h: H };       /* no keyboard up */
+  return { top: vv.offsetTop || 0, h };
+}
+
 function ridGeom() {
   const W = window.innerWidth, H = window.innerHeight;
+  const V = ridView(), VH = V.h, VT = V.top;
   /* The row is 8 slots, a word gap, and a half-slot of rule either end.
      Size it from that span, not from a guess, or it runs off a phone. */
-  const cell = Math.min(W * 0.084, H * 0.105, 92);
+  const cell = Math.min(W * 0.084, VH * 0.105, 92);
   const gapW = cell * 0.80;
   const row = cell * (1.30 * (RID_A.length - 1) + 0.72) + gapW;
-  return { W, H, cell, gapW, row,
+  const tight = VH < H * 0.96;                     /* the keyboard is up */
+  return { W, H, VH, VT, tight, cell, gapW, row,
            x0: (W - row) / 2 - cell * 0.14,
-           y: H * 0.755,
-           bossY: H * 0.425,
-           bossR: Math.min(W * 0.32, H * 0.245) };
+           /* everything is measured inside what you can see */
+           qy: VT + VH * (tight ? 0.10 : 0.115),
+           y: VT + VH * (tight ? 0.82 : 0.755),
+           bossY: VT + VH * (tight ? 0.46 : 0.425),
+           bossR: Math.min(W * 0.32, VH * (tight ? 0.20 : 0.245)) };
 }
 function ridSlotX(G, i) {
   return G.x0 + i * (G.cell * 1.30) + (i >= RID_GAP ? G.gapW : 0) + G.cell * 0.5;
@@ -12039,8 +12056,7 @@ function ridKey(ch) {
     wg.addColorStop(1, "#7c2a1e");
     cx2.fillStyle = wg;
     cx2.fillText(ch, cw / 2, chh * 0.72);
-    ridMelt.push({ ch, i: ridI, t: 0, x: ridSlotX(G, ridI), y: G.y,
-                   img: c, cw, chh, base: chh * 0.72 });
+    ridMelt.push({ ch, i: ridI, t: 0, img: c, cw, chh, base: chh * 0.72 });
     ridWrong = 1; ridShake = Math.max(ridShake, 0.20);
     ridBad();
     return;
@@ -12059,87 +12075,205 @@ function ridKey(ch) {
                       s: 1 + Math.random() * 2.6, a: 0.9, hot: 1 });
     }
     ridI++;
-    if (ridI >= RID_A.length) { ridSolved = 1; ridDead = 0.0001; bossDie(); }
+    if (ridI >= RID_A.length) {
+      ridSolved = 1; ridDead = 0.0001; bossDie();
+      /* you are done typing — drop the keyboard so the room is full height
+         again before it melts, and so the melt lands where the cup will be */
+      if (kbEl) { kbEl.style.pointerEvents = "none"; try { kbEl.blur(); } catch (e) {} }
+    }
   }
 }
 
-/* --- the thing that asks --- */
+/* --- the thing that asks ---
+   It has to be losing. Eight correct letters used to make its edge slightly
+   more ragged, which is not a fight. Now every one of them cracks it open a
+   little further, the light inside gets hotter and starts showing through
+   the seams, and it goes from glaring at you to hanging there barely lit.
+   Then it slumps, runs, and puddles into the gold the trophy comes out of. */
 function ridBoss(G, dt) {
-  const cx = G.W * 0.5, cy = G.bossY;
-  const breathe = 1 + Math.sin(ridT * 0.9) * 0.022;
-  const flinch = ridHit > 0 ? ridHit * 0.10 : 0;
-  const R = G.bossR * breathe * (1 - flinch);
-  const dying = ridDead > 0 ? Math.min(1, ridDead / 1.5) : 0;
+  const cx = G.W * 0.5;
+  const gone = ridI / RID_A.length;
+  /* the death, in three beats: rear up, slump, run */
+  const D = ridDead;
+  const rear  = D > 0 ? Math.min(1, D / 0.40) : 0;
+  const slump = D > 0.40 ? Math.min(1, (D - 0.40) / 0.75) : 0;
+  const run   = D > 0.95 ? Math.min(1, (D - 0.95) / 1.45) : 0;
+  const molten = Math.max(0, Math.min(1, (D - 0.30) / 1.0));
+
+  const breathe = 1 + Math.sin(ridT * (0.9 + gone * 1.9)) * (0.022 + gone * 0.030);
+  const flinch = ridHit > 0 ? Math.pow(ridHit, 0.7) * 0.16 : 0;
+  const R = G.bossR * breathe * (1 - flinch * 0.5) * (1 + rear * 0.10 - slump * 0.14);
+  const cy = G.bossY + flinch * G.bossR * 0.30 - rear * G.bossR * 0.10
+                     + slump * G.bossR * 0.24;
+  const poolY = cupBaseY();                     /* where it ends up: under the cup */
 
   fctx.save();
-  fctx.globalAlpha = Math.min(1, ridIn) * (1 - dying);
-  fctx.translate(cx, cy + flinch * G.bossR * 0.25);
+  fctx.globalAlpha = Math.min(1, ridIn);
+  fctx.translate(cx, cy);
 
-  /* the glow it sits in */
+  /* the glow it sits in — hotter every time you land one */
+  const heat = 0.20 + gone * 0.26 + ridHit * 0.55 + molten * 0.5;
   const gl = fctx.createRadialGradient(0, 0, 0, 0, 0, R * 2.4);
-  gl.addColorStop(0, `rgba(196,64,26,${(0.20 + ridHit * 0.34).toFixed(3)})`);
+  gl.addColorStop(0, `rgba(${(196 + molten * 50) | 0},${(64 + molten * 90) | 0},26,${Math.min(0.9, heat).toFixed(3)})`);
   gl.addColorStop(0.5, "rgba(120,34,18,0.09)");
   gl.addColorStop(1, "rgba(40,10,8,0)");
   fctx.fillStyle = gl;
   fctx.beginPath(); fctx.arc(0, 0, R * 2.4, 0, 6.3); fctx.fill();
 
-  /* a shaggy mass — sampled around, so the edge is fur and not a circle */
+  /* the mass. Sampled around, so the edge is fur and not a circle — and
+     as it runs, every point is dragged down toward the pool. */
   const N = 96;
-  const gone = ridI / RID_A.length;
-  fctx.beginPath();
+  const pts = [];
   for (let i = 0; i <= N; i++) {
     const a = (i / N) * 6.283185;
     const n = Math.sin(a * 7 + ridBossSeed) * 0.055
-            + Math.sin(a * 13 - ridT * 0.7 + ridBossSeed) * 0.038
+            + Math.sin(a * 13 - ridT * (0.7 + gone * 1.4) + ridBossSeed) * (0.038 + gone * 0.03)
             + Math.sin(a * 23 + ridT * 1.6) * 0.026;
-    /* the more of the word you have, the more ragged it gets */
-    const bite = gone * 0.16 * (0.5 + 0.5 * Math.sin(a * 5 + ridBossSeed * 3));
+    const bite = gone * 0.20 * (0.5 + 0.5 * Math.sin(a * 5 + ridBossSeed * 3));
     const rr = R * (1 + n - bite) * (a > 3.6 && a < 5.8 ? 1.10 : 1);
-    const px = Math.cos(a) * rr, py = Math.sin(a) * rr * 0.86;
-    i ? fctx.lineTo(px, py) : fctx.moveTo(px, py);
+    let px = Math.cos(a) * rr, py = Math.sin(a) * rr * 0.86;
+    if (run > 0) {
+      /* the lower it already is, the further it has run */
+      const f = (py / (R * 0.86) + 1) * 0.5;
+      const e = Math.pow(run, 1.3);
+      px *= 1 - e * 0.35 + e * f * 1.05;
+      py = py + e * (poolY - cy - py) * (0.35 + f * 0.75);
+    }
+    pts.push([px, py]);
   }
+  fctx.beginPath();
+  for (let i = 0; i < pts.length; i++)
+    i ? fctx.lineTo(pts[i][0], pts[i][1]) : fctx.moveTo(pts[i][0], pts[i][1]);
   fctx.closePath();
   const bg = fctx.createLinearGradient(0, -R, 0, R);
-  bg.addColorStop(0, "#0a0c12");
-  bg.addColorStop(0.7, "#100b0e");
-  bg.addColorStop(1, "#2a1210");
+  const mx2 = (a, b) => `rgb(${(a[0] + (b[0] - a[0]) * molten) | 0},${(a[1] + (b[1] - a[1]) * molten) | 0},${(a[2] + (b[2] - a[2]) * molten) | 0})`;
+  bg.addColorStop(0, mx2([10, 12, 18], [255, 226, 150]));
+  bg.addColorStop(0.7, mx2([16, 11, 14], [232, 168, 52]));
+  bg.addColorStop(1, mx2([42, 18, 16], [186, 118, 28]));
   fctx.fillStyle = bg;
   fctx.fill();
-  fctx.strokeStyle = `rgba(214,96,40,${(0.16 + ridHit * 0.5).toFixed(3)})`;
+
+  /* cracks — the light inside coming through, wider with every letter */
+  if (gone > 0 && run < 0.9) {
+    const cracks = Math.round(gone * RID_A.length);
+    fctx.save();
+    fctx.clip();
+    for (let k = 0; k < cracks; k++) {
+      /* each one starts somewhere on the body, not all at the middle —
+         eight lines from one point is a spider, not a broken thing */
+      const a0 = (k * 2.399 + ridBossSeed) % 6.283;
+      const r0 = R * (0.12 + ((k * 41) % 13) / 13 * 0.52);
+      const sx2 = Math.cos(a0) * r0, sy2 = Math.sin(a0) * r0 * 0.86;
+      const dir = a0 + 1.1 + ((k * 17) % 7) / 7 * 1.6;
+      const len = R * (0.22 + ((k * 37) % 11) / 11 * 0.40);
+      const wob = Math.sin(ridT * 2.2 + k) * 0.30;
+      const ex = sx2 + Math.cos(dir) * len, ey = sy2 + Math.sin(dir) * len * 0.86;
+      const mxc = (sx2 + ex) / 2 + Math.cos(dir + 1.6) * len * (0.18 + wob * 0.2);
+      const myc = (sy2 + ey) / 2 + Math.sin(dir + 1.6) * len * (0.18 + wob * 0.2);
+      const heat2 = (0.30 + ridHit * 0.6) * (1 - molten);
+      const line = (w, col) => {
+        fctx.strokeStyle = col;
+        fctx.lineWidth = Math.max(1, w);
+        fctx.lineCap = "round";
+        fctx.beginPath();
+        fctx.moveTo(sx2, sy2);
+        fctx.quadraticCurveTo(mxc, myc, ex, ey);
+        fctx.stroke();
+      };
+      /* a soft bloom, then a thin hot core inside it */
+      line(R * (0.016 + gone * 0.026) * (1 + ridHit),
+           `rgba(228,86,22,${(heat2 * 0.45).toFixed(3)})`);
+      line(R * (0.005 + gone * 0.007) * (1 + ridHit * 0.6),
+           `rgba(255,${(214 + ridHit * 40) | 0},${(150 + ridHit * 90) | 0},${Math.min(1, heat2 * 1.5).toFixed(3)})`);
+    }
+    fctx.restore();
+  }
+  fctx.strokeStyle = `rgba(${(214 + molten * 40) | 0},${(96 + molten * 110) | 0},40,${(0.16 + gone * 0.22 + ridHit * 0.6).toFixed(3)})`;
   fctx.lineWidth = Math.max(1, R * 0.012);
   fctx.stroke();
 
-  /* two horns */
-  fctx.fillStyle = "#0b0d12";
-  for (const s of [-1, 1]) {
-    fctx.beginPath();
-    fctx.moveTo(s * R * 0.46, -R * 0.62);
-    fctx.quadraticCurveTo(s * R * 0.86, -R * 1.32, s * R * 0.70, -R * 1.52);
-    fctx.quadraticCurveTo(s * R * 0.60, -R * 1.10, s * R * 0.26, -R * 0.70);
-    fctx.closePath(); fctx.fill();
+  /* drips off the bottom while it runs */
+  if (run > 0.05 && run < 1) {
+    fctx.fillStyle = `rgba(${(236 - molten * 20) | 0},${(176 + molten * 20) | 0},60,0.85)`;
+    for (let k = 0; k < 7; k++) {
+      const dx = (((k * 53) % 17) / 17 - 0.5) * R * 1.5;
+      const off = ((k * 29) % 13) / 13;
+      const dy = R * 0.5 + (poolY - cy) * Math.min(1, run * (0.7 + off));
+      const rr2 = R * 0.05 * (1 - run * 0.4);
+      if (rr2 <= 0.4) continue;
+      fctx.beginPath();
+      fctx.ellipse(dx, dy, rr2 * 0.72, rr2 * 1.5, 0, 0, 6.3);
+      fctx.fill();
+    }
   }
 
-  /* eyes, which do not blink at the same time */
-  const hurt = 1 - gone * 0.55;
-  for (const s of [-1, 1]) {
-    const bl = Math.max(0, Math.sin(ridT * 0.8 + (s > 0 ? 1.4 : 0)) - 0.965) * 28;
+  /* two horns — they are the first thing to go */
+  const hornsLeft = Math.max(0, 1 - gone * 0.5 - slump);
+  if (hornsLeft > 0.02) {
+    fctx.save();
+    fctx.globalAlpha *= hornsLeft;
+    fctx.fillStyle = mx2([11, 13, 18], [214, 150, 46]);
+    for (const s of [-1, 1]) {
+      fctx.beginPath();
+      fctx.moveTo(s * R * 0.46, -R * 0.62);
+      fctx.quadraticCurveTo(s * R * 0.86, -R * 1.32, s * R * 0.70, -R * 1.52 * hornsLeft);
+      fctx.quadraticCurveTo(s * R * 0.60, -R * 1.10, s * R * 0.26, -R * 0.70);
+      fctx.closePath(); fctx.fill();
+    }
+    fctx.restore();
+  }
+
+  /* the eyes. They flare white when you hit it, then come back dimmer than
+     they were, and they narrow — it is angry before it is finished. */
+  const hurt = Math.max(0, 1 - gone * 0.72) * (1 - Math.max(slump, molten));
+  const angry = gone;
+  if (hurt > 0.02) for (const s of [-1, 1]) {
+    const bl = Math.max(0, Math.sin(ridT * (0.8 + gone) + (s > 0 ? 1.4 : 0)) - 0.965) * 28;
     const oy = -R * 0.10, ox = s * R * 0.34;
-    const er = R * 0.115 * (1 - Math.min(1, bl));
+    const er = R * 0.115 * (1 - Math.min(1, bl)) * (1 + ridHit * 0.7);
     if (er <= 0.4) continue;
+    const flare = ridHit;
     const eg = fctx.createRadialGradient(ox, oy, 0, ox, oy, er * 3.4);
-    eg.addColorStop(0, `rgba(255,214,120,${(0.95 * hurt + ridHit * 0.05).toFixed(3)})`);
-    eg.addColorStop(0.22, `rgba(255,132,40,${(0.72 * hurt).toFixed(3)})`);
+    eg.addColorStop(0, `rgba(255,${(214 + flare * 40) | 0},${(120 + flare * 120) | 0},${Math.min(1, 0.95 * hurt + flare).toFixed(3)})`);
+    eg.addColorStop(0.22, `rgba(255,132,40,${(0.72 * hurt + flare * 0.5).toFixed(3)})`);
     eg.addColorStop(1, "rgba(200,60,20,0)");
     fctx.fillStyle = eg;
     fctx.beginPath(); fctx.arc(ox, oy, er * 3.4, 0, 6.3); fctx.fill();
-    fctx.fillStyle = `rgba(255,244,214,${(0.92 * hurt).toFixed(3)})`;
+    fctx.save();
+    /* the lids come down as it gets angrier */
+    fctx.beginPath();
+    fctx.ellipse(ox, oy, er * 1.4, er * 1.5 * (1 - angry * 0.42), 0, 0, 6.3);
+    fctx.clip();
+    fctx.fillStyle = `rgba(255,244,214,${Math.min(1, 0.92 * hurt + flare * 0.8).toFixed(3)})`;
     fctx.beginPath(); fctx.ellipse(ox, oy, er, er * 1.25, 0, 0, 6.3); fctx.fill();
     fctx.fillStyle = "#160604";
     fctx.beginPath();
-    fctx.ellipse(ox, oy, er * 0.30, er * 1.05, 0, 0, 6.3);
+    fctx.ellipse(ox, oy + angry * er * 0.2, er * (0.30 - angry * 0.10), er * 1.05, 0, 0, 6.3);
     fctx.fill();
+    fctx.restore();
   }
   fctx.restore();
+
+  /* the pool it becomes, which the trophy comes up out of */
+  if (run > 0.15) {
+    const p = Math.min(1, (run - 0.15) / 0.85);
+    const pw = G.bossR * (0.45 + p * 1.05), pht = G.bossR * (0.05 + p * 0.13);
+    fctx.save();
+    const pg = fctx.createRadialGradient(cx, poolY, 0, cx, poolY, pw);
+    pg.addColorStop(0, `rgba(255,236,168,${(0.95 * p).toFixed(3)})`);
+    pg.addColorStop(0.45, `rgba(238,178,54,${(0.9 * p).toFixed(3)})`);
+    pg.addColorStop(1, `rgba(150,88,18,${(0.5 * p).toFixed(3)})`);
+    fctx.fillStyle = pg;
+    fctx.beginPath();
+    fctx.ellipse(cx, poolY, pw, pht, 0, 0, 6.3);
+    fctx.fill();
+    const gg = fctx.createRadialGradient(cx, poolY, 0, cx, poolY, pw * 2.6);
+    gg.addColorStop(0, `rgba(255,196,86,${(0.28 * p).toFixed(3)})`);
+    gg.addColorStop(1, "rgba(180,110,30,0)");
+    fctx.fillStyle = gg;
+    fctx.beginPath(); fctx.arc(cx, poolY, pw * 2.6, 0, 6.3); fctx.fill();
+    fctx.restore();
+  }
 }
 
 function riddleFrame(dt) {
@@ -12189,11 +12323,11 @@ function riddleFrame(dt) {
   /* the question */
   const qa = Math.min(1, ridIn * 1.1) * (ridSolved ? Math.max(0, 1 - ridDead / 1.2) : 1);
   if (qa > 0.01) {
-    const fs = Math.min(W * 0.042, H * 0.036, 27);
+    const fs = Math.min(W * 0.042, G.VH * 0.036, 27);
     fctx.font = `400 ${Math.round(fs)}px Georgia, "Times New Roman", serif`;
     fctx.textAlign = "center"; fctx.textBaseline = "middle";
     const lines = wrapLines(RID_Q, W * 0.82);
-    const top = H * 0.115 - (lines.length - 1) * fs * 0.72;
+    const top = G.qy - (lines.length - 1) * fs * 0.72;
     for (let i = 0; i < lines.length; i++) {
       fctx.fillStyle = `rgba(238,226,198,${(qa * 0.86).toFixed(3)})`;
       fctx.fillText(lines[i], W * 0.5, top + i * fs * 1.44);
@@ -12249,7 +12383,9 @@ function riddleFrame(dt) {
        runs a little further than the one above it, so the bottom goes
        first and the whole shape draws out into a thread and lets go. */
     const step = 2;
-    const dx0 = m.x - m.cw / 2, dy0 = m.y - m.base;
+    /* read the slot fresh — the keyboard coming up moves the whole row */
+    const mx = ridSlotX(G, m.i), my = G.y;
+    const dx0 = mx - m.cw / 2, dy0 = my - m.base;
     fctx.save();
     for (let sy = 0; sy < m.chh; sy += step) {
       const f = sy / m.chh;
@@ -12280,10 +12416,10 @@ function riddleFrame(dt) {
     }
   }
 
-  /* it goes the way the bird went */
+  /* it does not blow up — it melts, and what is left of it is the trophy */
   if (ridDead > 0) {
     ridDead += dt;
-    if (ridDead > 0.5 && ridEmber.length < 260 && ridDead < 2.2) {
+    if (ridDead > 0.25 && ridEmber.length < 260 && ridDead < 1.4) {
       for (let i = 0; i < 5; i++) {
         const a = Math.random() * 6.3;
         ridEmber.push({ x: W * 0.5 + Math.cos(a) * G.bossR * (0.3 + Math.random()),
@@ -12292,12 +12428,17 @@ function riddleFrame(dt) {
                         s: 1 + Math.random() * 3, a: 1, hot: 1 });
       }
     }
-    const f = Math.max(0, Math.min(1, (ridDead - 1.2) / 1.6));
+    /* the room dims but never goes to black — the pool has to stay lit,
+       because the next thing comes up out of it */
+    const f = Math.max(0, Math.min(1, (ridDead - 1.5) / 1.3));
     if (f > 0) {
-      fctx.fillStyle = `rgba(6,5,9,${(f * f).toFixed(3)})`;
+      fctx.fillStyle = `rgba(6,5,9,${(f * 0.86).toFixed(3)})`;
       fctx.fillRect(-W, -H, W * 3, H * 3);
     }
-    if (ridDead > 3.4) { ridOn = false; release("boss", 1.6); startTrophy(); }
+    if (ridDead > 2.9) {
+      ridOn = false; release("boss", 1.6);
+      startTrophy({ x: W * 0.5, y: cupBaseY(), r: G.bossR * 1.5 });
+    }
   }
 
   fctx.restore();
@@ -12317,31 +12458,44 @@ function wrapLines(s, max) {
   return out;
 }
 
-/* ================= the trophy ================= */
+/* ================= the trophy =================
+   The bottom of the plinth. The beast melts down to exactly this line so
+   the cup can come up out of the same pool of gold — one move, not a cut. */
+function cupBaseY() {
+  const W = window.innerWidth, H = window.innerHeight;
+  return H * 0.44 + Math.min(W, H) * 0.30 * 0.94;
+}
+
 let cupOn = false, cupT = 0, cupName = "", cupSpark = [], cupShow = 0;
+let cupRise = 1, cupPool = null;
 const cupEl = document.getElementById("cup");
 const cupNameEl = document.getElementById("cupname");
 const cupSaidEl = document.getElementById("cupsaid");
 
-function startTrophy() {
+function startTrophy(pool) {
   mark("trophy");
   if (cupOn) return;
   cupOn = true; cupT = 0; cupShow = 0; cupSpark = [];
+  cupPool = pool || null; cupRise = pool ? 0 : 1;
   finCanvas.style.background = "#07070c";
   finCanvas.style.display = "block";
   finCanvas.style.cursor = "";
   if (kbEl) { kbEl.style.pointerEvents = "none"; try { kbEl.blur(); } catch (e) {} }
   if (cupEl) cupEl.hidden = false;
   cupChime();
-  setTimeout(() => { try { cupNameEl && cupNameEl.focus({ preventScroll: true }); } catch (e) {} }, 1400);
+  setTimeout(() => { try { cupNameEl && cupNameEl.focus({ preventScroll: true }); } catch (e) {} },
+             pool ? 2600 : 1400);
 }
 
 function trophyFrame(dt) {
   const W = window.innerWidth, H = window.innerHeight;
   cupT += dt;
-  cupShow = Math.min(1, cupShow + dt * 0.6);
+  cupRise = Math.min(1, cupRise + dt * 0.62);
+  cupShow = Math.min(1, cupShow + dt * (cupPool ? 0.9 : 0.6));
   hardClear(finCanvas, fctx);
-  drawTrophyCard(fctx, W, H, cupName, cupT, cupShow);
+  /* it comes up out of what the beast melted into, so the two scenes are
+     one move and not a cut */
+  drawTrophyCard(fctx, W, H, cupName, cupT, cupShow, cupPool ? cupRise : 1, cupPool);
 
   /* a little glitter, on and off */
   if (cupSpark.length < 46 && Math.random() < dt * 22) {
@@ -12369,11 +12523,15 @@ function trophyFrame(dt) {
 
 /* Drawn into whichever context it is handed, so the picture you share is
    the same picture you are looking at. */
-function drawTrophyCard(x, W, H, name, t, show) {
+function drawTrophyCard(x, W, H, name, t, show, rise, pool) {
   const R = Math.min(W, H);
   const cx = W * 0.5, cy = H * 0.44;
   const s = R * 0.30;
   t = t || 0; show = show === undefined ? 1 : show;
+  rise = rise === undefined ? 1 : Math.max(0, Math.min(1, rise));
+  /* eased, and it overshoots a hair coming out of the gold */
+  const ri = 1 - Math.pow(1 - rise, 3);
+  const lift = (1 - ri) * s * 1.7;
 
   const bg = x.createLinearGradient(0, 0, 0, H);
   bg.addColorStop(0, "#07070c");
@@ -12387,8 +12545,15 @@ function drawTrophyCard(x, W, H, name, t, show) {
   x.fillStyle = halo; x.fillRect(0, 0, W, H);
 
   x.save();
+  /* while it is rising, everything below the pool line is still molten,
+     so the trophy is clipped off at it */
+  if (rise < 1 && pool) {
+    x.beginPath();
+    x.rect(0, 0, W, pool.y);
+    x.clip();
+  }
   x.globalAlpha = show;
-  x.translate(cx, cy + (1 - show) * R * 0.08);
+  x.translate(cx, cy + (1 - show) * R * 0.08 + lift);
 
   const gold = (a, b) => {
     const g = x.createLinearGradient(-s * 0.9, 0, s * 0.9, 0);
@@ -12494,17 +12659,33 @@ function drawTrophyCard(x, W, H, name, t, show) {
 
   x.restore();
 
-  /* what it is for */
+  /* what is left of the pool it came out of */
+  if (rise < 1 && pool) {
+    const pf = 1 - ri;
+    x.save();
+    const pw = pool.r * (0.55 + pf * 0.55), pht = pool.r * (0.03 + pf * 0.10);
+    const pg = x.createRadialGradient(pool.x, pool.y, 0, pool.x, pool.y, pw);
+    pg.addColorStop(0, `rgba(255,236,168,${(0.95 * pf).toFixed(3)})`);
+    pg.addColorStop(0.45, `rgba(238,178,54,${(0.9 * pf).toFixed(3)})`);
+    pg.addColorStop(1, `rgba(150,88,18,${(0.5 * pf).toFixed(3)})`);
+    x.fillStyle = pg;
+    x.beginPath(); x.ellipse(pool.x, pool.y, pw, pht, 0, 0, 6.3); x.fill();
+    const gg = x.createRadialGradient(pool.x, pool.y, 0, pool.x, pool.y, pw * 2.6);
+    gg.addColorStop(0, `rgba(255,196,86,${(0.30 * pf).toFixed(3)})`);
+    gg.addColorStop(1, "rgba(180,110,30,0)");
+    x.fillStyle = gg;
+    x.beginPath(); x.arc(pool.x, pool.y, pw * 2.6, 0, 6.3); x.fill();
+    x.restore();
+  }
+
+  /* whose it is. Not what the answer was — this gets shared. */
   x.save();
-  x.globalAlpha = show;
+  x.globalAlpha = show * ri;
   x.textAlign = "center"; x.textBaseline = "middle";
   const ts = Math.min(W * 0.034, 19);
   x.font = `400 ${Math.round(ts)}px Georgia, "Times New Roman", serif`;
-  x.fillStyle = "rgba(238,222,186,0.62)";
-  x.fillText("MINK LINK", cx, cy - s * 1.28);
-  x.font = `400 ${Math.round(ts * 0.72)}px Georgia, "Times New Roman", serif`;
-  x.fillStyle = "rgba(226,206,166,0.36)";
-  x.fillText("solved", cx, cy - s * 1.28 + ts * 1.35);
+  x.fillStyle = "rgba(238,222,186,0.58)";
+  x.fillText("kevinhershock.com", cx, cy - s * 1.28);
   x.restore();
 }
 
@@ -12518,7 +12699,8 @@ function cupSay(msg) {
 function cupUrl() { return location.origin + location.pathname; }
 function cupLine() {
   const n = (cupNameEl && cupNameEl.value || "").trim();
-  return (n ? n + " got" : "I got") + " to the end of it. MINK LINK.";
+  /* no answer in here either — this is the thing that gets forwarded */
+  return (n ? n + " got" : "I got") + " to the end of it.";
 }
 function cupCanvas() {
   const c = document.createElement("canvas");
