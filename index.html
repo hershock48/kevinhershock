@@ -865,6 +865,25 @@ function at(x, wet) {
   return g;
 }
 
+/* Anything a scene starts, the scene has to be able to stop. Voices go in
+   here on the way out and get faded and killed when the scene ends. */
+const LIVE = {};
+function hold(scene, node) {
+  (LIVE[scene] = LIVE[scene] || []).push(node);
+  return node;
+}
+function release(scene, fade) {
+  const arr = LIVE[scene]; if (!arr || !AC) return;
+  delete LIVE[scene];
+  const t = AC.currentTime, f = fade === undefined ? 1.2 : fade;
+  for (const n of arr) {
+    try { if (n.gain) n.gain.setTargetAtTime(0.0001, t, f * 0.35); } catch (e) {}
+  }
+  setTimeout(() => {
+    for (const n of arr) { try { (n.src || n.osc || n).stop(); } catch (e) {} }
+  }, f * 1000 + 900);
+}
+
 /* a bed of room tone under every scene, crossfaded, so the quiet is never
    dead air — the thing that makes headphones worth wearing */
 let bedSrc = null, bedG = null, bedLP = null, bedHP = null, bedKind = "";
@@ -4364,6 +4383,7 @@ function drawNight(dt) {
   const W = window.innerWidth, H = window.innerHeight;
   nightT += dt;
   if (chainEnd) { restFrame(dt); return; }
+  if (rivOn) { riverFrame(dt); return; }
   if (woodOn) { woodFrame(dt); return; }
   if (beaconOn) { beaconFrame(dt); return; }
   if (surfOn) { surfaceFrame(dt); return; }
@@ -6941,7 +6961,7 @@ function surfaceFrame(dt) {
     lampRise = Math.min(1, lampRise + dt * 0.10);
     if (lampRise > 0.55 && travT < 0 && !surfHanded) {
       surfHanded = true;
-      natRun("cloud", () => { surfOn = false; startBeacon(); }, 3.4);
+      release("lake"); natRun("cloud", () => { surfOn = false; startBeacon(); }, 3.4);
     }
   }
   travelFrame(dt);
@@ -7015,6 +7035,8 @@ function surfaceBreak() {
     pg.gain.linearRampToValueAtTime(0.020, t0 + 6 + i);
     o.connect(pg); pg.connect(BUS);
     o.start(t0);
+    hold("lake", { gain: pg, src: o });
+    hold("lake", { src: lfo });
   });
 }
 
@@ -7298,7 +7320,7 @@ function beaconFrame(dt) {
   /* three passes, and then the fourth one comes round and takes you */
   if (sweeps >= 2 && !beacHanded && Math.cos(beamA) > 0.86) {
     beacHanded = true;
-    natRun("cloud", () => { beaconOn = false; startWood(); }, 3.2);
+    release("beacon"); natRun("cloud", () => { beaconOn = false; startWood(); }, 3.2);
   }
   travelFrame(dt);
   natFrame(dt);
@@ -7376,6 +7398,7 @@ function strikeArc() {
     hg.gain.linearRampToValueAtTime(0.030 / (i + 1), t0 + 1.6);
     h.connect(lp); lp.connect(hg); hg.connect(BUS);
     h.start(t0 + 0.05);
+    hold("beacon", { gain: hg, src: h });
   });
   /* and the gear that turns it, from underneath */
   const gr = ac.createOscillator(); gr.type = "triangle";
@@ -7385,6 +7408,7 @@ function strikeArc() {
   grl.gain.linearRampToValueAtTime(0.026, t0 + 3);
   gr.connect(grl); grl.connect(BUS);
   gr.start(t0 + 0.4);
+  hold("beacon", { gain: grl, src: gr });
 }
 function beaconClick() {
   const ac = audio(); if (!ac) return;
@@ -7443,6 +7467,7 @@ function natRun(kind, after, dur) {
   if (kind === "frost") frostSound();
   else if (kind === "cloud") cloudSound();
   else if (kind === "leaf") leafSound();
+  else if (kind === "wash") washSound();
   if (after) {
     const guard = after;
     setTimeout(() => {
@@ -7562,6 +7587,30 @@ function natFrame(dt) {
     fctx.fillRect(0, 0, W, H);
   }
 
+  else if (nat.kind === "wash") {
+    /* the scene does not fade, it is carried off — sheets of it sliding
+       away downstream, faster the nearer they are, the way a current
+       takes anything you put on it */
+    if (!nat.seeds) {
+      nat.seeds = [];
+      for (let i = 0; i < 26; i++)
+        nat.seeds.push({ y: H * (i / 26), h: H / 26 + 2,
+                         v: 0.5 + (i / 26) * 2.4, ph: Math.random() * 6.3 });
+    }
+    const veil = Math.sin(Math.min(1, u / 0.8) * Math.PI);
+    fctx.save();
+    for (const s of nat.seeds) {
+      const off = Math.pow(u, 1.6) * W * 1.6 * s.v + Math.sin(u * 6 + s.ph) * 24;
+      fctx.fillStyle = `rgba(150,182,198,${(0.16 * veil).toFixed(3)})`;
+      fctx.fillRect(-off, s.y, W * 2, s.h);
+      fctx.fillStyle = `rgba(232,244,250,${(0.10 * veil).toFixed(3)})`;
+      fctx.fillRect(-off + W * 0.3, s.y + s.h * 0.3, W * 1.2, Math.max(1, s.h * 0.22));
+    }
+    fctx.restore();
+    fctx.fillStyle = `rgba(18,26,32,${(veil * 0.72).toFixed(3)})`;
+    fctx.fillRect(0, 0, W, H);
+  }
+
   else if (nat.kind === "leaf") {
     if (!nat.seeds) {
       nat.seeds = [];
@@ -7650,6 +7699,20 @@ function cloudSound() {
   const g = ac.createGain();
   g.gain.setValueAtTime(0.0001, t0);
   g.gain.linearRampToValueAtTime(0.075, t0 + 1.5);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.6);
+  s.connect(lp); lp.connect(g); g.connect(BUS);
+  s.start(t0); s.stop(t0 + 3.7);
+}
+function washSound() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const s = ac.createBufferSource(); s.buffer = noise(ac); s.loop = true;
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass";
+  lp.frequency.setValueAtTime(2600, t0);
+  lp.frequency.exponentialRampToValueAtTime(300, t0 + 3.2);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(0.11, t0 + 1.1);
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.6);
   s.connect(lp); lp.connect(g); g.connect(BUS);
   s.start(t0); s.stop(t0 + 3.7);
@@ -7867,7 +7930,7 @@ function woodFrame(dt) {
   /* stripped: the wind takes the rest of it */
   if (still === 0 && !woodHanded) {
     woodHanded = true;
-    setTimeout(() => natRun("leaf", () => { woodOn = false; chainEnd = true; restT = 0; }, 3.0), 700);
+    release("wood"); setTimeout(() => natRun("leaf", () => { woodOn = false; startRiver(); }, 3.0), 700);
   }
   natFrame(dt);
 }
@@ -7948,6 +8011,7 @@ function woodWind() {
   s.connect(bp); bp.connect(g); g.connect(BUS);
   s.start();
   windNode = { s, bp, g };
+  hold("wood", { gain: g, src: s });
 }
 let lastRustle = 0;
 function rustle(px, v) {
@@ -7965,6 +8029,413 @@ function rustle(px, v) {
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.32 + v * 0.3);
   s.connect(bp); bp.connect(g); g.connect(at(px) || BUS);
   s.start(t0); s.stop(t0 + 0.7);
+}
+
+/* ================= the river =================
+   The leaves the wind took have to come down somewhere, and they come
+   down on water. A river running away from you between two banks, rocks
+   standing in it with the white water piling on their upstream faces,
+   and the leaves you stripped going past on the current.
+
+   Put your hand on the water and a stone comes up out of it. Put enough
+   of them up to get across, and the river takes the whole frame with it. */
+
+let rivOn = false, rivT = 0, rocks = [], stones = [], rivLeaves = [], foam = [];
+let bankStones = [], rivHanded = false, rivNode = null, crossed = 0;
+
+function rivGeom() {
+  const W = window.innerWidth, H = window.innerHeight;
+  /* it recedes: narrow and pale at the top, wide and dark at your feet */
+  return {
+    W, H,
+    far: H * 0.30,                       /* where the water starts */
+    wFar: W * 0.16, wNear: W * 0.92,
+    cx: W * 0.5,
+  };
+}
+/* half-width of the channel at a given depth (0 far, 1 near) */
+const rivHalf = (G, d) => (G.wFar + (G.wNear - G.wFar) * Math.pow(d, 1.35)) * 0.5;
+const rivY = (G, d) => G.far + (G.H - G.far) * Math.pow(d, 0.82);
+/* one place that turns a size and a depth into pixels, so it cannot be
+   applied twice again */
+const rivPx = (G, base, d) => Math.min(G.W, G.H) * base * (0.35 + 0.85 * d);
+
+function startRiver() {
+  if (rivOn) return;
+  rivOn = true; rivT = 0; crossed = 0; rivHanded = false;
+  stones = []; foam = [];
+  const G = rivGeom();
+
+  rocks = [];
+  for (let i = 0; i < (G.W < 620 ? 7 : 11); i++) {
+    const d = 0.12 + rnd() * 0.80;
+    const u = (rnd() - 0.5) * 1.55;
+    rocks.push({ d, u, s: 0.020 + rnd() * 0.032,
+                 rot: rnd() * 6.3, seed: rnd() * 100 });
+  }
+  rocks.sort((a, b) => a.d - b.d);
+
+  bankStones = [];
+  for (let i = 0; i < (G.W < 620 ? 40 : 80); i++) {
+    const d = rnd();
+    const side = rnd() < 0.5 ? -1 : 1;
+    bankStones.push({ d, side, u: 1.02 + rnd() * 0.55,
+                      s: 0.005 + rnd() * 0.012,
+                      hue: 26 + rnd() * 18, l: 16 + rnd() * 20, rot: rnd() * 6.3 });
+  }
+
+  rivLeaves = [];
+  for (let i = 0; i < (G.W < 620 ? 16 : 26); i++)
+    rivLeaves.push({ d: rnd(), u: (rnd() - 0.5) * 1.5, s: 5 + rnd() * 9,
+                     rot: rnd() * 6.3, spin: (rnd() - 0.5) * 1.4, hue: 16 + rnd() * 34 });
+
+  bed("sea");
+  riverSound();
+}
+
+function drawRock(x, y, s, rot, seed, wet) {
+  const c = fctx;
+  c.save();
+  c.translate(x, y); c.rotate(rot);
+  const N = 9;
+  c.beginPath();
+  for (let i = 0; i < N; i++) {
+    const a = i / N * Math.PI * 2;
+    const r = s * (0.78 + 0.30 * Math.sin(seed + i * 2.1));
+    c.lineTo(Math.cos(a) * r, Math.sin(a) * r * 0.72);
+  }
+  c.closePath();
+  const g = c.createLinearGradient(-s, -s, s * 0.6, s);
+  g.addColorStop(0, `hsl(28,${8 + wet * 6}%,${34 + wet * 8}%)`);
+  g.addColorStop(0.45, `hsl(26,${7 + wet * 5}%,${22 + wet * 6}%)`);
+  g.addColorStop(1, `hsl(24,8%,${11 + wet * 4}%)`);
+  c.fillStyle = g; c.fill();
+  /* the waterline is darker, and above it there is a highlight */
+  c.fillStyle = `rgba(255,250,236,${(0.10 + wet * 0.14).toFixed(3)})`;
+  c.beginPath();
+  c.ellipse(-s * 0.26, -s * 0.30, s * 0.34, s * 0.16, -0.5, 0, 6.3);
+  c.fill();
+  c.fillStyle = "rgba(6,10,14,0.34)";
+  c.beginPath();
+  c.ellipse(0, s * 0.44, s * 0.86, s * 0.20, 0, 0, 6.3);
+  c.fill();
+  c.restore();
+}
+
+function riverFrame(dt) {
+  const G = rivGeom(), W = G.W, H = G.H;
+  rivT += dt;
+  hardClear(finCanvas, fctx);
+
+  /* ---- the far bank and whatever sky is left ---- */
+  const sky = fctx.createLinearGradient(0, 0, 0, G.far);
+  sky.addColorStop(0, "#0c1524");
+  sky.addColorStop(0.65, "#1d2536");
+  sky.addColorStop(1, "#4a4438");
+  fctx.fillStyle = sky; fctx.fillRect(0, 0, W, G.far + 2);
+  const glow = fctx.createRadialGradient(W * 0.5, G.far, 0, W * 0.5, G.far, H * 0.28);
+  glow.addColorStop(0, "rgba(196,150,102,0.34)");
+  glow.addColorStop(1, "rgba(150,120,90,0)");
+  fctx.fillStyle = glow; fctx.fillRect(0, 0, W, G.far + 2);
+  /* trees on the far side, small and flat */
+  fctx.fillStyle = "#0a0e14";
+  for (let i = 0; i < 46; i++) {
+    const x = (i / 46) * W + Math.sin(i * 3.1) * 12;
+    const hh = H * (0.012 + Math.abs(Math.sin(i * 1.7)) * 0.030);
+    fctx.beginPath();
+    fctx.moveTo(x - hh * 0.35, G.far + 1);
+    fctx.lineTo(x, G.far - hh);
+    fctx.lineTo(x + hh * 0.35, G.far + 1);
+    fctx.closePath(); fctx.fill();
+  }
+
+  /* ---- the banks ---- */
+  const bank = fctx.createLinearGradient(0, G.far, 0, H);
+  bank.addColorStop(0, "#2a2418");
+  bank.addColorStop(0.5, "#1d1912");
+  bank.addColorStop(1, "#0f0d0a");
+  fctx.fillStyle = bank; fctx.fillRect(0, G.far, W, H - G.far);
+  /* grass on the banks, leaning downstream */
+  for (let i = 0; i < (W < 620 ? 60 : 130); i++) {
+    const d = (i * 0.618) % 1;
+    const side = i % 2 ? 1 : -1;
+    const hw = rivHalf(G, d), y = rivY(G, d);
+    const x = G.cx + side * (hw * (1.06 + ((i * 0.37) % 1) * 0.9));
+    if (x < -20 || x > W + 20) continue;
+    const gh = (H - G.far) * 0.030 * (0.35 + d);
+    fctx.strokeStyle = `hsla(${40 + (i % 7) * 4},22%,${12 + d * 12}%,0.75)`;
+    fctx.lineWidth = Math.max(1, gh * 0.12);
+    fctx.beginPath();
+    fctx.moveTo(x, y);
+    fctx.quadraticCurveTo(x + gh * 0.2, y - gh * 0.6,
+                          x + gh * 0.5 + Math.sin(rivT * 1.6 + i) * gh * 0.12, y - gh);
+    fctx.stroke();
+  }
+
+  /* ---- the water ---- */
+  fctx.save();
+  fctx.beginPath();
+  fctx.moveTo(G.cx - rivHalf(G, 0), rivY(G, 0));
+  for (let i = 0; i <= 24; i++) {
+    const d = i / 24;
+    fctx.lineTo(G.cx - rivHalf(G, d), rivY(G, d));
+  }
+  for (let i = 24; i >= 0; i--) {
+    const d = i / 24;
+    fctx.lineTo(G.cx + rivHalf(G, d), rivY(G, d));
+  }
+  fctx.closePath();
+  fctx.clip();
+
+  const wat = fctx.createLinearGradient(0, G.far, 0, H);
+  wat.addColorStop(0, "#5d6a6a");
+  wat.addColorStop(0.25, "#39434c");
+  wat.addColorStop(1, "#10161d");
+  fctx.fillStyle = wat;
+  fctx.fillRect(0, G.far, W, H - G.far);
+
+  /* the current: bands running down the channel, faster the nearer they are */
+  fctx.globalCompositeOperation = "lighter";
+  for (let i = 0; i < 34; i++) {
+    const d0 = ((i / 34) + (rivT * 0.10) % (1 / 34) * 34 / 34) % 1;
+    const d = (d0 + rivT * 0.11) % 1;
+    const y = rivY(G, d), hw = rivHalf(G, d);
+    const a = 0.055 * (0.25 + d) * (0.6 + 0.4 * Math.sin(rivT * 2 + i));
+    fctx.fillStyle = `rgba(210,232,246,${a.toFixed(3)})`;
+    const wob = Math.sin(rivT * 1.4 + i * 1.3) * hw * 0.10;
+    fctx.fillRect(G.cx - hw * 0.92 + wob, y, hw * 1.84, Math.max(1, (H - G.far) * 0.006 * (0.4 + d)));
+  }
+  fctx.globalCompositeOperation = "source-over";
+
+  /* the shallows: it gets pale and broken where it meets the stones */
+  fctx.globalCompositeOperation = "lighter";
+  for (const side of [-1, 1]) {
+    fctx.beginPath();
+    for (let i = 0; i <= 30; i++) {
+      const d = i / 30, hw = rivHalf(G, d), y = rivY(G, d);
+      const wob = Math.sin(rivT * 0.9 + d * 11) * hw * 0.02;
+      fctx.lineTo(G.cx + side * (hw + wob), y);
+    }
+    for (let i = 30; i >= 0; i--) {
+      const d = i / 30, hw = rivHalf(G, d), y = rivY(G, d);
+      const wob = Math.sin(rivT * 1.3 + d * 9) * hw * 0.02;
+      fctx.lineTo(G.cx + side * (hw * 0.82 + wob), y);
+    }
+    fctx.closePath();
+    const eg = fctx.createLinearGradient(0, G.far, 0, H);
+    eg.addColorStop(0, "rgba(214,232,242,0.10)");
+    eg.addColorStop(1, "rgba(224,240,248,0.22)");
+    fctx.fillStyle = eg;
+    fctx.fill();
+  }
+  fctx.globalCompositeOperation = "source-over";
+
+  /* what the sky puts on it */
+  const sh = fctx.createLinearGradient(0, G.far, 0, G.far + (H - G.far) * 0.35);
+  sh.addColorStop(0, "rgba(200,158,110,0.26)");
+  sh.addColorStop(1, "rgba(180,150,110,0)");
+  fctx.fillStyle = sh; fctx.fillRect(0, G.far, W, (H - G.far) * 0.35);
+  fctx.restore();
+
+  /* ---- rocks, and the water piling up on them ---- */
+  for (const r of rocks) {
+    const y = rivY(G, r.d), hw = rivHalf(G, r.d);
+    const x = G.cx + r.u * hw * 0.62;
+    const s = rivPx(G, r.s, r.d);
+    /* the standing wave on the upstream face */
+    fctx.save();
+    fctx.globalCompositeOperation = "lighter";
+    for (let k = 0; k < 7; k++) {
+      const f = k / 6;
+      const a = 0.11 * (1 - f) * (0.7 + 0.3 * Math.sin(rivT * 6 + k + r.seed));
+      fctx.fillStyle = `rgba(236,246,252,${a.toFixed(3)})`;
+      fctx.beginPath();
+      fctx.ellipse(x + Math.sin(rivT * 5 + k) * s * 0.10,
+                   y - s * 0.30 - f * s * 0.55,
+                   s * (0.72 - f * 0.30), s * (0.20 - f * 0.07), 0, 0, 6.3);
+      fctx.fill();
+    }
+    fctx.restore();
+    drawRock(x, y, s, r.rot, r.seed, 1);
+    /* and the tail of foam running off downstream */
+    if (Math.random() < 14 * dt && foam.length < 220)
+      foam.push({ x: x + (Math.random() - 0.5) * s, y: y + s * 0.3,
+                  d: r.d, r: s * (0.06 + Math.random() * 0.10), life: 1 });
+  }
+
+  /* ---- foam ---- */
+  for (let i = foam.length - 1; i >= 0; i--) {
+    const f = foam[i];
+    f.d = Math.min(1, f.d + dt * (0.06 + f.d * 0.16));
+    f.y = rivY(G, f.d);
+    f.x += Math.sin(rivT * 3 + i) * 12 * dt;
+    f.life -= dt * 0.42;
+    if (f.life <= 0 || f.d >= 1) { foam.splice(i, 1); continue; }
+    fctx.fillStyle = `rgba(240,248,252,${(0.34 * f.life).toFixed(3)})`;
+    fctx.beginPath();
+    fctx.arc(f.x, f.y, f.r * (0.5 + f.life * 0.8), 0, 6.3);
+    fctx.fill();
+  }
+
+  /* ---- the leaves, still going ---- */
+  for (const l of rivLeaves) {
+    l.d += dt * (0.045 + l.d * 0.11);
+    if (l.d > 1) { l.d = 0; l.u = (Math.random() - 0.5) * 1.5; }
+    l.rot += l.spin * dt;
+    const y = rivY(G, l.d), hw = rivHalf(G, l.d);
+    const x = G.cx + l.u * hw * 0.8 + Math.sin(rivT * 0.8 + l.rot) * hw * 0.03;
+    drawLeaf(fctx, x, y, l.s * (0.5 + l.d), l.rot, l.hue, 0.8);
+  }
+
+  /* ---- the bank stones ---- */
+  for (const b of bankStones) {
+    const y = rivY(G, b.d), hw = rivHalf(G, b.d);
+    const x = G.cx + b.side * hw * b.u;
+    drawRock(x, y, rivPx(G, b.s, b.d), b.rot, b.d * 40, 0);
+  }
+
+  /* ---- the stones you have put up ---- */
+  for (const s of stones) {
+    s.rise = Math.min(1, s.rise + dt * 1.6);
+    const y = rivY(G, s.d), hw = rivHalf(G, s.d);
+    const x = G.cx + s.u * hw;
+    const sz = rivPx(G, s.s, s.d) * (0.3 + 0.7 * s.rise);
+    /* the water breaks round it as it comes up */
+    fctx.save();
+    fctx.globalCompositeOperation = "lighter";
+    const a = 0.22 * s.rise * (0.6 + 0.4 * Math.sin(rivT * 7 + s.d * 9));
+    fctx.fillStyle = `rgba(240,250,255,${a.toFixed(3)})`;
+    fctx.beginPath();
+    fctx.ellipse(x, y - sz * 0.18, sz * 1.15, sz * 0.30, 0, 0, 6.3);
+    fctx.fill();
+    fctx.restore();
+    drawRock(x, y - sz * 0.24 * s.rise, sz, s.rot, s.seed, 0.4);
+  }
+
+  /* how far across the crossing has got */
+  const reach = stones.length
+    ? Math.max(...stones.map(s => s.u)) - Math.min(...stones.map(s => s.u)) : 0;
+  const spansL = stones.some(s => s.u < -0.62), spansR = stones.some(s => s.u > 0.62);
+  const gaps = stonesGapOK();
+  crossed = (spansL && spansR && gaps) ? 1 : 0;
+
+  /* a nudge: the far bank shows where it wants to go */
+  if (rivT > 5 && !crossed) {
+    const p = 0.5 + 0.5 * Math.sin(rivT * 1.9);
+    const y = rivY(G, 0.52), hw = rivHalf(G, 0.52);
+    fctx.strokeStyle = `rgba(226,240,255,${(0.05 + 0.09 * p).toFixed(3)})`;
+    fctx.setLineDash([10, 14]);
+    fctx.lineWidth = Math.max(2, Math.min(W, H) * 0.005);
+    fctx.beginPath();
+    fctx.moveTo(G.cx - hw * 0.96, y);
+    fctx.lineTo(G.cx + hw * 0.96, y);
+    fctx.stroke();
+    fctx.setLineDash([]);
+  }
+
+  if (crossed && !rivHanded) {
+    rivHanded = true;
+    crossingDone();
+    release("river"); setTimeout(() => natRun("wash", () => { rivOn = false; chainEnd = true; restT = 0; }, 3.4), 900);
+  }
+  natFrame(dt);
+}
+
+/* stones are a crossing only if you can actually step them */
+function stonesGapOK() {
+  if (stones.length < 3) return false;
+  const us = stones.map(s => s.u).sort((a, b) => a - b);
+  if (us[0] > -0.62 || us[us.length - 1] < 0.62) return false;
+  for (let i = 1; i < us.length; i++) if (us[i] - us[i - 1] > 0.55) return false;
+  return true;
+}
+
+window.addEventListener("pointerdown", (e) => {
+  if (!rivOn || crossed) return;
+  const G = rivGeom();
+  if (e.clientY < G.far) return;
+  /* which depth was tapped, and how far across */
+  let d = 0.5, best = 1e9;
+  for (let i = 0; i <= 40; i++) {
+    const dd = i / 40, yy = rivY(G, dd);
+    if (Math.abs(yy - e.clientY) < best) { best = Math.abs(yy - e.clientY); d = dd; }
+  }
+  const hw = rivHalf(G, d);
+  const u = (e.clientX - G.cx) / hw;
+  if (Math.abs(u) > 1.02) return;
+  /* they line up on one crossing, so it reads as a path and not a scatter */
+  const band = stones.length ? stones[0].d : d;
+  stones.push({ d: band, u, s: 0.024 + rnd() * 0.016, rot: rnd() * 6.3,
+                seed: rnd() * 100, rise: 0 });
+  stoneUp(e.clientX);
+  if (e.cancelable) e.preventDefault();
+}, { passive: false });
+window.addEventListener("pointermove", (e) => {
+  if (!rivOn) return;
+  finCanvas.style.cursor = crossed ? "" : "pointer";
+}, { passive: true });
+
+/* --- sound --- */
+function riverSound() {
+  const ac = audio(); if (!ac || rivNode) return;
+  const mk = (f, q, g0, type) => {
+    const s = ac.createBufferSource(); s.buffer = noise(ac); s.loop = true;
+    const bp = ac.createBiquadFilter(); bp.type = type || "bandpass";
+    bp.frequency.value = f; bp.Q.value = q;
+    const g = ac.createGain(); g.gain.value = 0.0001;
+    s.connect(bp); bp.connect(g); g.connect(BUS);
+    s.start();
+    g.gain.linearRampToValueAtTime(g0, ac.currentTime + 4);
+    return { s, bp, g };
+  };
+  /* three layers: the body of it, the rush over the rocks, and the fizz */
+  rivNode = {
+    body: mk(220, 0.4, 0.055, "lowpass"),
+    rush: mk(1300, 0.5, 0.045),
+    fizz: mk(5200, 0.7, 0.022, "highpass"),
+  };
+  for (const k of ["body", "rush", "fizz"])
+    hold("river", { gain: rivNode[k].g, src: rivNode[k].s });
+}
+function stoneUp(px) {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const dest = at(px) || BUS;
+  /* the weight of it coming up */
+  const o = ac.createOscillator(); o.type = "sine";
+  o.frequency.setValueAtTime(120, t0);
+  o.frequency.exponentialRampToValueAtTime(38, t0 + 0.4);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.16, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.55);
+  o.connect(g); g.connect(dest);
+  o.start(t0); o.stop(t0 + 0.6);
+  /* and the water coming off it */
+  const s = ac.createBufferSource(); s.buffer = noise(ac);
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass";
+  bp.frequency.setValueAtTime(2600, t0);
+  bp.frequency.exponentialRampToValueAtTime(900, t0 + 0.5);
+  bp.Q.value = 0.7;
+  const g2 = ac.createGain();
+  g2.gain.setValueAtTime(0.0001, t0);
+  g2.gain.exponentialRampToValueAtTime(0.085, t0 + 0.03);
+  g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9);
+  s.connect(bp); bp.connect(g2); g2.connect(dest);
+  s.start(t0); s.stop(t0 + 1.0);
+}
+function crossingDone() {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  [146.8, 220, 293.7, 440].forEach((f, i) => {
+    const o = ac.createOscillator(); o.type = i > 1 ? "sine" : "triangle";
+    o.frequency.value = f;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t0 + i * 0.11);
+    g.gain.exponentialRampToValueAtTime(0.050, t0 + i * 0.11 + 0.3);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 4.4);
+    o.connect(g); g.connect(BUS);
+    o.start(t0 + i * 0.11); o.stop(t0 + 4.6);
+  });
 }
 
 function splatSound() {
