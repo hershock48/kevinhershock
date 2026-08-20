@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="build" content="2026-08-20T17:28Z">
+<meta name="build" content="2026-08-20T17:51Z">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Kevin Hershock</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎈</text></svg>">
@@ -9745,6 +9745,8 @@ function plip(rate, px) {
 let bgOn = false, bgT = 0, bgPhase = 0, bgCells = [], bgKey = [], bgDaub = [];
 let bgWin = [], bgDecoy = [], bgMsg = 0, bgMsgKind = 0, bgHint = 0;
 let bgConf = [], bgIdle = 0, bgDone = 0;
+let bgReady = false, bgCrank = 0, bgCrankA = 0, bgGrab = null, bgUp = 0, bgHold = 0;
+let bgNotch = 0, bgCrankIdle = 0;
 const BG_LETTERS = ["B", "I", "N", "G", "O"];
 const KEY_LETTERS = ["B", "I", "N", "G", "O", "K", "E", "V"];
 const KEVIN = ["K", "E", "V", "I", "N"];
@@ -9772,6 +9774,8 @@ function startBingo() {
   if (bgOn) return;
   bgOn = true; bgT = 0; bgPhase = 0; bgMsg = 0; bgHint = 0; bgIdle = 0; bgDone = 0;
   bgDaub = []; bgConf = [];
+  bgReady = false; bgCrank = 0; bgCrankA = 0; bgGrab = null; bgUp = 0;
+  bgHold = 0; bgNotch = 0; bgCrankIdle = 0; fingerRang = 0;
 
   /* a real card: each column keeps to its own fifteen */
   bgCells = [];
@@ -9994,12 +9998,69 @@ function bingoFrame(dt) {
     }
     fctx.stroke();
     fctx.restore();
-    if (bgDone > 1.0) {
-      const a = Math.min(1, (bgDone - 1.0) / 0.5);
-      const pop = 1 + Math.sin(Math.min(1, (bgDone - 1.0) / 0.35) * Math.PI) * 0.18;
+    /* the pen carries on, and draws the thing you wind */
+    if (bgDone > 1.15) {
+      const F = fistPath();
+      const g2 = bgHandBox(G);
+      const at = (P, i) => [g2.x + P[i][0] * g2.w, g2.y + P[i][1] * g2.h];
+      const k = Math.min(1, (bgDone - 1.15) / 1.6) * (F.length - 1);
+      fctx.save();
+      fctx.strokeStyle = "rgba(196,42,38,0.92)";
+      fctx.lineWidth = Math.max(3, G.cell * 0.085);
+      fctx.lineCap = "round"; fctx.lineJoin = "round";
+      const last = pts[pts.length - 1], s0 = at(F, 0);
+      const lead = Math.min(1, (bgDone - 1.15) / 0.26);
+      fctx.beginPath();
+      fctx.moveTo(last.x, last.y);
+      fctx.lineTo(last.x + (s0[0] - last.x) * lead, last.y + (s0[1] - last.y) * lead);
+      fctx.stroke();
+
+      if (lead >= 1) {
+        const n = Math.floor(k);
+        /* the finger goes up behind the fist, so the fist is filled with the
+           card underneath it — otherwise it slides straight through a
+           drawing that is only an outline */
+        if (k >= F.length - 1) {
+          bgReady = true;
+          drawFinger(G, g2);
+          fctx.fillStyle = "#f6f1e4";
+          fctx.beginPath();
+          fctx.moveTo(s0[0], s0[1]);
+          for (let i = 1; i < F.length; i++) { const q = at(F, i); fctx.lineTo(q[0], q[1]); }
+          fctx.closePath();
+          fctx.fill();
+        }
+        fctx.beginPath();
+        fctx.moveTo(s0[0], s0[1]);
+        for (let i = 1; i <= n; i++) { const q = at(F, i); fctx.lineTo(q[0], q[1]); }
+        if (n < F.length - 1) {
+          const f = k - n, a1 = at(F, n), b1 = at(F, n + 1);
+          fctx.lineTo(a1[0] + (b1[0] - a1[0]) * f, a1[1] + (b1[1] - a1[1]) * f);
+        }
+        fctx.stroke();
+        if (bgReady) {
+          fctx.lineWidth = Math.max(2, G.cell * 0.050);
+          for (const T2 of bgThumb) {
+            fctx.beginPath();
+            const t0p = at(T2, 0);
+            fctx.moveTo(t0p[0], t0p[1]);
+            for (let i = 1; i < T2.length; i++) { const q = at(T2, i); fctx.lineTo(q[0], q[1]); }
+            fctx.stroke();
+          }
+          fctx.lineWidth = Math.max(3, G.cell * 0.085);
+          drawCrank(G, g2);
+        }
+      }
+      fctx.restore();
+    }
+
+    if (bgUp > 0.995) {
+      bgHold += dt;
+      const a = Math.min(1, bgHold / 0.5);
+      const pop = 1 + Math.sin(Math.min(1, bgHold / 0.35) * Math.PI) * 0.18;
       fctx.save();
       fctx.globalAlpha = a;
-      fctx.translate(G.x0 + G.cardW / 2, G.y0 + G.cell * 1.55);
+      fctx.translate(G.x0 + G.cardW / 2, G.y0 + G.cell * 5.5);
       fctx.rotate(-0.05);
       fctx.scale(pop, pop);
       fctx.font = bgFont(G.cell * 0.66, true, true);
@@ -10014,7 +10075,7 @@ function bingoFrame(dt) {
       fctx.restore();
     }
     /* something to throw in the air */
-    if (bgDone > 1.0 && bgConf.length < 150 && Math.random() < 0.7) {
+    if (bgUp > 0.995 && bgConf.length < 150 && Math.random() < 0.7) {
       for (let i = 0; i < 3; i++)
         bgConf.push({ x: G.x0 + G.cardW * Math.random(), y: G.y0 + G.cardH * 0.5,
                       vx: (Math.random() - 0.5) * 620, vy: -280 - Math.random() * 460,
@@ -10022,8 +10083,8 @@ function bingoFrame(dt) {
                       c: `hsl(${(Math.random() * 360) | 0},78%,60%)`,
                       s: G.cell * (0.05 + Math.random() * 0.07), life: 1 });
     }
-    if (bgDone > 5.2) {
-      const f = Math.min(1, (bgDone - 5.2) / 2.2);
+    if (bgHold > 4.2) {
+      const f = Math.min(1, (bgHold - 4.2) / 2.2);
       fctx.fillStyle = `rgba(250,248,244,${(f * f).toFixed(3)})`;
       fctx.fillRect(0, 0, W, H);
       if (f >= 1) { bgOn = false; release("bingo"); chainEnd = true; restT = 0;
@@ -10050,6 +10111,149 @@ function bingoFrame(dt) {
   }
 
   natFrame(dt);
+}
+
+/* The line that proves the bingo does not stop at the fifth daub — the pen
+   keeps going and draws a fist. Not a rude one, yet. There is a handle on
+   the side of it, the way there is on a fishing reel, and it turns. */
+let bgFist = null, bgThumb = null;
+function unitPath(build) {
+  const P = [];
+  const put = (x, y) => P.push([x, y]);
+  const quad = (cx, cy, x1, y1, n) => {
+    const [x0, y0] = P[P.length - 1];
+    for (let i = 1; i <= (n || 9); i++) {
+      const t = i / (n || 9), u = 1 - t;
+      put(u * u * x0 + 2 * u * t * cx + t * t * x1,
+          u * u * y0 + 2 * u * t * cy + t * t * y1);
+    }
+  };
+  build(put, quad);
+  return P;
+}
+function fistPath() {
+  if (bgFist) return bgFist;
+  bgFist = unitPath((put, quad) => {
+    put(0.20, 0.97);                     /* the heel */
+    quad(0.08, 0.90, 0.08, 0.72);
+    quad(0.08, 0.56, 0.16, 0.50);
+    /* four knuckles, and they have to actually be knuckles */
+    quad(0.20, 0.36, 0.30, 0.40, 7);
+    quad(0.36, 0.28, 0.46, 0.34, 7);
+    quad(0.54, 0.26, 0.63, 0.33, 7);
+    quad(0.72, 0.30, 0.78, 0.42, 7);
+    quad(0.87, 0.52, 0.87, 0.70);
+    quad(0.87, 0.89, 0.74, 0.96);
+    quad(0.50, 1.02, 0.20, 0.97);
+  });
+  /* the folds between the fingers — three short creases, which say "closed
+     hand" far more plainly than a thumb drawn across it, which just read as
+     a frown */
+  bgThumb = [
+    unitPath((put, quad) => { put(0.29, 0.42); quad(0.31, 0.55, 0.30, 0.66, 6); }),
+    unitPath((put, quad) => { put(0.46, 0.36); quad(0.48, 0.52, 0.47, 0.64, 6); }),
+    unitPath((put, quad) => { put(0.63, 0.35); quad(0.66, 0.51, 0.65, 0.63, 6); }),
+  ];
+  return bgFist;
+}
+
+/* where the drawing sits on the card */
+function bgHandBox(G) {
+  return { x: G.x0 + G.cardW * 0.16, y: G.y0 + G.cell * 1.30,
+           w: G.cardW * 0.56, h: G.cell * 3.55 };
+}
+/* the axle the handle turns on, out of the right-hand side of the fist */
+function bgAxle(G) {
+  const g2 = bgHandBox(G);
+  return { x: g2.x + g2.w * 1.20, y: g2.y + g2.h * 0.64, r: g2.w * 0.28 };
+}
+
+/* it comes up out of the top of the fist as you wind */
+function drawFinger(G, g2) {
+  bgUp = bgCrank;
+  /* it starts below the knuckle line, so at rest there is nothing showing */
+  const len = g2.h * 0.78 * bgUp;
+  const bx = g2.x + g2.w * 0.48;
+  const by = g2.y + g2.h * 0.56;
+  const wdt = g2.w * 0.115;
+  fctx.save();
+  fctx.strokeStyle = "rgba(196,42,38,0.92)";
+  fctx.lineWidth = Math.max(3, G.cell * 0.085);
+  fctx.lineCap = "round"; fctx.lineJoin = "round";
+  fctx.fillStyle = "#f6f1e4";
+  fctx.beginPath();
+  fctx.moveTo(bx - wdt, by);
+  fctx.lineTo(bx - wdt, by - len + wdt);
+  fctx.quadraticCurveTo(bx - wdt, by - len - wdt * 0.5, bx, by - len - wdt * 0.5);
+  fctx.quadraticCurveTo(bx + wdt, by - len - wdt * 0.5, bx + wdt, by - len + wdt);
+  fctx.lineTo(bx + wdt, by);
+  fctx.closePath();
+  fctx.fill();
+  fctx.stroke();
+  /* a crease, once there is enough of it to crease */
+  if (bgUp > 0.45) {
+    fctx.lineWidth = Math.max(1.5, G.cell * 0.035);
+    fctx.beginPath();
+    fctx.moveTo(bx - wdt * 0.45, by - len * 0.42);
+    fctx.lineTo(bx + wdt * 0.45, by - len * 0.42);
+    fctx.stroke();
+  }
+  fctx.restore();
+}
+
+/* the handle. It idles round a few degrees on its own, the way the
+   corkscrew does, because a thing that wants turning has to say so. */
+function drawCrank(G, g2) {
+  const A = bgAxle(G);
+  bgCrankIdle += 0;
+  const idle = bgCrank < 0.02 ? Math.sin(bgT * 2.2) * 0.30 : 0;
+  const ang = bgCrankA + idle;
+  fctx.save();
+  fctx.strokeStyle = "rgba(196,42,38,0.92)";
+  fctx.lineWidth = Math.max(3, G.cell * 0.085);
+  fctx.lineCap = "round"; fctx.lineJoin = "round";
+  /* the shaft out of the side of the fist */
+  fctx.beginPath();
+  fctx.moveTo(g2.x + g2.w * 0.87, A.y);
+  fctx.lineTo(A.x, A.y);
+  fctx.stroke();
+  /* the arm and the knob on the end of it */
+  const kx = A.x + Math.cos(ang) * A.r, ky = A.y + Math.sin(ang) * A.r;
+  fctx.beginPath();
+  fctx.moveTo(A.x, A.y);
+  fctx.lineTo(kx, ky);
+  fctx.stroke();
+  fctx.fillStyle = "#f6f1e4";
+  fctx.beginPath();
+  fctx.arc(kx, ky, A.r * 0.30, 0, 6.3);
+  fctx.fill(); fctx.stroke();
+  /* the little arrow that says which way, until they start */
+  if (bgCrank < 0.03) {
+    const p = 0.5 + 0.5 * Math.sin(bgT * 2.4);
+    fctx.globalAlpha = 0.28 + 0.34 * p;
+    fctx.lineWidth = Math.max(2, G.cell * 0.045);
+    fctx.beginPath();
+    fctx.arc(A.x, A.y, A.r * 1.42, -0.7, 1.5);
+    fctx.stroke();
+    const ex = A.x + Math.cos(1.5) * A.r * 1.42, ey = A.y + Math.sin(1.5) * A.r * 1.42;
+    fctx.beginPath();
+    fctx.moveTo(ex - A.r * 0.22, ey - A.r * 0.22);
+    fctx.lineTo(ex, ey);
+    fctx.lineTo(ex + A.r * 0.24, ey - A.r * 0.14);
+    fctx.stroke();
+    fctx.globalAlpha = 1;
+  }
+  fctx.restore();
+}
+
+/* winding it */
+function bgWind(turn) {
+  if (!bgReady || bgUp > 0.995) return;
+  bgCrankA += turn;
+  bgCrank = Math.min(1, bgCrank + Math.abs(turn) / (Math.PI * 2 * 2.2));
+  const n = Math.floor(bgCrankA / (Math.PI / 4));
+  if (n !== bgNotch) { bgNotch = n; ratchet(bgCrank); }
+  if (bgCrank >= 1 && bgUp <= 0.995) fingerUpSound();
 }
 
 function bgRules(G, a) {
@@ -10103,7 +10307,19 @@ function bgDrawKey(G) {
 
 /* ---------- daubing ---------- */
 window.addEventListener("pointerdown", (e) => {
-  if (!bgOn || bgPhase !== 1) return;
+  if (!bgOn) return;
+  if (bgPhase === 3) {
+    if (!bgReady || bgUp > 0.995) return;
+    const G = bgGeom(), A = bgAxle(G);
+    /* grab it anywhere near it — and a tap winds it a notch, because
+       everything on this site advances on a tap */
+    if (Math.hypot(e.clientX - A.x, e.clientY - A.y) < A.r * 2.6) {
+      bgGrab = { a: Math.atan2(e.clientY - A.y, e.clientX - A.x) };
+      bgWind(Math.PI / 3.2);
+    }
+    return;
+  }
+  if (bgPhase !== 1) return;
   const G = bgGeom();
   const cx = Math.floor((e.clientX - G.x0) / G.cell);
   const cy = Math.floor((e.clientY - G.y0 - G.cell) / G.cell);
@@ -10133,6 +10349,18 @@ window.addEventListener("pointerdown", (e) => {
     }, 1500);
   }
 }, { passive: true });
+
+window.addEventListener("pointermove", (e) => {
+  if (!bgOn || bgPhase !== 3 || !bgGrab) return;
+  const G = bgGeom(), A = bgAxle(G);
+  const a = Math.atan2(e.clientY - A.y, e.clientX - A.x);
+  let d = a - bgGrab.a;
+  if (d > Math.PI) d -= Math.PI * 2;
+  if (d < -Math.PI) d += Math.PI * 2;
+  bgGrab.a = a;
+  bgWind(d);
+}, { passive: true });
+window.addEventListener("pointerup", () => { bgGrab = null; });
 
 /* ---------- sound ---------- */
 function cardArrive() {
@@ -10203,6 +10431,38 @@ function notQuite() {
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + d + 0.7);
     o.connect(g); g.connect(BUS); o.start(t0 + d); o.stop(t0 + d + 0.75);
   });
+}
+function ratchet(v) {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const o = ac.createOscillator(); o.type = "square";
+  o.frequency.setValueAtTime(240 + v * 520, t0);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.020, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.06);
+  o.connect(g); g.connect(BUS); o.start(t0); o.stop(t0 + 0.07);
+  const s2 = ac.createBufferSource(); s2.buffer = noise(ac);
+  const hp = ac.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 2600;
+  const g2 = ac.createGain();
+  g2.gain.setValueAtTime(0.030, t0);
+  g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.05);
+  s2.connect(hp); hp.connect(g2); g2.connect(BUS);
+  s2.start(t0); s2.stop(t0 + 0.06);
+}
+let fingerRang = 0;
+function fingerUpSound() {
+  if (fingerRang) return; fingerRang = 1;
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime;
+  const o = ac.createOscillator(); o.type = "sine";
+  o.frequency.setValueAtTime(180, t0);
+  o.frequency.exponentialRampToValueAtTime(880, t0 + 0.26);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(0.070, t0 + 0.04);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.7);
+  o.connect(g); g.connect(BUS); o.start(t0); o.stop(t0 + 0.75);
+  bingoHit();
 }
 function bingoHit() {
   const ac = audio(); if (!ac) return;
