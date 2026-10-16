@@ -289,6 +289,76 @@
     table.grid { min-width: 0; font-size: 0.7rem; }
     .scroll { overflow: visible; }
   }
+  /* Questionnaire */
+  .qgrid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; margin-top: 24px; }
+  .questions { display: grid; gap: 14px; }
+  .q { margin: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); padding: 18px 18px 14px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .q legend { float: left; width: 100%; padding: 0; margin: 0 0 4px; font-weight: 600; font-size: 1rem; }
+  .q .hint { width: 100%; margin: 0 0 6px; font-size: 0.84rem; color: var(--ink-2); }
+  .q label { position: relative; cursor: pointer; }
+  .q input[type=radio], .q input[type=checkbox] { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .q label > span {
+    display: block; min-height: 44px; padding: 10px 14px; border: 1px solid var(--line-2); border-radius: 10px;
+    font-size: 0.9rem; font-weight: 500; line-height: 1.3; color: var(--ink); background: var(--bg);
+    transition: border-color .15s, background-color .15s, box-shadow .15s;
+  }
+  .q label > span small { display: block; margin-top: 2px; font-size: 0.76rem; font-weight: 400; color: var(--ink-3); }
+  .q label:hover > span { border-color: var(--accent); }
+  .q input:focus-visible + span { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
+  .q input:checked + span { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+  .q input:checked + span small { color: var(--ink-2); }
+  .q.contact { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .q.contact legend { grid-column: 1 / -1; }
+  .field span { display: block; margin-bottom: 4px; font-size: 0.8rem; font-weight: 600; color: var(--ink-2); }
+  .field input, .field textarea {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--bg);
+    color: var(--ink); font: inherit; font-size: 0.95rem;
+  }
+  .field input:focus, .field textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+  .field.wide { grid-column: 1 / -1; }
+  .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+
+  .estimate {
+    position: sticky; top: 64px; border-radius: 16px; padding: 22px 22px 20px; color: var(--cream);
+    background: radial-gradient(120% 90% at 100% 0%, rgba(184,146,90,0.18) 0%, rgba(184,146,90,0) 60%), linear-gradient(180deg, var(--navy) 0%, var(--navy-2) 100%);
+    box-shadow: 0 20px 50px rgba(10,14,20,0.18);
+  }
+  .e-label { margin: 0; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass); }
+  .e-value { margin: 8px 0 0; font-family: var(--serif); font-size: 2.3rem; line-height: 1.05; color: #fff; }
+  .e-sub { margin: 4px 0 16px; font-size: 0.82rem; color: var(--cream-2); }
+  .e-row { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid rgba(243,236,221,0.12); font-size: 0.86rem; color: var(--cream-2); }
+  .e-row strong { color: var(--cream); font-weight: 600; text-align: right; }
+  .e-row.small { font-size: 0.8rem; }
+  .e-progress { margin: 12px 0 14px; font-size: 0.8rem; color: var(--cream-2); }
+  .send {
+    width: 100%; min-height: 48px; border: 0; border-radius: 999px; cursor: pointer;
+    background: var(--cream); color: var(--navy); font: 600 0.95rem var(--sans);
+    transition: transform .15s, background-color .15s;
+  }
+  .send:hover { background: #fff; }
+  .send:active { transform: translateY(1px); }
+  .send:disabled { opacity: 0.6; cursor: default; }
+  .e-status { min-height: 1.2em; margin: 10px 0 0; font-size: 0.84rem; color: var(--cream); }
+  .mailto { display: inline-block; margin-top: 4px; font-size: 0.84rem; color: #a9cdf5; }
+
+  @media (max-width: 860px) {
+    .qgrid { grid-template-columns: 1fr; }
+    .estimate { position: sticky; top: 52px; z-index: 5; order: -1; padding: 14px 16px; }
+    .estimate .e-sub, .estimate .e-row.small, .estimate .e-progress { display: none; }
+    .e-value { font-size: 1.7rem; }
+    .estimate .e-row { padding: 6px 0; }
+    .send, .e-status, .mailto { display: none; }
+    .q.contact { grid-template-columns: 1fr; }
+  }
+  .mobile-send { display: none; }
+  @media (max-width: 860px) {
+    .mobile-send { display: block; margin-top: 4px; }
+    .mobile-send .send, .mobile-send .e-status, .mobile-send .mailto { display: block; }
+    .mobile-send .send { background: var(--navy); color: var(--cream); }
+    .mobile-send .e-status { color: var(--ink); }
+    .mobile-send .mailto { color: var(--accent); }
+  }
+  @media print { .qgrid .send, .mobile-send { display: none; } .estimate { position: static; } }
 </style>
 </head>
 <body>
@@ -316,6 +386,7 @@
     <li><a href="#cma">Market analysis</a></li>
     <li><a href="#competition">Competition</a></li>
     <li><a href="#market">Market</a></li>
+    <li><a href="#answers">Your answers</a></li>
     <li><a href="#price">Price</a></li>
     <li><a href="#plan">Listing plan</a></li>
   </ol>
@@ -330,7 +401,7 @@
   <p class="point">Five Fairway Downs sales, adjusted to your home, put its value at about $402,000 as it was last recorded. A finished lower level would add about $30,000.</p>
   <p>The public record for your home dates from its 2014 sale, when the lower level was an unfinished daylight basement with 9-foot ceilings. Almost every recent Fairway Downs sale had a finished lower level, so that one detail moves your price more than anything else. I will confirm it, along with the age of the roof, furnace and air conditioning, when I walk through.</p>
   <p>Fairway Downs buyers have been firm on price. Three homes listed at $450,000 in the last 18 months; two sold for $415,000, and the one that got $450,000, on your street, had a 1,500 sq ft finished basement and a long list of updates.</p>
-  <p>109 Sawgrass Ln, which you mentioned, has not sold yet; it is still listed at $495,000. Section 03 compares it with your home line by line.</p>
+  <p>109 Sawgrass Ln, which you mentioned, has not sold yet; it is still listed at $495,000 after a price cut. Section 03 compares it with your home line by line.</p>
 </section>
 
 <section id="home">
@@ -383,8 +454,9 @@
   </div>
   <p>I checked all 143 homes on the Fairway Downs and Minges Hills streets, and nothing else has closed since May. If a neighbor told you about a different sale, send me the address. A private sale can take weeks to reach the public record.</p>
 
-  <h3>109 Sawgrass Ln: for sale, not yet sold</h3>
-  <p>109 Sawgrass listed on August 31 at $499,900 and dropped to $495,000 on October 5. On October 16 it was still active on the MLS, 46 days in, with no offer recorded. If it went under contract in the last day or two, the MLS may not show it yet, and I will check before we meet. An asking price becomes evidence of value once a buyer pays it.</p>
+  <h3>109 Sawgrass Ln: for sale, not yet sold, and already reduced</h3>
+  <p>109 Sawgrass listed on August 31 at $499,900. Five weeks later, on October 5, the sellers cut the price by $4,900 to $495,000, and on October 16 it was still on the market at 46 days with no offer recorded. A cut that early usually means the first price was more than buyers would pay. For comparison, 116 St Andrews went under contract in 11 days, and 191 Turnberry closed at its full list price about five weeks after it listed.</p>
+  <p>If 109 Sawgrass went under contract in the last day or two, the MLS may not show it yet, and I will check before we meet. Until then, $495,000 is what the sellers are asking, and the market has not agreed to it.</p>
   <p>It is a useful home to compare with yours, because it was built the same year on the same size lot. It also has more, and buyers pay for each difference:</p>
   <div class="scroll">
   <table>
@@ -400,7 +472,8 @@
     </tbody>
   </table>
   </div>
-  <p>Even at its full $495,000 asking price, 109 Sawgrass works out to about $427,000 for your home as last recorded. If it sells near the Fairway Downs average of 95% of list, about $470,000, that points to about $402,000 for yours, the same value this report reaches from the closed sales. Once it closes, it becomes the best comparable in the neighborhood, and I will update this report with the final price.</p>
+  <p>Even at its full $495,000 asking price, 109 Sawgrass works out to about $427,000 for your home as last recorded. The price cut suggests it will sell for less. At the Fairway Downs average of 95% of list, about $470,000, it points to about $402,000 for yours, the same value this report reaches from the closed sales. Once it closes, it becomes the best comparable in the neighborhood, and I will update this report with the final price.</p>
+  <p>It also shows what starting high costs. A new listing gets the most attention in its first two weeks. 109 Sawgrass spent that window above the market, and every buyer can now see the reduction. Pricing your home right on day one avoids both.</p>
 
   <h3>Fairway Downs over three years</h3>
   <figure class="card">
@@ -588,22 +661,128 @@
   <p class="note">Battle Creek as a whole: median sale price $185,512 (+6.0%), $114 per sq ft (&minus;8.4%), 13 median days on market, 171 homes sold in September (&minus;7.8%).</p>
 </section>
 
+<section id="answers">
+  <p class="kicker"><b>07</b> Your answers</p>
+  <h2>Tell me what has changed since 2014, and watch your price update</h2>
+  <p class="point">Tap the answer that fits for each question. Your estimate updates as you go, and when you are done, send your answers to me with one button.</p>
+  <p class="note">Your answers stay saved on this device, so you can come back and change them. The estimate is a guide; I confirm everything at the walk-through.</p>
+
+  <div class="qgrid">
+    <form id="qform" class="questions" novalidate>
+
+      <fieldset class="q" data-q="lower">
+        <legend>Is the lower level finished?</legend>
+        <p class="hint">In 2014 it was an unfinished daylight basement with 9-foot ceilings.</p>
+        <label><input type="radio" name="lower" value="0" data-label="Unfinished"><span>Unfinished</span></label>
+        <label><input type="radio" name="lower" value="600" data-label="Partly finished (about 600 sq ft)"><span>Partly finished<small>A room or two</small></span></label>
+        <label><input type="radio" name="lower" value="1200" data-label="Fully finished (about 1,200 sq ft)"><span>Fully finished<small>Most of the space</small></span></label>
+      </fieldset>
+
+      <fieldset class="q" data-q="bath">
+        <legend>Has a bathroom been added?</legend>
+        <p class="hint">The 2014 listing showed 2 full baths and 1 half bath.</p>
+        <label><input type="radio" name="bath" value="0" data-label="No, still 2 full and 1 half"><span>No<small>Still 2 full, 1 half</small></span></label>
+        <label><input type="radio" name="bath" value="3500" data-label="Half bath added"><span>Half bath added</span></label>
+        <label><input type="radio" name="bath" value="7500" data-label="Full bath added"><span>Full bath added</span></label>
+      </fieldset>
+
+      <fieldset class="q" data-q="roof">
+        <legend>When was the roof replaced?</legend>
+        <label><input type="radio" name="roof" value="0" data-label="Original (2005)"><span>Original<small>2005</small></span></label>
+        <label><input type="radio" name="roof" value="1000" data-label="Replaced 2015 to 2020"><span>2015 to 2020</span></label>
+        <label><input type="radio" name="roof" value="2500" data-label="Replaced 2021 or later"><span>2021 or later</span></label>
+      </fieldset>
+
+      <fieldset class="q" data-q="hvac">
+        <legend>When were the furnace and air conditioner replaced?</legend>
+        <label><input type="radio" name="hvac" value="0" data-label="Original (2005)"><span>Original<small>2005</small></span></label>
+        <label><input type="radio" name="hvac" value="1000" data-label="Replaced 2015 to 2020"><span>2015 to 2020</span></label>
+        <label><input type="radio" name="hvac" value="2000" data-label="Replaced 2021 or later"><span>2021 or later</span></label>
+      </fieldset>
+
+      <fieldset class="q" data-q="heater">
+        <legend>When was the water heater replaced?</legend>
+        <label><input type="radio" name="heater" value="0" data-label="Original (2005)"><span>Original</span></label>
+        <label><input type="radio" name="heater" value="250" data-label="Replaced 2015 to 2020"><span>2015 to 2020</span></label>
+        <label><input type="radio" name="heater" value="500" data-label="Replaced 2021 or later"><span>2021 or later</span></label>
+      </fieldset>
+
+      <fieldset class="q" data-q="interior">
+        <legend>Any kitchen or bathroom updates?</legend>
+        <label><input type="radio" name="interior" value="0" data-label="None"><span>None</span></label>
+        <label><input type="radio" name="interior" value="3000" data-label="Cosmetic (paint, fixtures, flooring)"><span>Cosmetic<small>Paint, fixtures, flooring</small></span></label>
+        <label><input type="radio" name="interior" value="10000" data-label="Major remodel"><span>Major remodel<small>Cabinets, counters, layout</small></span></label>
+      </fieldset>
+
+      <fieldset class="q" data-q="extras">
+        <legend>Anything added outside or for comfort?</legend>
+        <p class="hint">Choose all that apply.</p>
+        <label class="multi"><input type="checkbox" name="extras" value="3000" data-label="Whole-house generator"><span>Whole-house generator</span></label>
+        <label class="multi"><input type="checkbox" name="extras" value="5000" data-label="Sunroom or screened porch"><span>Sunroom or screened porch</span></label>
+        <label class="multi"><input type="checkbox" name="extras" value="2000" data-label="New deck or patio"><span>New deck or patio</span></label>
+        <label class="multi"><input type="checkbox" name="extras" value="2000" data-label="Irrigation system"><span>Irrigation system</span></label>
+      </fieldset>
+
+      <fieldset class="q" data-q="issues">
+        <legend>Is there anything a buyer's inspector might find?</legend>
+        <p class="hint">Water in the basement, a roof leak, well or septic trouble. Knowing early lets us plan for it; it does not change the estimate here.</p>
+        <label><input type="radio" name="issues" value="0" data-label="Nothing I know of"><span>Nothing I know of</span></label>
+        <label><input type="radio" name="issues" value="0" data-label="Possibly, let's talk"><span>Possibly<small>Let's talk</small></span></label>
+        <label><input type="radio" name="issues" value="0" data-label="Yes, I'll explain below"><span>Yes<small>I'll explain below</small></span></label>
+      </fieldset>
+
+      <fieldset class="q" data-q="timing">
+        <legend>When would you like to be on the market?</legend>
+        <label><input type="radio" name="timing" value="0" data-label="As soon as possible"><span>As soon as possible</span></label>
+        <label><input type="radio" name="timing" value="0" data-label="Within 30 days"><span>Within 30 days</span></label>
+        <label><input type="radio" name="timing" value="0" data-label="In the spring"><span>In the spring</span></label>
+      </fieldset>
+
+      <fieldset class="q contact">
+        <legend>Anything else I should know?</legend>
+        <label class="field"><span>Your name</span><input type="text" name="name" autocomplete="name" maxlength="80"></label>
+        <label class="field"><span>Best phone or email</span><input type="text" name="contact" autocomplete="email" maxlength="120"></label>
+        <label class="field wide"><span>Notes</span><textarea name="note" rows="3" maxlength="1500" placeholder="Other updates, repairs, or questions"></textarea></label>
+        <label class="hp" aria-hidden="true">Leave this empty<input type="text" name="website" tabindex="-1" autocomplete="off"></label>
+      </fieldset>
+    </form>
+
+    <aside class="estimate" aria-live="polite">
+      <p class="e-label">Your estimate</p>
+      <p class="e-value" id="eValue">About $402,000</p>
+      <p class="e-sub">Market value</p>
+      <div class="e-row"><span>Suggested list price</span><strong id="eList">$414,900</strong></div>
+      <div class="e-row"><span>Expected sale</span><strong id="eRange">$395,000 to $410,000</strong></div>
+      <div class="e-row small"><span>Change from the public record</span><strong id="eDelta">+$0</strong></div>
+      <p class="e-progress" id="eProgress">0 of 9 questions answered</p>
+      <button type="button" class="send" data-send>Send my answers to Kevin</button>
+      <p class="e-status" data-status role="status"></p>
+      <a class="mailto" data-mail hidden>Or send them by email</a>
+    </aside>
+  </div>
+  <div class="mobile-send">
+    <button type="button" class="send" data-send>Send my answers to Kevin</button>
+    <p class="e-status" data-status role="status"></p>
+    <a class="mailto" data-mail hidden>Or send them by email</a>
+  </div>
+</section>
+
 <section id="price">
-  <p class="kicker"><b>07</b> Price</p>
+  <p class="kicker"><b>08</b> Price</p>
   <h2>Your list price depends on what the walk-through finds</h2>
   <p class="point">Based on the public record, list at $414,900. If the lower level has been finished or the major systems replaced, the price moves up.</p>
   <div class="options">
     <div class="option rec"><span class="tag">As last recorded</span><strong>$414,900</strong><p class="meta">Value about $402,000 · expect $395,000 to $410,000</p><p>Lower level unfinished, original roof and furnace.</p></div>
     <div class="option"><span class="tag">Systems replaced</span><strong>$419,900</strong><p class="meta">Value about $407,000 · expect $400,000 to $415,000</p><p>Lower level unfinished, newer roof, furnace and air conditioning.</p></div>
     <div class="option"><span class="tag">Lower level finished</span><strong>$444,900</strong><p class="meta">Value about $432,000 · expect $425,000 to $440,000</p><p>About 1,200 sq ft of finished space downstairs.</p></div>
-    <div class="option"><span class="tag">Finished, plus a bath</span><strong>$449,900</strong><p class="meta">Value about $440,000 · expect $430,000 to $445,000</p><p>Finished lower level with a third full bath.</p></div>
+    <div class="option"><span class="tag">Finished, plus a bath</span><strong>$449,900</strong><p class="meta">Value about $440,000 · expect $425,000 to $445,000</p><p>Finished lower level with a third full bath.</p></div>
   </div>
   <p>Fairway Downs homes have sold for about 95% of their list price on average. Three homes listed at $450,000 in the last 18 months: 116 Pinehurst and 116 St Andrews each sold for $415,000, and 191 Turnberry got its full $450,000 with a finished basement and recent updates. Listing a few percent above value leaves room to negotiate without sitting through the winter.</p>
   <p>Your home's strengths to lead with: it is one of the newest homes in Fairway Downs, the primary suite is on the main floor, and the hearth room with its two-way fireplace is a feature buyers remember.</p>
 </section>
 
 <section id="plan">
-  <p class="kicker"><b>08</b> Listing plan</p>
+  <p class="kicker"><b>09</b> Listing plan</p>
   <h2>A listing aimed at families shopping the Lakeview district</h2>
   <ul class="plan">
     <li><b>Professional photos and a strong lead photo</b>Taken in daylight before the leaves are gone, with twilight exteriors and drone shots of the landscaped lot.</li>
@@ -639,6 +818,120 @@
 </main>
 
 <footer>Prepared for the owners of 130 Turnberry Ln by <strong>Kevin Hershock</strong> · October 16, 2026</footer>
+
+<script>
+/* The seller's answers move the estimate by the same rates the CMA grid uses:
+   $25 per finished lower-level sq ft, $7,500 a full bath, $3,500 a half bath.
+   Systems and finishes are credits over the comparables' typical condition.
+   Answers persist on this device only; "Send" posts them to /api/answers,
+   which emails Kevin, and falls back to a prefilled email if that fails. */
+(function () {
+  var BASE = 402125;              // weighted CMA value as last recorded
+  var KEY = "turnberry130-answers";
+  var TO = "kevin@glazedweb.com";
+  var QUESTIONS = ["lower", "bath", "roof", "hvac", "heater", "interior", "extras", "issues", "timing"];
+  var form = document.getElementById("qform");
+  if (!form) return;
+
+  function money(n) { return "$" + Math.round(n).toLocaleString("en-US"); }
+  function to5k(n) { return Math.round(n / 5000) * 5000; }
+
+  function read() {
+    var a = { picks: {}, value: BASE };
+    QUESTIONS.forEach(function (q) {
+      var inputs = form.querySelectorAll('input[name="' + q + '"]:checked');
+      if (!inputs.length) return;
+      var labels = [], sum = 0;
+      inputs.forEach(function (i) { labels.push(i.dataset.label); sum += Number(i.value) * (q === "lower" ? 25 : 1); });
+      a.picks[q] = labels.join(", ");
+      a.value += sum;
+    });
+    ["name", "contact", "note", "website"].forEach(function (f) { a[f] = (form.elements[f].value || "").trim(); });
+    a.list = to5k(a.value + 12000) - 100;
+    a.low = to5k(a.list * 0.95);
+    a.high = to5k(a.list * 0.99);
+    return a;
+  }
+
+  function paint() {
+    var a = read();
+    var answered = QUESTIONS.filter(function (q) { return a.picks[q]; }).length;
+    document.getElementById("eValue").textContent = "About " + money(Math.round(a.value / 1000) * 1000);
+    document.getElementById("eList").textContent = money(a.list);
+    document.getElementById("eRange").textContent = money(a.low) + " to " + money(a.high);
+    var d = Math.round((a.value - BASE) / 100) * 100;
+    document.getElementById("eDelta").textContent = (d >= 0 ? "+" : "−") + money(Math.abs(d));
+    document.getElementById("eProgress").textContent = answered + " of " + QUESTIONS.length + " questions answered";
+    return a;
+  }
+
+  function save() {
+    var data = {};
+    Array.prototype.forEach.call(form.elements, function (el) {
+      if (!el.name || el.name === "website") return;
+      if (el.type === "radio" || el.type === "checkbox") { if (el.checked) (data[el.name] = data[el.name] || []).push(el.dataset.label); }
+      else data[el.name] = el.value;
+    });
+    try { localStorage.setItem(KEY, JSON.stringify(data)); } catch (e) {}
+  }
+
+  function restore() {
+    var data;
+    try { data = JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { data = null; }
+    if (!data) return;
+    Array.prototype.forEach.call(form.elements, function (el) {
+      if (!el.name || !(el.name in data)) return;
+      if (el.type === "radio" || el.type === "checkbox") el.checked = data[el.name].indexOf(el.dataset.label) !== -1;
+      else el.value = data[el.name];
+    });
+  }
+
+  function summary(a) {
+    var lines = ["Answers for 130 Turnberry Ln", ""];
+    QUESTIONS.forEach(function (q) {
+      var legend = form.querySelector('[data-q="' + q + '"] legend').textContent;
+      lines.push(legend + " " + (a.picks[q] || "(not answered)"));
+    });
+    lines.push("", "Estimated value: " + money(a.value), "Suggested list: " + money(a.list), "Expected sale: " + money(a.low) + " to " + money(a.high));
+    if (a.name) lines.push("", "Name: " + a.name);
+    if (a.contact) lines.push("Contact: " + a.contact);
+    if (a.note) lines.push("", "Notes: " + a.note);
+    return lines.join("\n");
+  }
+
+  function status(msg) { document.querySelectorAll("[data-status]").forEach(function (p) { p.textContent = msg; }); }
+  function offerMail(a) {
+    var href = "mailto:" + TO + "?subject=" + encodeURIComponent("130 Turnberry Ln answers") + "&body=" + encodeURIComponent(summary(a));
+    document.querySelectorAll("[data-mail]").forEach(function (m) { m.href = href; m.hidden = false; });
+  }
+
+  function send() {
+    var a = paint();
+    var buttons = document.querySelectorAll("[data-send]");
+    buttons.forEach(function (b) { b.disabled = true; });
+    status("Sending…");
+    fetch("/api/answers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ page: "130Turnberry", picks: a.picks, value: Math.round(a.value), list: a.list, low: a.low, high: a.high, name: a.name, contact: a.contact, note: a.note, website: a.website })
+    }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      status("Sent. Thank you, I will follow up before we meet.");
+      buttons.forEach(function (b) { b.textContent = "Send an update"; b.disabled = false; });
+    }).catch(function () {
+      status("One more step: tap the link below to email your answers to me.");
+      offerMail(a);
+      buttons.forEach(function (b) { b.disabled = false; });
+    });
+  }
+
+  restore();
+  paint();
+  form.addEventListener("input", function () { paint(); save(); });
+  form.addEventListener("change", function () { paint(); save(); });
+  document.querySelectorAll("[data-send]").forEach(function (b) { b.addEventListener("click", send); });
+})();
+</script>
 
 </body>
 </html>
