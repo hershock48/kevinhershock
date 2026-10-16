@@ -31,6 +31,14 @@ module.exports = async (req, res) => {
     return res.status(405).json({ ok: false });
   }
 
+  // Only accept posts from the report pages. Browsers always send Origin on a
+  // cross-site POST, so this stops other sites from using the endpoint; a
+  // scripted client can still forge it, which the honeypot covers.
+  const origin = String((req.headers && req.headers.origin) || "");
+  if (origin && !/^https:\/\/(www\.)?kevinhershock\.com$|^http:\/\/localhost(:\d+)?$/.test(origin)) {
+    return res.status(403).json({ ok: false });
+  }
+
   let body = req.body;
   if (typeof body === "string") {
     try { body = JSON.parse(body); } catch { body = null; }
