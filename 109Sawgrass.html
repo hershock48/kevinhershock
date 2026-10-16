@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>109 Sawgrass Ln Pricing Report</title>
+<meta name="description" content="Comparable sales, market value and a recommended list price for 109 Sawgrass Ln, Battle Creek, MI 49015.">
+
+<!-- A pricing report for one seller, shared by link. It names a home that is
+     on the market today and a list-price strategy for it, so it stays out of
+     search results. The numbers come from MLS-based public records on Redfin,
+     pulled 2026-10-16; the source list is at the bottom of the page. -->
+<meta name="robots" content="noindex, nofollow">
+
+<style>
+  :root {
+    --bg: #f6f4ef;
+    --paper: #ffffff;
+    --ink: #1c1f26;
+    --ink-2: #545a66;
+    --ink-3: #868c97;
+    --line: #e2ded5;
+    --band: #16202e;
+    --band-ink: #f2ede2;
+    --band-ink-2: #b9b2a3;
+    --accent: #2f6db5;
+    --accent-soft: rgba(47,109,181,0.10);
+    --dot: #b9b6ac;
+    --ref: #7b808a;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1218;
+      --paper: #161a22;
+      --ink: #e8e4da;
+      --ink-2: #aaa59a;
+      --ink-3: #7d796f;
+      --line: #2a2f3a;
+      --band: #0a0d12;
+      --band-ink: #f2ede2;
+      --band-ink-2: #9e978a;
+      --accent: #6aa3e6;
+      --accent-soft: rgba(106,163,230,0.12);
+      --dot: #5d6270;
+      --ref: #8d929c;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 400 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  header.band {
+    background: var(--band);
+    color: var(--band-ink);
+    padding: 56px 16px 48px;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  .eyebrow {
+    margin: 0 0 10px; font-size: 0.8rem; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--band-ink-2);
+  }
+  h1, h2 { font-family: Georgia, "Times New Roman", serif; font-weight: 400; }
+  h1 { margin: 0; font-size: clamp(2rem, 6vw, 3rem); line-height: 1.1; }
+  .byline { margin: 14px 0 0; color: var(--band-ink-2); font-size: 0.95rem; }
+
+  .verdict {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
+    margin-top: 36px; background: rgba(242,237,226,0.14);
+    border: 1px solid rgba(242,237,226,0.14); border-radius: 10px; overflow: hidden;
+  }
+  .verdict div { background: var(--band); padding: 18px 18px 16px; }
+  .verdict span { display: block; font-size: 0.78rem; letter-spacing: 0.08em;
+                  text-transform: uppercase; color: var(--band-ink-2); }
+  .verdict strong { display: block; margin-top: 6px; font-family: Georgia, serif;
+                    font-weight: 400; font-size: clamp(1.35rem, 3.6vw, 1.9rem); }
+  .verdict .lead strong { color: #8fbdf0; }
+
+  main { padding: 8px 16px 72px; }
+  section {
+    background: var(--paper); border: 1px solid var(--line); border-radius: 12px;
+    padding: 28px clamp(16px, 4vw, 36px); margin-top: 24px;
+  }
+  h2 { margin: 0 0 12px; font-size: 1.6rem; line-height: 1.2; }
+  h3 { margin: 26px 0 8px; font-size: 1rem; }
+  p { margin: 0 0 14px; }
+  p.point { font-size: 1.08rem; }
+  ul, ol { margin: 0 0 14px; padding-left: 22px; }
+  li { margin: 6px 0; }
+  a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+  .note { color: var(--ink-2); font-size: 0.9rem; }
+
+  .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 0 16px; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+  th, td { text-align: left; vertical-align: top; padding: 9px 10px; border-bottom: 1px solid var(--line); }
+  thead th { font-size: 0.78rem; letter-spacing: 0.04em; text-transform: uppercase;
+             color: var(--ink-2); font-weight: 600; border-bottom-width: 2px; }
+  td.num, th.num { text-align: right; white-space: nowrap; }
+  tr.subject td { background: var(--accent-soft); }
+  tr.recommended td { background: var(--accent-soft); font-weight: 600; }
+  tr.total td { font-weight: 700; border-top: 2px solid var(--line); }
+  table.grid { min-width: 860px; font-size: 0.86rem; }
+  table.grid th[scope=row] { font-weight: 600; white-space: nowrap; }
+  table.grid td:nth-child(2), table.grid thead th:nth-child(2) { background: var(--accent-soft); }
+
+  figure { margin: 8px 0 18px; }
+  figure svg { display: block; width: 100%; height: auto; }
+  figcaption { color: var(--ink-3); font-size: 0.82rem; margin-top: 6px; }
+  .chart-title { fill: var(--ink); font-size: 16px; }
+  .chart-sub, .chart-axis { fill: var(--ink-2); font-size: 12px; }
+  .chart-val { fill: var(--ink); font-size: 12px; }
+  .chart-grid { stroke: var(--line); }
+  .chart-ref { stroke: var(--ref); stroke-width: 1.5; }
+
+  footer { color: var(--ink-3); font-size: 0.85rem; padding: 32px 16px 0; text-align: center; }
+
+  @media (max-width: 640px) {
+    header.band { padding: 40px 16px 36px; }
+    .verdict { grid-template-columns: 1fr; }
+  }
+  @media print {
+    body { background: #fff; color: #000; }
+    header.band { background: #fff; color: #000; padding: 0 0 12px; border-bottom: 2px solid #000; }
+    .eyebrow, .byline, .verdict span { color: #444; }
+    .verdict { border-color: #999; background: #999; }
+    .verdict div { background: #fff; }
+    .verdict .lead strong { color: #000; }
+    section { border: none; padding: 12px 0; break-inside: avoid-page; }
+    table.grid { min-width: 0; font-size: 0.72rem; }
+    .scroll { overflow: visible; }
+    a { color: #000; }
+  }
+</style>
+</head>
+<body>
+
+<header class="band">
+  <div class="wrap">
+    <p class="eyebrow">Pricing report</p>
+    <h1>109 Sawgrass Ln</h1>
+    <p class="byline">Battle Creek, MI 49015 · Fairway Downs · Prepared by Kevin Hershock · October 16, 2026</p>
+
+    <div class="verdict" aria-label="Summary">
+      <div class="lead"><span>Recommended list price</span><strong>$474,900</strong></div>
+      <div><span>Estimated market value</span><strong>About $468,000</strong></div>
+      <div><span>Expected sale</span><strong>$460,000 to $475,000</strong></div>
+    </div>
+  </div>
+</header>
+
+<main>
+<div class="wrap">
+
+<section id="summary">
+  <h2>The short version</h2>
+  <p class="point">A five-home comparison puts your home at about $468,000. Listing at $474,900 gives buyers a reason to come see it now and leaves room to negotiate.</p>
+  <p>Your home has been on the market 46 days at $499,900 and then $495,000. The homes like it that sold quickly this year were priced close to their adjusted value from the first day. The ones priced above it took price cuts and still sold lower.</p>
+  <p>The $500,000 sale at 111 Tiffany Ln is a real sale and a fair high mark. It sits on 0.86 acres in Minges Hills, so it marks the top of your range. Details are below.</p>
+</section>
+
+<section id="home">
+  <h2>Your home at a glance</h2>
+  <div class="scroll">
+  <table>
+    <tbody>
+      <tr><th scope="row">Built</th><td>2005, 1.25 stories, primary suite on the main floor</td></tr>
+      <tr><th scope="row">Bedrooms and baths</th><td>5 bedrooms and 4 full baths per the MLS (the county record shows 4 bedrooms)</td></tr>
+      <tr><th scope="row">Size</th><td>2,476 sq ft above grade per the county, plus about 1,258 sq ft finished in the lower level (3,734 sq ft total per the MLS)</td></tr>
+      <tr><th scope="row">Lot</th><td>0.44 acres (95 ft x 181 ft)</td></tr>
+      <tr><th scope="row">Garage</th><td>Attached, 3 cars</td></tr>
+      <tr><th scope="row">Recent updates</th><td>Newer roof, furnace, A/C and septic; whole-house generator</td></tr>
+      <tr><th scope="row">Utilities</th><td>Private well, septic, natural gas</td></tr>
+      <tr><th scope="row">Schools</th><td>Lakeview: Westlake Elementary (8/10), Lakeview Middle (6/10), Lakeview High (7/10)</td></tr>
+      <tr><th scope="row">Taxes</th><td>$5,975 for 2025. A buyer's bill will likely be higher, because Michigan resets taxable value after a sale.</td></tr>
+      <tr><th scope="row">Association</th><td>$150 per year</td></tr>
+      <tr><th scope="row">Past sales</th><td>$339,900 (2005), $331,250 (2007), $308,000 (2017), $271,191 (2019)</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="note">The MLS and the county disagree on bedrooms and square footage. Appraisers work from above-grade square footage, so this report compares every home on that basis. We should settle the bedroom count before relisting.</p>
+</section>
+
+<section id="recent">
+  <h2>The recent sale nearby</h2>
+  <p class="point">111 Tiffany Ln sold for $500,000 on September 2, at full price in 17 days. Adjusted to your home, it comes out at about $499,000, the highest of the five comparisons.</p>
+  <p>Tiffany matches your home closely on above-grade size (2,506 vs 2,476 sq ft). Your home is 14 years newer and has more full baths. Tiffany's lot is almost twice as large, and Minges Hills homes have been selling higher than Fairway Downs homes.</p>
+  <p>Here is every sale near you in the last 60 days:</p>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Address</th><th>Sold</th><th class="num">Price</th><th>How it compares</th></tr></thead>
+    <tbody>
+      <tr><td><a href="https://www.redfin.com/MI/Battle-Creek/120-Castle-Ridge-Dr-49015/home/96208501">120 Castle Ridge Dr</a></td><td>Sep 16, 2026</td><td class="num">$675,000</td><td>4,436 sq ft above grade, almost twice your size</td></tr>
+      <tr><td><a href="https://www.redfin.com/MI/Battle-Creek/113-Whisperwood-Ln-49015/home/96366373">113 Whisperwood Ln</a></td><td>Sep 14, 2026</td><td class="num">$470,000</td><td>Listed at $499,900, cut four times over 102 days</td></tr>
+      <tr><td><a href="https://www.redfin.com/MI/Battle-Creek/100-Tiffany-Ln-49015/home/96332313">100 Tiffany Ln</a></td><td>Sep 9, 2026</td><td class="num">$322,000</td><td>Sold as-is for cash before it was advertised</td></tr>
+      <tr><td><a href="https://www.redfin.com/MI/Battle-Creek/111-Tiffany-Ln-49015/home/96162755">111 Tiffany Ln</a></td><td>Sep 2, 2026</td><td class="num">$500,000</td><td>Similar size, 0.86 acres in Minges Hills</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The most recent sale inside Fairway Downs was <a href="https://www.redfin.com/MI/Battle-Creek/116-St-Andrews-Ct-49015/home/96314533">116 St Andrews Ct</a>, which listed at $450,000 and sold for $415,000 on May 29. I checked all 143 homes on the Fairway Downs and Minges Hills streets, and nothing else has closed since. If you had a different house in mind, tell me the address. A private sale can take weeks to reach the public record.</p>
+</section>
+
+<section id="comps">
+  <h2>Fairway Downs sales</h2>
+  <p class="point">No Fairway Downs home has sold above $460,000 in the last three years. The top sale was 125 Sawgrass Ln, on your street, in March 2025.</p>
+
+  <figure>
+    <svg viewBox="0 0 760 370" role="img" aria-label="No Fairway Downs home has sold above $460,000 since 2023">
+      <text class="chart-title" x="20" y="30">No Fairway Downs home has sold above $460,000 since 2023</text>
+      <text class="chart-sub" x="20" y="52">Every sale on Pinehurst, St Andrews and Sawgrass, against your current and recommended price</text>
+      <g>
+        <line class="chart-grid" x1="60" x2="720" y1="330" y2="330"/><text class="chart-axis" x="52" y="334" text-anchor="end">$350K</text>
+        <line class="chart-grid" x1="60" x2="720" y1="270" y2="270"/><text class="chart-axis" x="52" y="274" text-anchor="end">$400K</text>
+        <line class="chart-grid" x1="60" x2="720" y1="210" y2="210"/><text class="chart-axis" x="52" y="214" text-anchor="end">$450K</text>
+        <line class="chart-grid" x1="60" x2="720" y1="150" y2="150"/><text class="chart-axis" x="52" y="154" text-anchor="end">$500K</text>
+        <line class="chart-grid" x1="60" x2="720" y1="90" y2="90"/><text class="chart-axis" x="52" y="94" text-anchor="end">$550K</text>
+      </g>
+      <g>
+        <text class="chart-axis" x="114" y="354" text-anchor="middle">2024</text>
+        <text class="chart-axis" x="328" y="354" text-anchor="middle">2025</text>
+        <text class="chart-axis" x="542" y="354" text-anchor="middle">2026</text>
+      </g>
+      <g>
+        <line class="chart-ref" x1="60" x2="720" y1="156" y2="156" stroke-dasharray="6 4"/>
+        <text class="chart-sub" x="720" y="150" text-anchor="end">Current price $495,000</text>
+        <line class="chart-ref" x1="60" x2="720" y1="180" y2="180" stroke-dasharray="2 3"/>
+        <text class="chart-sub" x="720" y="174" text-anchor="end">Recommended $474,900</text>
+      </g>
+      <g>
+        <circle cx="100" cy="270" r="6" fill="var(--dot)"><title>166 Pinehurst Ln: $400,000, Dec 8, 2023, 2,725 sq ft</title></circle>
+        <text class="chart-val" x="111" y="274">$400K</text>
+        <circle cx="250" cy="242" r="6" fill="var(--dot)"><title>151 Pinehurst Ln: $423,000, Aug 20, 2024, 3,453 sq ft</title></circle>
+        <text class="chart-val" x="261" y="246">$423K</text>
+        <circle cx="375" cy="198" r="6" fill="var(--accent)"><title>125 Sawgrass Ln: $460,000, Mar 21, 2025, 3,709 sq ft</title></circle>
+        <text class="chart-val" x="386" y="202">$460K</text>
+        <text class="chart-sub" x="375" y="222" text-anchor="middle" font-size="11">125 Sawgrass Ln, top sale</text>
+        <circle cx="452" cy="252" r="6" fill="var(--dot)"><title>116 Pinehurst Ln: $415,000, Jul 30, 2025, 3,839 sq ft</title></circle>
+        <text class="chart-val" x="463" y="256">$415K</text>
+        <circle cx="510" cy="294" r="6" fill="var(--dot)"><title>105 St Andrews Ct: $380,000, Nov 6, 2025, 1,905 sq ft</title></circle>
+        <text class="chart-val" x="521" y="298">$380K</text>
+        <circle cx="629" cy="252" r="6" fill="var(--dot)"><title>116 St Andrews Ct: $415,000, May 29, 2026, 2,232 sq ft</title></circle>
+        <text class="chart-val" x="640" y="256">$415K</text>
+      </g>
+    </svg>
+    <figcaption>Six Fairway Downs sales, December 2023 to October 2026. Source: MLS-based sold records on Redfin.</figcaption>
+  </figure>
+
+  <p>The two best comparisons for your home are 125 Sawgrass Ln on your street and 191 Turnberry Ln in the same plat. Both were built in 2003, both have about 2,500 sq ft above grade, and both have a finished lower level like yours.</p>
+</section>
+
+<section id="cma">
+  <h2>Comparative market analysis</h2>
+  <p class="point">Adjusted to your home, the five best comparable sales point to a value of about $468,000, in a range of $446,000 to $499,000.</p>
+  <p>Each sale price is adjusted up for what that home lacks compared with yours and down for what it has that yours does not. Square footage is above grade from the county record, because appraisers value finished basements separately.</p>
+
+  <div class="scroll">
+  <table class="grid">
+    <thead>
+      <tr>
+        <th></th>
+        <th>Your home</th>
+        <th>1. <a href="https://www.redfin.com/MI/Battle-Creek/125-Sawgrass-Ln-49015/home/96131728">125 Sawgrass Ln</a></th>
+        <th>2. <a href="https://www.redfin.com/MI/Battle-Creek/191-Turn-Berry-Ln-49015/home/96368704">191 Turnberry Ln</a></th>
+        <th>3. <a href="https://www.redfin.com/MI/Battle-Creek/116-St-Andrews-Ct-49015/home/96314533">116 St Andrews Ct</a></th>
+        <th>4. <a href="https://www.redfin.com/MI/Battle-Creek/111-Tiffany-Ln-49015/home/96162755">111 Tiffany Ln</a></th>
+        <th>5. <a href="https://www.redfin.com/MI/Battle-Creek/182-Woodhaven-Dr-49015/home/110594646">182 Woodhaven Dr</a></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><th scope="row">Sale price</th><td>Listed at $495,000</td><td>$460,000</td><td>$450,000</td><td>$415,000</td><td>$500,000</td><td>$495,000</td></tr>
+      <tr><th scope="row">Sold</th><td>On market 46 days</td><td>Mar 21, 2025</td><td>Mar 20, 2026</td><td>May 29, 2026</td><td>Sep 2, 2026</td><td>Sep 14, 2026</td></tr>
+      <tr><th scope="row">Area</th><td>Fairway Downs</td><td>Fairway Downs, your street</td><td>Fairway Downs, same plat</td><td>Fairway Downs</td><td>Minges Hills</td><td>Woodhaven, Lakeview</td></tr>
+      <tr><th scope="row">Market change since sale</th><td></td><td>+3%: +$13,800</td><td>+2%: +$9,000</td><td>+1.5%: +$6,000</td><td>0</td><td>0</td></tr>
+      <tr><th scope="row">Above-grade sq ft</th><td>2,476</td><td>2,497: &minus;$1,300</td><td>2,588: &minus;$6,700</td><td>2,232: +$14,600</td><td>2,506: &minus;$1,800</td><td>3,246: &minus;$46,200</td></tr>
+      <tr><th scope="row">Finished lower level</th><td>About 1,258 sq ft</td><td>About 1,212: +$1,200</td><td>1,500: &minus;$6,000</td><td>Walkout, size not listed: &minus;$1,000</td><td>About 1,142: +$2,900</td><td>About 1,000: +$6,500</td></tr>
+      <tr><th scope="row">Baths</th><td>4 full</td><td>2 full, 1 half: +$11,500</td><td>3 full, 1 half: +$4,000</td><td>3 full, 1 half: +$4,000</td><td>2 full, 1 half: +$11,500</td><td>3 full, 1 half: +$4,000</td></tr>
+      <tr><th scope="row">Bedrooms</th><td>5</td><td>4: 0</td><td>3: +$5,000</td><td>5: 0</td><td>5: 0</td><td>5: 0</td></tr>
+      <tr><th scope="row">Year built</th><td>2005</td><td>2003: +$2,000</td><td>2003: +$2,000</td><td>2001: +$4,000</td><td>1991: +$14,000</td><td>2009: &minus;$4,000</td></tr>
+      <tr><th scope="row">Lot</th><td>0.44 acres</td><td>0.51 acres, cul-de-sac: &minus;$5,000</td><td>0.38 acres: +$3,000</td><td>0.46 acres: 0</td><td>0.86 acres: &minus;$20,000</td><td>0.32 acres: +$5,000</td></tr>
+      <tr><th scope="row">Style</th><td>1.25-story, main-floor primary</td><td>Same: 0</td><td>Ranch: &minus;$5,000</td><td>2-story, main-floor primary: 0</td><td>2-story: 0</td><td>2-story, main-floor primary: 0</td></tr>
+      <tr><th scope="row">Extras</th><td>Generator</td><td>Salt-water pool: &minus;$10,000</td><td>Generator: 0</td><td>Hot tub: &minus;$2,000</td><td>Wet bar, 2 fireplaces: &minus;$3,000</td><td>City water vs your well and septic: &minus;$5,000</td></tr>
+      <tr><th scope="row">Recent updates</th><td>Roof, furnace, A/C, septic</td><td>None listed: +$10,000</td><td>Roof 2019, furnace and A/C 2023: 0</td><td>None listed: +$5,000</td><td>None listed: +$5,000</td><td>Built 2009: 0</td></tr>
+      <tr><th scope="row">Location</th><td></td><td>0</td><td>0</td><td>0</td><td>Minges Hills: &minus;$10,000</td><td>0</td></tr>
+      <tr class="total"><th scope="row">Net adjustment</th><td></td><td>+$22,200</td><td>+$5,300</td><td>+$30,600</td><td>&minus;$1,400</td><td>&minus;$39,700</td></tr>
+      <tr class="total"><th scope="row">Adjusted value</th><td></td><td>$482,200</td><td>$455,300</td><td>$445,600</td><td>$498,600</td><td>$455,300</td></tr>
+      <tr><th scope="row">Weight</th><td></td><td>30%</td><td>30%</td><td>15%</td><td>15%</td><td>10%</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p><strong>Weighted value: $468,400.</strong> The two sales from your own plat carry the most weight. Tiffany and Woodhaven count for less because they are outside Fairway Downs.</p>
+  <p class="note">Adjustment rates: $60 per above-grade sq ft, $25 per finished lower-level sq ft, $7,500 per full bath, $3,500 per half bath and $1,000 per year of age. Left out on purpose: 103 Pinehurst Ln is still for sale, 120 Castle Ridge Dr is far larger, and 100 Tiffany Ln sold for cash without being advertised.</p>
+</section>
+
+<section id="competition">
+  <h2>Homes competing for the same buyer</h2>
+  <p class="point">About one home a month sells between $450,000 and $550,000 in the 49015 zip. Four are listed in that range today, including yours.</p>
+  <p>That works out to about four months of supply. The zip's 10-day median time on market comes from homes near $233,000 and does not apply at this price.</p>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Address</th><th>Listed</th><th class="num">Price</th><th class="num">Days on market</th><th>Beds / baths</th><th class="num">Total sq ft</th><th class="num">Built</th></tr></thead>
+    <tbody>
+      <tr><td><a href="https://www.redfin.com/MI/Battle-Creek/103-Pinehurst-Ln-49015/home/96109012">103 Pinehurst Ln</a> (Fairway Downs)</td><td>Oct 14, 2026</td><td class="num">$529,000</td><td class="num">2</td><td>5 / 2.5</td><td class="num">3,784</td><td class="num">2002</td></tr>
+      <tr class="subject"><td>109 Sawgrass Ln (yours)</td><td>Aug 31, 2026</td><td class="num">$495,000</td><td class="num">46</td><td>5 / 4</td><td class="num">3,734</td><td class="num">2005</td></tr>
+      <tr><td><a href="https://www.redfin.com/MI/Battle-Creek/129-Minges-Hills-Dr-49015/home/110538909">129 Minges Hills Dr</a></td><td>Aug 2026</td><td class="num">$534,000</td><td class="num">60</td><td>3 / 2.5</td><td class="num">5,191</td><td class="num">1984</td></tr>
+      <tr><td><a href="https://www.redfin.com/MI/Battle-Creek/3715-Beckley-Rd-49015/home/111006378">3715 Beckley Rd</a></td><td>Aug 13, 2026</td><td class="num">$565,000</td><td class="num">57</td><td>5 / 4</td><td class="num">2,944</td><td class="num">1966</td></tr>
+      <tr><td><a href="https://www.redfin.com/MI/Battle-Creek/275-Jacaranda-Dr-49015/home/96273350">275 Jacaranda Dr</a></td><td>Jul 2026</td><td class="num">$435,500</td><td class="num">92</td><td>5 / 3.5</td><td class="num">3,820</td><td class="num">1998</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>103 Pinehurst Ln is the one buyers will tour alongside yours. It has 2,574 sq ft above grade, about the same as your home, and is asking $529,000. At $474,900 your home is the better value on paper, with more baths and a newer build.</p>
+</section>
+
+<section id="market">
+  <h2>The Battle Creek market</h2>
+  <p class="point">Prices across the zip are still rising, but price per square foot is falling and fewer homes are selling than a year ago.</p>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Three months ending September 2026</th><th class="num">49015 zip</th><th class="num">Battle Creek</th></tr></thead>
+    <tbody>
+      <tr><td>Median sale price</td><td class="num">$232,932 (+5.9%)</td><td class="num">$185,512 (+6.0%)</td></tr>
+      <tr><td>Median price per sq ft</td><td class="num">$130 (&minus;7.1%)</td><td class="num">$114 (&minus;8.4%)</td></tr>
+      <tr><td>Median days on market</td><td class="num">10 (was 15)</td><td class="num">13 (was 14)</td></tr>
+      <tr><td>Homes sold in September</td><td class="num">101 (&minus;13.7%)</td><td class="num">171 (&minus;7.8%)</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <ul>
+    <li>Buyers are paying more in total for larger homes, while paying less per square foot.</li>
+    <li>Sales volume is down from last year, and the upper end of the market feels that first.</li>
+    <li>Showings for homes at this price usually slow from November through February, so the next four to six weeks matter.</li>
+  </ul>
+</section>
+
+<section id="price">
+  <h2>Price recommendation</h2>
+  <p class="point">List at $474,900, about $6,500 above the estimated value of $468,000. A sale between $460,000 and $475,000 is the realistic target.</p>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>List price</th><th>What is likely to happen</th></tr></thead>
+    <tbody>
+      <tr><td class="num">$494,900</td><td>Above four of the five adjusted comparisons. Likely another 30 to 60 days into winter, then a price cut, the path 113 Whisperwood Ln took.</td></tr>
+      <tr><td class="num">$484,900</td><td>Supported only by 111 Tiffany Ln. Buyers will compare it with the two Fairway Downs sales at $450,000 and $460,000, and showings may stay slow.</td></tr>
+      <tr class="recommended"><td class="num">$474,900</td><td>Recommended. Shows up for buyers searching up to $475,000 and $480,000, leaves room to negotiate, and looks like the better buy next to 103 Pinehurst Ln at $529,000.</td></tr>
+      <tr><td class="num">$464,900</td><td>At value. Likely the fastest offer, with less room to negotiate.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Your home has real advantages to lead with. It is the newest home in the comparison, it has four full baths and a main-floor primary suite, and the roof, furnace, A/C and septic have already been replaced. A buyer's inspector looks at those items first.</p>
+</section>
+
+<section id="plan">
+  <h2>The plan to relaunch</h2>
+  <p class="point">We relaunch the home as a fresh listing for families shopping the Lakeview district, with the updates and the main-floor primary suite up front.</p>
+  <ul>
+    <li><strong>New photos and a new lead photo,</strong> taken in daylight before the leaves are gone, with twilight exteriors and drone shots of the lot and 3-car garage.</li>
+    <li><strong>A floor plan and 3D tour,</strong> so buyers can see how 3,734 sq ft lays out over three levels, including buyers relocating from out of town.</li>
+    <li><strong>The updates in the first line of the listing:</strong> new roof, furnace, A/C, septic and whole-house generator.</li>
+    <li><strong>An open house the first weekend,</strong> so buyers touring 103 Pinehurst Ln see both homes.</li>
+    <li><strong>Targeted online ads</strong> to buyers in Battle Creek, Marshall and Kalamazoo in this price range, and a mailer to Fairway Downs and Minges Hills neighbors.</li>
+    <li><strong>A weekly report to you</strong> with showings, feedback and online views, so any later price decision is based on what buyers are doing.</li>
+  </ul>
+
+  <h3>Getting ready, about 10 days</h3>
+  <ol>
+    <li><strong>Days 1 and 2:</strong> gather receipts and dates for the roof, furnace, A/C, septic and generator, plus the septic permit or inspection report. Confirm the bedroom count and square footage for the listing.</li>
+    <li><strong>Days 2 to 5:</strong> touch up paint, replace burnt-out bulbs, service the generator and clean the gutters.</li>
+    <li><strong>Days 3 to 6:</strong> clear counters and closets, and set up the upstairs flex space and lower level with a clear use, such as an office, gym or media room.</li>
+    <li><strong>Days 5 to 7:</strong> mow, edge, fresh mulch and fall planters by the covered porch.</li>
+    <li><strong>Days 7 and 8:</strong> photos, floor plan and 3D tour.</li>
+    <li><strong>Days 9 and 10:</strong> go live on a Thursday at the new price, with an open house that weekend.</li>
+  </ol>
+</section>
+
+<section id="sources">
+  <h2>Sources</h2>
+  <p>All figures come from MLS-based public records on Redfin, pulled October 16, 2026. Final numbers will be confirmed against the MLS.</p>
+  <ul>
+    <li><a href="https://www.redfin.com/MI/Battle-Creek/109-Sawgrass-Ln-49015/home/96315140">109 Sawgrass Ln</a>: listing and sale history, public record, taxes, schools</li>
+    <li><a href="https://www.redfin.com/zipcode/49015/housing-market">49015 housing market</a> and <a href="https://www.redfin.com/city/1573/MI/Battle-Creek/housing-market">Battle Creek housing market</a></li>
+    <li>Comparable sales and active listings are linked in the tables above. Zip-wide counts come from Redfin's sold and active records for single-family homes in 49015, $375,000 to $700,000.</li>
+  </ul>
+</section>
+
+</div>
+</main>
+
+<footer>Prepared for the owners of 109 Sawgrass Ln by Kevin Hershock.</footer>
+
+</body>
+</html>
