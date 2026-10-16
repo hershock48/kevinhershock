@@ -19,7 +19,7 @@
       ]
     },
     {
-      "source": "/109Sawgrass",
+      "source": "/130Turnberry",
       "headers": [
         {
           "key": "Cache-Control",
@@ -41,5 +41,12 @@
       ]
     }
   ],
-  "cleanUrls": true
+  "cleanUrls": true,
+  "redirects": [
+    {
+      "source": "/109Sawgrass",
+      "destination": "/130Turnberry",
+      "permanent": false
+    }
+  ]
 }
