@@ -96,23 +96,23 @@
   }
   .hero h1 {
     margin: 0; font-family: var(--serif); font-weight: 400;
-    font-size: clamp(2.6rem, 8vw, 4.6rem); line-height: 1.02; letter-spacing: -0.015em;
+    font-size: clamp(2.1rem, 9vw, 4.6rem); line-height: 1.02; letter-spacing: -0.015em;
   }
   .hero .where { margin: 12px 0 0; font-family: var(--serif); font-size: clamp(1.15rem, 2.6vw, 1.45rem); color: var(--cream-2); }
   .hero .byline { margin: 22px 0 0; font-size: 0.88rem; color: var(--cream-2); }
   .hero .byline strong { color: var(--cream); font-weight: 500; }
 
   .verdict {
-    display: grid; grid-template-columns: 1.25fr 1fr 1fr; gap: 0;
+    display: grid; grid-template-columns: 1.1fr 1fr 1.35fr; gap: 0;
     margin-top: 44px; border: 1px solid rgba(243,236,221,0.16); border-radius: 14px;
     background: rgba(243,236,221,0.03); backdrop-filter: blur(2px);
   }
   .verdict > div { padding: 22px 24px 20px; }
   .verdict > div + div { border-left: 1px solid rgba(243,236,221,0.12); }
   .verdict span { display: block; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--cream-2); }
-  .verdict strong { display: block; margin-top: 8px; font-family: var(--serif); font-weight: 400; font-size: clamp(1.5rem, 3.4vw, 2.05rem); line-height: 1.15; color: var(--cream); }
+  .verdict strong { display: block; margin-top: 8px; font-family: var(--serif); font-weight: 400; font-size: clamp(1.35rem, 2.5vw, 1.8rem); line-height: 1.15; color: var(--cream); white-space: nowrap; }
   .verdict .lead { background: rgba(184,146,90,0.12); border-radius: 13px 0 0 13px; }
-  .verdict .lead strong { font-size: clamp(2rem, 5vw, 2.9rem); color: #fff; }
+  .verdict .lead strong { font-size: clamp(2rem, 4.4vw, 2.9rem); color: #fff; }
   .verdict small { display: block; margin-top: 6px; font-size: 0.82rem; color: var(--cream-2); }
 
   /* Section nav */
@@ -154,7 +154,7 @@
   .tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin: 24px 0 20px; }
   .tile { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 16px 16px 14px; }
   .tile span { display: block; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
-  .tile strong { display: block; margin-top: 6px; font-family: var(--serif); font-weight: 400; font-size: 1.6rem; line-height: 1.1; }
+  .tile strong { display: block; margin-top: 6px; font-family: var(--serif); font-weight: 400; font-size: clamp(1.3rem, 5.2vw, 1.6rem); line-height: 1.1; white-space: nowrap; }
   .tile small { display: block; margin-top: 4px; font-size: 0.8rem; color: var(--ink-2); }
 
   .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 0 32px; margin: 0; }
@@ -166,14 +166,30 @@
 
   /* Tables */
   .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 0 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+  /* Edge shadows appear only while there is more table to scroll to. */
+  .scroll {
+    background:
+      linear-gradient(to right, var(--paper) 30%, transparent) left / 40px 100% no-repeat local,
+      linear-gradient(to left, var(--paper) 30%, transparent) right / 40px 100% no-repeat local,
+      radial-gradient(farthest-side at 0 50%, rgba(0,0,0,0.16), transparent) left / 14px 100% no-repeat scroll,
+      radial-gradient(farthest-side at 100% 50%, rgba(0,0,0,0.16), transparent) right / 14px 100% no-repeat scroll,
+      var(--paper);
+  }
   table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
   th, td { text-align: left; vertical-align: top; padding: 11px 14px; border-bottom: 1px solid var(--line); }
   tbody tr:last-child td, tbody tr:last-child th { border-bottom: none; }
   thead th { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); background: color-mix(in srgb, var(--paper) 92%, var(--line)); }
   td.num, th.num { text-align: right; white-space: nowrap; }
+  .nw { white-space: nowrap; }
+  .scroll table { min-width: 620px; }
+  .scroll table td:first-child, .scroll table thead th { white-space: nowrap; }
+  .adj { white-space: nowrap; }
   tr.subject td { background: var(--accent-soft); font-weight: 500; }
 
-  table.grid { min-width: 900px; font-size: 0.84rem; }
+  table.grid { min-width: 960px; font-size: 0.84rem; }
+  table.grid th, table.grid td { padding: 10px 10px; }
+  table.grid td { min-width: 112px; }
+  table.grid tbody tr:nth-child(-n+3) td { white-space: nowrap; }
   table.grid th[scope=row] { font-weight: 600; white-space: nowrap; color: var(--ink-2); position: sticky; left: 0; background: var(--paper); z-index: 1; }
   table.grid thead th:first-child { position: sticky; left: 0; z-index: 2; }
   table.grid td:nth-child(2), table.grid thead th:nth-child(2) { background: var(--accent-soft); }
@@ -263,6 +279,11 @@
     .options, .stats { grid-template-columns: repeat(2, 1fr); }
     .facts { grid-template-columns: 1fr; }
   }
+  @media (max-width: 960px) and (min-width: 641px) {
+    .verdict { grid-template-columns: 1fr 1fr; }
+    .verdict .lead { grid-column: 1 / -1; border-radius: 13px 13px 0 0; border-bottom: 1px solid rgba(243,236,221,0.12); }
+    .verdict > div:nth-child(2) { border-left: none; }
+  }
   @media (max-width: 640px) {
     .hero { padding: 44px 0 40px; }
     .verdict { grid-template-columns: 1fr; margin-top: 32px; }
@@ -274,8 +295,11 @@
     section { padding-top: 40px; }
     section + section { margin-top: 32px; }
   }
+  @media (max-width: 480px) {
+    .options { grid-template-columns: 1fr; }
+  }
   @media (max-width: 380px) {
-    .options, .stats { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: 1fr; }
   }
   @media print {
     .nav { display: none; }
@@ -367,7 +391,7 @@
   <div class="wrap">
     <p class="eyebrow">Pricing report · October 16, 2026</p>
     <h1>130 Turnberry Lane</h1>
-    <p class="where">Fairway Downs, Battle Creek, Michigan 49015</p>
+    <p class="where"><span class="nw">Fairway Downs</span> · <span class="nw">Battle Creek, MI 49015</span></p>
     <p class="byline">Prepared by <strong>Kevin Hershock</strong></p>
 
     <div class="verdict" aria-label="Summary">
@@ -410,8 +434,8 @@
 
   <div class="tiles">
     <div class="tile"><span>Built</span><strong>2005</strong><small>Castlewood Builders</small></div>
-    <div class="tile"><span>Beds / baths</span><strong>4 / 2.5</strong><small>Plus an upstairs bonus room</small></div>
-    <div class="tile"><span>Above grade</span><strong>2,439 sq ft</strong><small>County record (MLS: 2,509)</small></div>
+    <div class="tile"><span>Beds / baths</span><strong>4 / 2.5</strong><small>Plus a bonus room</small></div>
+    <div class="tile"><span>Above grade</span><strong>2,439 sq ft</strong><small>MLS says 2,509</small></div>
     <div class="tile"><span>Lot</span><strong>0.44 ac</strong><small>98 ft x 196 ft</small></div>
     <div class="tile"><span>Garage</span><strong>2 car</strong><small>Attached</small></div>
   </div>
@@ -607,13 +631,13 @@
       <tr><th scope="row">List price</th><td></td><td>$450,000</td><td>$489,000</td><td>$432,500</td><td>$450,000</td><td>$450,000</td></tr>
       <tr><th scope="row">Market change</th><td>2% a year</td><td>7 months<span class="adj pos">+$5,300</span></td><td>19 months<span class="adj pos">+$14,600</span></td><td>26 months<span class="adj pos">+$18,300</span></td><td>15 months<span class="adj pos">+$10,400</span></td><td>4.5 months<span class="adj pos">+$3,100</span></td></tr>
       <tr><th scope="row">Above-grade sq ft</th><td>2,439</td><td>2,588<span class="adj neg">&minus;$8,900</span></td><td>2,497<span class="adj neg">&minus;$3,500</span></td><td>2,305<span class="adj pos">+$8,000</span></td><td>2,268<span class="adj pos">+$10,300</span></td><td>2,232<span class="adj pos">+$12,400</span></td></tr>
-      <tr><th scope="row">Finished lower level</th><td>None as of 2014</td><td>1,500 sq ft<span class="adj neg">&minus;$37,500</span></td><td>About 1,212<span class="adj neg">&minus;$30,300</span></td><td>About 1,148<span class="adj neg">&minus;$28,700</span></td><td>About 1,571<span class="adj neg">&minus;$39,300</span></td><td>Walkout, about 1,000<span class="adj neg">&minus;$32,500</span></td></tr>
+      <tr><th scope="row">Finished lower level</th><td>None as of 2014</td><td>1,500 sq ft<span class="adj neg">&minus;$37,500</span></td><td><span class="nw">About 1,212</span><span class="adj neg">&minus;$30,300</span></td><td><span class="nw">About 1,148</span><span class="adj neg">&minus;$28,700</span></td><td><span class="nw">About 1,571</span><span class="adj neg">&minus;$39,300</span></td><td>Walkout, <span class="nw">about 1,000</span><span class="adj neg">&minus;$32,500</span></td></tr>
       <tr><th scope="row">Baths</th><td>2 full, 1 half</td><td>3 full, 1 half<span class="adj neg">&minus;$7,500</span></td><td>2 full, 1 half<span class="adj zero">0</span></td><td>2 full, 1 half<span class="adj zero">0</span></td><td>2 full, 1 half<span class="adj zero">0</span></td><td>3 full, 1 half<span class="adj neg">&minus;$7,500</span></td></tr>
       <tr><th scope="row">Bedrooms</th><td>4, plus bonus room</td><td>3<span class="adj pos">+$5,000</span></td><td>4<span class="adj zero">0</span></td><td>5<span class="adj zero">0</span></td><td>4<span class="adj zero">0</span></td><td>5<span class="adj zero">0</span></td></tr>
       <tr><th scope="row">Year built</th><td>2005</td><td>2003<span class="adj pos">+$2,000</span></td><td>2003<span class="adj pos">+$2,000</span></td><td>2001<span class="adj pos">+$4,000</span></td><td>2001<span class="adj pos">+$4,000</span></td><td>2001<span class="adj pos">+$4,000</span></td></tr>
       <tr><th scope="row">Garage</th><td>2 car</td><td>3 car<span class="adj neg">&minus;$7,500</span></td><td>3 car<span class="adj neg">&minus;$7,500</span></td><td>2 car<span class="adj zero">0</span></td><td>3 car<span class="adj neg">&minus;$7,500</span></td><td>3 car<span class="adj neg">&minus;$7,500</span></td></tr>
-      <tr><th scope="row">Lot</th><td>0.44 acres</td><td>0.38 acres<span class="adj pos">+$3,000</span></td><td>0.51 acres, cul-de-sac<span class="adj neg">&minus;$5,000</span></td><td>0.43 acres<span class="adj zero">0</span></td><td>0.41 acres<span class="adj zero">0</span></td><td>0.46 acres<span class="adj zero">0</span></td></tr>
-      <tr><th scope="row">Style</th><td>1.5-story, main-floor primary</td><td>Ranch<span class="adj neg">&minus;$5,000</span></td><td>Main-floor primary<span class="adj zero">0</span></td><td>Not listed<span class="adj zero">0</span></td><td>Main-floor primary<span class="adj zero">0</span></td><td>Main-floor primary<span class="adj zero">0</span></td></tr>
+      <tr><th scope="row">Lot</th><td>0.44 acres</td><td>0.38 acres<span class="adj pos">+$3,000</span></td><td>0.51 acres, cul&#8209;de&#8209;sac<span class="adj neg">&minus;$5,000</span></td><td>0.43 acres<span class="adj zero">0</span></td><td>0.41 acres<span class="adj zero">0</span></td><td>0.46 acres<span class="adj zero">0</span></td></tr>
+      <tr><th scope="row">Style</th><td>1.5&#8209;story, main&#8209;floor primary</td><td>Ranch<span class="adj neg">&minus;$5,000</span></td><td>Main&#8209;floor primary<span class="adj zero">0</span></td><td>Not listed<span class="adj zero">0</span></td><td>Main&#8209;floor primary<span class="adj zero">0</span></td><td>Main&#8209;floor primary<span class="adj zero">0</span></td></tr>
       <tr><th scope="row">Extras</th><td></td><td>Generator, counted below<span class="adj zero">0</span></td><td>Salt-water pool<span class="adj neg">&minus;$10,000</span></td><td>None listed<span class="adj zero">0</span></td><td>None listed<span class="adj zero">0</span></td><td>Hot tub<span class="adj neg">&minus;$2,000</span></td></tr>
       <tr><th scope="row">Updates</th><td>To confirm</td><td>Roof 2019, furnace and A/C 2023, kitchen 2018, generator 2025<span class="adj neg">&minus;$15,000</span></td><td>None listed<span class="adj zero">0</span></td><td>None listed<span class="adj zero">0</span></td><td>Fresh paint, flooring, lighting<span class="adj neg">&minus;$5,000</span></td><td>None listed<span class="adj zero">0</span></td></tr>
       <tr class="total"><th scope="row">Net adjustment</th><td></td><td><span class="adj neg">&minus;$66,100</span></td><td><span class="adj neg">&minus;$39,700</span></td><td><span class="adj pos">+$1,600</span></td><td><span class="adj neg">&minus;$27,100</span></td><td><span class="adj neg">&minus;$30,000</span></td></tr>
@@ -772,10 +796,10 @@
   <h2>Your list price depends on what the walk-through finds</h2>
   <p class="point">Based on the public record, list at $414,900. If the lower level has been finished or the major systems replaced, the price moves up.</p>
   <div class="options">
-    <div class="option rec"><span class="tag">As last recorded</span><strong>$414,900</strong><p class="meta">Value about $402,000 · expect $395,000 to $410,000</p><p>Lower level unfinished, original roof and furnace.</p></div>
-    <div class="option"><span class="tag">Systems replaced</span><strong>$419,900</strong><p class="meta">Value about $407,000 · expect $400,000 to $415,000</p><p>Lower level unfinished, newer roof, furnace and air conditioning.</p></div>
-    <div class="option"><span class="tag">Lower level finished</span><strong>$444,900</strong><p class="meta">Value about $432,000 · expect $425,000 to $440,000</p><p>About 1,200 sq ft of finished space downstairs.</p></div>
-    <div class="option"><span class="tag">Finished, plus a bath</span><strong>$449,900</strong><p class="meta">Value about $440,000 · expect $425,000 to $445,000</p><p>Finished lower level with a third full bath.</p></div>
+    <div class="option rec"><span class="tag">As last recorded</span><strong>$414,900</strong><p class="meta"><span class="nw">Value about $402,000</span><br><span class="nw">Expect $395,000 to $410,000</span></p><p>Lower level unfinished, original roof and furnace.</p></div>
+    <div class="option"><span class="tag">Systems replaced</span><strong>$419,900</strong><p class="meta"><span class="nw">Value about $407,000</span><br><span class="nw">Expect $400,000 to $415,000</span></p><p>Lower level unfinished, newer roof, furnace and air conditioning.</p></div>
+    <div class="option"><span class="tag">Lower level finished</span><strong>$444,900</strong><p class="meta"><span class="nw">Value about $432,000</span><br><span class="nw">Expect $425,000 to $440,000</span></p><p>About 1,200 sq ft of finished space downstairs.</p></div>
+    <div class="option"><span class="tag">Finished, plus a bath</span><strong>$449,900</strong><p class="meta"><span class="nw">Value about $440,000</span><br><span class="nw">Expect $425,000 to $445,000</span></p><p>Finished lower level with a third full bath.</p></div>
   </div>
   <p>Fairway Downs homes have sold for about 95% of their list price on average. Three homes listed at $450,000 in the last 18 months: 116 Pinehurst and 116 St Andrews each sold for $415,000, and 191 Turnberry got its full $450,000 with a finished basement and recent updates. Listing a few percent above value leaves room to negotiate without sitting through the winter.</p>
   <p>Your home's strengths to lead with: it is one of the newest homes in Fairway Downs, the primary suite is on the main floor, and the hearth room with its two-way fireplace is a feature buyers remember.</p>

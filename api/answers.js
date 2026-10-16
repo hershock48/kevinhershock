@@ -40,7 +40,7 @@ module.exports = async (req, res) => {
   // A filled honeypot is a bot; answer as if it worked so it does not retry.
   if (clip(body.website, 200)) return res.status(200).json({ ok: true });
 
-  const address = PAGES[body.page];
+  const address = Object.prototype.hasOwnProperty.call(PAGES, body.page) ? PAGES[body.page] : null;
   if (!address) return res.status(400).json({ ok: false });
 
   const key = (process.env.RESEND_API_KEY || "").trim();
