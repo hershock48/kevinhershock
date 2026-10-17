@@ -942,8 +942,9 @@
 
   function send() {
     var a = paint();
-    var answered = QUESTIONS.filter(function (q) { return a.picks[q]; }).length;
-    if (answered <= 2 && !a.note) { status("Answer a question or two first, or leave me a note."); return; }
+    var DEFAULTS = { lower: "About 1,200 sq ft", bath: "Roughed in only" };
+    var changed = Object.keys(a.picks).some(function (q) { return a.picks[q] !== DEFAULTS[q]; });
+    if (!changed && !a.note) { status("Answer a question first, or leave me a note."); return; }
     var buttons = document.querySelectorAll("[data-send]");
     buttons.forEach(function (b) { b.disabled = true; });
     status("Sending…");
