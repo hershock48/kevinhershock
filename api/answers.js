@@ -10,13 +10,13 @@
 
 const PAGES = { "130Turnberry": "130 Turnberry Ln" };
 const LABELS = {
-  lower: "Lower level",
-  bath: "Bathroom added",
-  roof: "Roof",
-  hvac: "Furnace and A/C",
-  heater: "Water heater",
+  lower: "Finished lower level",
+  bath: "Lower-level bathroom",
+  permit: "Permits for basement and garage",
+  roof: "Roof year",
+  hvac: "Furnace and A/C year",
   interior: "Kitchen and bath updates",
-  extras: "Added outside or for comfort",
+  extras: "Anything else added",
   issues: "Inspection concerns",
   timing: "Timing",
 };
