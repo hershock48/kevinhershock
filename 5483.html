@@ -1,0 +1,926 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>5483 Old Franklin Rd Pricing Report</title>
+<meta name="description" content="Comparable sales, a recommended list price and a home questionnaire for 5483 Old Franklin Rd, Grand Blanc, MI 48439.">
+
+<!-- A pricing report and questionnaire for one seller, behind a password
+     (middleware.js), so it stays out of search results. Sales figures come
+     from public listing records pulled 2026-11-20; the home's details come
+     from the Genesee County tax record until the sellers confirm them. -->
+<meta name="robots" content="noindex, nofollow">
+
+<!-- The report's tab icon: a cream house with a brass door on the hero's
+     navy, full bleed so no tab or bookmark bar shows a frame around it. The
+     shapes are solid and at least two pixels wide at 16x16. -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23142133'/%3E%3Cpath d='M16 4 30 16.5h-4V28H6V16.5H2z' fill='%23f3ecdd'/%3E%3Crect x='13.5' y='19.5' width='5' height='8.5' fill='%23b8925a'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#142133">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg: #f4f1ea;
+    --paper: #fffdf9;
+    --ink: #17202c;
+    --ink-2: #4f5866;
+    --ink-3: #656b76;
+    --line: #e4dfd4;
+    --line-2: #d6d0c3;
+    --navy: #142133;
+    --navy-2: #1c2d44;
+    --cream: #f3ecdd;
+    --cream-2: #b8ad98;
+    --brass: #b8925a;
+    --brass-text: #866532;
+    --accent: #2b67b0;
+    --accent-soft: rgba(43,103,176,0.09);
+    --pos: #2a6e46;
+    --neg: #a8463c;
+    --dot: #b5b1a6;
+    --ref: #7a808b;
+    --serif: "Newsreader", Georgia, "Times New Roman", serif;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117;
+      --paper: #151b24;
+      --ink: #ebe6db;
+      --ink-2: #a9a499;
+      --ink-3: #948f85;
+      --brass-text: #b8925a;
+      --line: #252c38;
+      --line-2: #313947;
+      --navy: #0a0e14;
+      --navy-2: #121a26;
+      --accent: #6ea5e8;
+      --accent-soft: rgba(110,165,232,0.11);
+      --pos: #6cc08f;
+      --neg: #e3887e;
+      --dot: #59606d;
+      --ref: #8b919b;
+      color-scheme: dark;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; scroll-padding-top: 64px; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 400 16px/1.65 var(--sans);
+    -webkit-font-smoothing: antialiased; font-feature-settings: "tnum" 1, "cv11" 1;
+  }
+  a { color: var(--accent); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+
+  /* Hero */
+  .hero {
+    background:
+      radial-gradient(90% 120% at 85% 0%, rgba(184,146,90,0.16) 0%, rgba(184,146,90,0) 55%),
+      linear-gradient(180deg, var(--navy) 0%, var(--navy-2) 100%);
+    color: var(--cream);
+    padding: 64px 0 56px;
+    position: relative; overflow: hidden;
+  }
+  .hero::after {
+    content: ""; position: absolute; inset: auto 0 0 0; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(184,146,90,0.6), transparent);
+  }
+  .eyebrow {
+    margin: 0 0 18px; font-size: 0.74rem; font-weight: 600; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--brass);
+  }
+  .hero h1 {
+    margin: 0; font-family: var(--serif); font-weight: 400;
+    font-size: clamp(2.1rem, 9vw, 4.6rem); line-height: 1.02; letter-spacing: -0.015em;
+  }
+  .hero .where { margin: 12px 0 0; font-family: var(--serif); font-size: clamp(1.15rem, 2.6vw, 1.45rem); color: var(--cream-2); }
+  .hero .byline { margin: 22px 0 0; font-size: 0.88rem; color: var(--cream-2); }
+  .hero .byline strong { color: var(--cream); font-weight: 500; }
+
+  .verdict {
+    display: grid; grid-template-columns: 1.1fr 1fr 1.35fr; gap: 0;
+    margin-top: 44px; border: 1px solid rgba(243,236,221,0.16); border-radius: 14px;
+    background: rgba(243,236,221,0.03); backdrop-filter: blur(2px);
+  }
+  .verdict > div { padding: 22px 24px 20px; }
+  .verdict > div + div { border-left: 1px solid rgba(243,236,221,0.12); }
+  .verdict span { display: block; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--cream-2); }
+  .verdict strong { display: block; margin-top: 8px; font-family: var(--serif); font-weight: 400; font-size: clamp(1.35rem, 2.5vw, 1.8rem); line-height: 1.15; color: var(--cream); white-space: nowrap; }
+  .verdict .lead { background: rgba(184,146,90,0.12); border-radius: 13px 0 0 13px; }
+  .verdict .lead strong { font-size: clamp(2rem, 4.4vw, 2.9rem); color: #fff; }
+  .verdict small { display: block; margin-top: 6px; font-size: 0.82rem; color: var(--cream-2); }
+
+  /* Section nav */
+  .nav {
+    position: sticky; top: 0; z-index: 10;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: saturate(1.2) blur(10px); -webkit-backdrop-filter: saturate(1.2) blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav ol {
+    list-style: none; margin: 0 auto; padding: 0 16px; max-width: 1040px;
+    display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none;
+  }
+  .nav ol::-webkit-scrollbar { display: none; }
+  .nav a {
+    display: block; padding: 14px 12px; white-space: nowrap; text-decoration: none;
+    font-size: 0.86rem; font-weight: 500; color: var(--ink-2);
+    border-bottom: 2px solid transparent;
+  }
+  .nav a:hover, .nav a:focus-visible { color: var(--ink); border-bottom-color: var(--brass); outline: none; }
+
+  /* Sections */
+  main { padding: 12px 0 80px; }
+  section { padding: 56px 0 8px; }
+  section + section { border-top: 1px solid var(--line); margin-top: 48px; }
+  .kicker { display: flex; align-items: baseline; gap: 12px; margin: 0 0 10px; font-size: 0.74rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--brass-text); }
+  .kicker b { font-family: var(--serif); font-weight: 400; font-size: 1rem; letter-spacing: 0; color: var(--ink-3); }
+  h2 { margin: 0 0 16px; font-family: var(--serif); font-weight: 400; font-size: clamp(1.8rem, 4.4vw, 2.5rem); line-height: 1.12; letter-spacing: -0.01em; max-width: 26ch; }
+  h3 { margin: 32px 0 12px; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-2); }
+  p { margin: 0 0 16px; max-width: 68ch; }
+  p.point { font-size: 1.12rem; color: var(--ink); }
+  .note { color: var(--ink-2); font-size: 0.88rem; }
+  ul, ol { margin: 0 0 16px; padding-left: 22px; }
+  li { margin: 7px 0; max-width: 66ch; }
+
+  .card { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 24px clamp(16px, 3vw, 28px); }
+
+  /* Fact tiles */
+  .tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin: 24px 0 20px; }
+  .tile { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 16px 16px 14px; }
+  .tile span { display: block; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+  .tile strong { display: block; margin-top: 6px; font-family: var(--serif); font-weight: 400; font-size: clamp(1.3rem, 5.2vw, 1.6rem); line-height: 1.1; white-space: nowrap; }
+  .tile small { display: block; margin-top: 4px; font-size: 0.8rem; color: var(--ink-2); }
+
+  .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 0 32px; margin: 0; }
+  .facts div { display: grid; grid-template-columns: 9.5em 1fr; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .facts dt { font-size: 0.82rem; font-weight: 600; color: var(--ink-2); }
+  .facts dd { margin: 0; font-size: 0.93rem; }
+
+  .callout { border-left: 3px solid var(--brass); background: var(--paper); border-radius: 0 10px 10px 0; padding: 14px 18px; margin: 20px 0; font-size: 0.93rem; color: var(--ink-2); max-width: 72ch; }
+
+  /* Tables */
+  .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 0 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+  /* Edge shadows appear only while there is more table to scroll to. */
+  .scroll {
+    background:
+      linear-gradient(to right, var(--paper) 30%, transparent) left / 40px 100% no-repeat local,
+      linear-gradient(to left, var(--paper) 30%, transparent) right / 40px 100% no-repeat local,
+      radial-gradient(farthest-side at 0 50%, rgba(0,0,0,0.16), transparent) left / 14px 100% no-repeat scroll,
+      radial-gradient(farthest-side at 100% 50%, rgba(0,0,0,0.16), transparent) right / 14px 100% no-repeat scroll,
+      var(--paper);
+  }
+  table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+  th, td { text-align: left; vertical-align: top; padding: 11px 14px; border-bottom: 1px solid var(--line); }
+  tbody tr:last-child td, tbody tr:last-child th { border-bottom: none; }
+  thead th { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); background: color-mix(in srgb, var(--paper) 92%, var(--line)); }
+  td.num, th.num { text-align: right; white-space: nowrap; }
+  .nw { white-space: nowrap; }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .scroll:focus-visible, .chart-scroll:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 2px; }
+  .scroll table { min-width: 620px; }
+  .scroll table td:first-child, .scroll table thead th { white-space: nowrap; }
+  .adj { white-space: nowrap; }
+  tr.subject td { background: var(--accent-soft); font-weight: 500; }
+
+  table.grid { min-width: 1120px; font-size: 0.84rem; }
+  table.grid th, table.grid td { padding: 10px 10px; }
+  table.grid td { min-width: 112px; }
+  table.grid tbody tr:nth-child(-n+3) td { white-space: nowrap; }
+  table.grid th[scope=row] { font-weight: 600; white-space: nowrap; color: var(--ink-2); position: sticky; left: 0; background: var(--paper); z-index: 1; }
+  table.grid thead th:first-child { position: sticky; left: 0; z-index: 2; }
+  table.grid td:nth-child(2), table.grid thead th:nth-child(2) { background: var(--accent-soft); }
+  table.grid thead th { text-transform: none; letter-spacing: 0; font-size: 0.84rem; color: var(--ink); }
+  table.grid thead th a { font-weight: 600; }
+  table.grid .n { display: block; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+  .adj { display: block; font-weight: 600; white-space: nowrap; }
+  .adj.pos { color: var(--pos); }
+  .adj.neg { color: var(--neg); }
+  .adj.zero { color: var(--ink-3); font-weight: 500; }
+  tr.total th, tr.total td { border-top: 2px solid var(--line-2); font-weight: 700; }
+  tr.final td { font-family: var(--serif); font-size: 1.15rem; font-weight: 500; }
+  tr.final th { vertical-align: middle; }
+
+  /* Charts */
+  figure { margin: 8px 0 24px; }
+  figure.card { padding: 20px clamp(12px, 2.5vw, 24px) 16px; }
+  figure svg { display: block; width: 100%; height: auto; }
+  .chart-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .swipe { display: none; }
+  @media (max-width: 640px) { .chart-scroll svg { min-width: 640px; } .swipe { display: block; margin: 0 0 6px; font-size: 0.75rem; color: var(--ink-3); } }
+  figcaption { color: var(--ink-3); font-size: 0.8rem; margin-top: 8px; }
+  .c-title { fill: var(--ink); font: 500 17px var(--serif); }
+  .c-sub, .c-axis { fill: var(--ink-2); font: 400 12px var(--sans); }
+  .c-val { fill: var(--ink); font: 600 12px var(--sans); }
+  .c-row { fill: var(--ink); font: 600 13px var(--sans); }
+  .c-rowsub { fill: var(--ink-3); font: 400 11px var(--sans); }
+  .c-grid { stroke: var(--line); }
+  .c-ref { stroke: var(--ref); stroke-width: 1.5; }
+  .c-acc { stroke: var(--accent); stroke-width: 2; }
+  .c-acc-t { fill: var(--accent); font: 600 12px var(--sans); }
+
+  /* Weighted value strip */
+  .weighted { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin: 4px 0 18px; }
+  .weighted strong { font-family: var(--serif); font-weight: 400; font-size: 2.2rem; color: var(--accent); }
+  .weighted span { color: var(--ink-2); font-size: 0.93rem; max-width: 52ch; }
+
+  /* Market stats */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 22px 0 22px; }
+  .stat { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .stat span { display: block; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+  .stat strong { display: block; margin-top: 6px; font-family: var(--serif); font-weight: 400; font-size: 1.7rem; line-height: 1.1; }
+  .stat em { display: inline-block; margin-top: 6px; font-style: normal; font-size: 0.8rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+  .stat em.up { color: var(--pos); background: color-mix(in srgb, var(--pos) 12%, transparent); }
+  .stat em.down { color: var(--neg); background: color-mix(in srgb, var(--neg) 12%, transparent); }
+  .stat em.flat { color: var(--ink-2); background: color-mix(in srgb, var(--ink-3) 14%, transparent); }
+  .stat small { display: block; margin-top: 6px; font-size: 0.78rem; color: var(--ink-3); }
+
+  /* Price scenarios */
+  .options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 24px 0 20px; }
+  .option { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 18px 18px 16px; display: flex; flex-direction: column; }
+  .option .tag { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); min-height: 1.2em; }
+  .option strong { display: block; margin: 6px 0 10px; font-family: var(--serif); font-weight: 400; font-size: 1.85rem; line-height: 1; }
+  .option p { margin: 0; font-size: 0.86rem; color: var(--ink-2); }
+  .option p.meta { margin: 0 0 8px; font-size: 0.8rem; font-weight: 600; color: var(--ink); }
+  .option.rec { border: 2px solid var(--accent); background: linear-gradient(180deg, var(--accent-soft), transparent 70%), var(--paper); position: relative; }
+  .option.rec .tag { color: var(--accent); }
+  .option.rec strong { color: var(--accent); }
+
+  /* Plan */
+  .plan { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin: 22px 0 8px; padding: 0; list-style: none; }
+  .plan li { margin: 0; max-width: none; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; font-size: 0.92rem; color: var(--ink-2); }
+  .plan li b { display: block; margin-bottom: 4px; color: var(--ink); font-weight: 600; }
+
+  .timeline { list-style: none; margin: 18px 0 0; padding: 0; counter-reset: step; }
+  .timeline li { position: relative; margin: 0; padding: 0 0 22px 52px; max-width: 70ch; }
+  .timeline li::before {
+    counter-increment: step; content: counter(step);
+    position: absolute; left: 0; top: 0; width: 32px; height: 32px; border-radius: 50%;
+    display: grid; place-items: center; font-size: 0.82rem; font-weight: 600;
+    color: var(--paper); background: var(--ink);
+  }
+  .timeline li::after { content: ""; position: absolute; left: 15.5px; top: 34px; bottom: 2px; width: 1px; background: var(--line-2); }
+  .timeline li:last-child::after { display: none; }
+  .timeline li:last-child::before { background: var(--accent); }
+  .timeline .when { display: block; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); padding-top: 5px; }
+  .timeline .what { display: block; margin-top: 2px; font-size: 0.94rem; }
+
+  .sources { font-size: 0.88rem; color: var(--ink-2); }
+  .sources li { max-width: 80ch; }
+
+  footer { border-top: 1px solid var(--line); padding: 28px 16px 40px; text-align: center; font-size: 0.84rem; color: var(--ink-3); }
+  footer strong { color: var(--ink-2); font-weight: 600; }
+
+  @media (max-width: 860px) {
+    .tiles { grid-template-columns: repeat(3, 1fr); }
+    .options, .stats { grid-template-columns: repeat(2, 1fr); }
+    .facts { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 960px) and (min-width: 641px) {
+    .verdict { grid-template-columns: 1fr 1fr; }
+    .verdict .lead { grid-column: 1 / -1; border-radius: 13px 13px 0 0; border-bottom: 1px solid rgba(243,236,221,0.12); }
+    .verdict > div:nth-child(2) { border-left: none; }
+  }
+  @media (max-width: 640px) {
+    .hero { padding: 44px 0 40px; }
+    .verdict { grid-template-columns: 1fr; margin-top: 32px; }
+    .verdict > div + div { border-left: none; border-top: 1px solid rgba(243,236,221,0.12); }
+    .verdict .lead { border-radius: 13px 13px 0 0; }
+    .tiles { grid-template-columns: repeat(2, 1fr); }
+    .plan { grid-template-columns: 1fr; }
+    .facts div { grid-template-columns: 1fr; gap: 2px; }
+    section { padding-top: 40px; }
+    section + section { margin-top: 32px; }
+  }
+  @media (max-width: 480px) {
+    .options { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 380px) {
+    .stats { grid-template-columns: 1fr; }
+  }
+  @media print {
+    .nav { display: none; }
+    body { background: #fff; }
+    .hero { background: #fff; color: #000; padding: 0 0 16px; }
+    .hero h1, .verdict strong, .verdict .lead strong { color: #000; }
+    .hero .where, .hero .byline, .verdict span, .verdict small { color: #444; }
+    .verdict, .verdict > div + div { border-color: #bbb; }
+    .verdict .lead { background: #f3f3f3; }
+    section { break-inside: avoid-page; padding-top: 24px; }
+    table.grid { min-width: 0; font-size: 0.7rem; }
+    .scroll { overflow: visible; }
+  }
+  /* Questionnaire */
+  .qgrid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; margin-top: 24px; }
+  .questions { display: grid; gap: 14px; }
+  .q { margin: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); padding: 18px 18px 14px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .q legend { float: left; width: 100%; padding: 0; margin: 0 0 4px; font-weight: 600; font-size: 1rem; }
+  .q .hint { width: 100%; margin: 0 0 6px; font-size: 0.84rem; color: var(--ink-2); }
+  .q label { position: relative; cursor: pointer; }
+  .q input[type=radio], .q input[type=checkbox] { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .q label > span {
+    display: block; min-height: 44px; padding: 10px 14px; border: 1px solid var(--line-2); border-radius: 10px;
+    font-size: 0.9rem; font-weight: 500; line-height: 1.3; color: var(--ink); background: var(--bg);
+    transition: border-color .15s, background-color .15s, box-shadow .15s;
+  }
+  .q label > span small { display: block; margin-top: 2px; font-size: 0.76rem; font-weight: 400; color: var(--ink-3); }
+  .q label:hover > span { border-color: var(--accent); }
+  .q input:focus-visible + span { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
+  .q input:checked + span { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+  .q input:checked + span small { color: var(--ink-2); }
+  .q.contact { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .q.contact legend { grid-column: 1 / -1; }
+  .field span { display: block; margin-bottom: 4px; font-size: 0.8rem; font-weight: 600; color: var(--ink-2); }
+  .field input, .field textarea {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--bg);
+    color: var(--ink); font: inherit; font-size: 0.95rem;
+  }
+  .field input:focus, .field textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+  .field.wide { grid-column: 1 / -1; }
+  .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+
+  .estimate {
+    position: sticky; top: 64px; border-radius: 16px; padding: 22px 22px 20px; color: var(--cream);
+    background: radial-gradient(120% 90% at 100% 0%, rgba(184,146,90,0.18) 0%, rgba(184,146,90,0) 60%), linear-gradient(180deg, var(--navy) 0%, var(--navy-2) 100%);
+    box-shadow: 0 20px 50px rgba(10,14,20,0.18);
+  }
+  .e-label { margin: 0; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass); }
+  .e-value { margin: 8px 0 0; font-family: var(--serif); font-size: 2.3rem; line-height: 1.05; color: #fff; }
+  .e-sub { margin: 4px 0 16px; font-size: 0.82rem; color: var(--cream-2); }
+  .e-row { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid rgba(243,236,221,0.12); font-size: 0.86rem; color: var(--cream-2); }
+  .e-row strong { color: var(--cream); font-weight: 600; text-align: right; }
+  .e-row.small { font-size: 0.8rem; }
+  .e-progress { margin: 12px 0 14px; font-size: 0.8rem; color: var(--cream-2); }
+  .send {
+    width: 100%; min-height: 48px; border: 0; border-radius: 999px; cursor: pointer;
+    background: var(--cream); color: var(--navy); font: 600 0.95rem var(--sans);
+    transition: transform .15s, background-color .15s;
+  }
+  .send:hover { background: #fff; }
+  .send:active { transform: translateY(1px); }
+  .send:disabled { opacity: 0.6; cursor: default; }
+  .e-status { min-height: 1.2em; margin: 10px 0 0; font-size: 0.84rem; color: var(--cream); }
+  .mailto { display: inline-block; margin-top: 4px; font-size: 0.84rem; color: #a9cdf5; }
+
+  @media (max-width: 860px) {
+    .qgrid { grid-template-columns: 1fr; }
+    .estimate { position: sticky; top: 52px; z-index: 5; order: -1; padding: 14px 16px; }
+    .estimate .e-sub, .estimate .e-row.small, .estimate .e-progress { display: none; }
+    .e-value { font-size: 1.7rem; }
+    .estimate .e-row { padding: 6px 0; }
+    .send, .e-status, .mailto { display: none; }
+    .q.contact { grid-template-columns: 1fr; }
+  }
+  .mobile-send { display: none; }
+  @media (max-width: 860px) {
+    .mobile-send { display: block; margin-top: 4px; }
+    .mobile-send .send, .mobile-send .e-status, .mobile-send .mailto { display: block; }
+    .mobile-send .send { background: var(--navy); color: var(--cream); }
+    .mobile-send .e-status { color: var(--ink); }
+    .mobile-send .mailto { color: var(--accent); }
+  }
+  @media print { .qgrid .send, .mobile-send { display: none; } .estimate { position: static; } }
+</style>
+<style>
+  /* Extras for this report on top of the shared report styles */
+  .q.text { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .q.text legend { grid-column: 1 / -1; }
+  .q.text .hint { grid-column: 1 / -1; }
+  @media (max-width: 640px) { .q.text { grid-template-columns: 1fr; } }
+  .qhead { margin: 34px 0 6px; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-2); }
+  .qhead:first-child { margin-top: 0; }
+  .ghost { width: 100%; min-height: 44px; margin-top: 10px; border: 1px solid rgba(243,236,221,0.35); border-radius: 999px; background: transparent; color: var(--cream); font: 600 0.88rem var(--sans); cursor: pointer; }
+  .ghost:hover { border-color: var(--cream); }
+  .mobile-send .ghost { color: var(--ink); border-color: var(--line-2); }
+  @media (max-width: 860px) { .estimate .ghost { display: none; } }
+  .tag-est { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--brass-text); background: color-mix(in srgb, var(--brass) 14%, transparent); vertical-align: middle; }
+  .q label.field { cursor: auto; }
+  .q label.field > span { display: block; min-height: 0; margin: 0 0 4px; padding: 0; border: 0; background: none; box-shadow: none; font-size: 0.8rem; font-weight: 600; color: var(--ink-2); }
+  .q label.field:hover > span { border: 0; }
+  .mailto[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Pricing report and home questionnaire · November 20, 2026</p>
+    <h1>5483 Old Franklin Road</h1>
+    <p class="where"><span class="nw">Williamsburg Farms</span> · <span class="nw">Grand Blanc Township, MI 48439</span></p>
+    <p class="byline">Prepared for Cameron and Elizabeth Carr by <strong>Kevin Hershock</strong></p>
+
+    <div class="verdict" aria-label="Summary">
+      <div class="lead"><span>Starting list price</span><strong>$284,900</strong><small>Before your answers below</small></div>
+      <div><span>Market value</span><strong>$275,000 to $300,000</strong><small>Depends on updates and condition</small></div>
+      <div><span>Expected sale</span><strong>$278,000 to $288,000</strong><small>If the home is in average shape</small></div>
+    </div>
+  </div>
+</header>
+
+<nav class="nav" aria-label="Sections">
+  <ol>
+    <li><a href="#summary">Summary</a></li>
+    <li><a href="#home">Your home</a></li>
+    <li><a href="#cma">Comparable sales</a></li>
+    <li><a href="#market">Market</a></li>
+    <li><a href="#answers">Your answers</a></li>
+    <li><a href="#price">Price</a></li>
+    <li><a href="#next">Next steps</a></li>
+  </ol>
+</nav>
+
+<main>
+<div class="wrap">
+
+<section id="summary">
+  <p class="kicker"><b>01</b> Summary</p>
+  <h2>Your street sold four times in the past year, and the price came down to condition</h2>
+  <p class="point">Four Williamsburg Farms colonials on Old Franklin Road sold between $284,900 and $305,000 in the past 12 months. The one closest to yours in size, 5522 Old Franklin at 1,740 sq ft, sold for $284,900. The fully renovated one, 5409 Old Franklin, sold for $305,000, $20,000 over its asking price.</p>
+  <p>Your home has the same 1,740 sq ft above grade as 5522, on a slightly larger 0.32-acre lot. So the question that sets your price is how your updates compare with theirs: roof, furnace, kitchen, baths, floors and basement.</p>
+  <p>I start at <strong>$284,900</strong>. Your answers in section 05 move that number up or down, and they also give me what I need to finish the MLS listing and the paperwork.</p>
+</section>
+
+<section id="home">
+  <p class="kicker"><b>02</b> Your home</p>
+  <h2>A 1974 colonial in Williamsburg Farms, on one of the larger lots on the street</h2>
+
+  <div class="tiles">
+    <div class="tile"><span>Built</span><strong>1974</strong><small>County tax record</small></div>
+    <div class="tile"><span>Above grade</span><strong>1,740 sq ft</strong><small>County tax record</small></div>
+    <div class="tile"><span>Lot</span><strong>0.32 acre</strong><small>13,939 sq ft</small></div>
+    <div class="tile"><span>Beds / baths</span><strong>3 / 2.5<span class="tag-est">to confirm</span></strong><small>Online records, not yet verified</small></div>
+    <div class="tile"><span>Fireplace</span><strong>1</strong><small>County tax record</small></div>
+  </div>
+
+  <dl class="facts">
+    <div><dt>Legal</dt><dd>Lot 413, Williamsburg Farms No. 11, Grand Blanc Township</dd></div>
+    <div><dt>Parcel</dt><dd>12-02-504-035</dd></div>
+    <div><dt>Assessment</dt><dd>State equalized value $123,300 and taxable value $86,387, per the tax record</dd></div>
+    <div><dt>Taxes</dt><dd>Michigan resets a home's taxable value the year after it sells, so a buyer's taxes will be higher than yours. I will show buyers the estimate.</dd></div>
+    <div><dt>Schools</dt><dd>Grand Blanc Community Schools</dd></div>
+    <div><dt>Status</dt><dd>Vacant, so showings can be easy and same-day</dd></div>
+  </dl>
+
+  <p class="callout">The county record is all I have on the inside of the house right now. Section 05 asks about what only you know, such as updates, the basement, outbuildings and anything special, so the listing is accurate the day it goes live.</p>
+</section>
+
+<section id="cma">
+  <p class="kicker"><b>03</b> Comparable sales</p>
+  <h2>Five homes on Old Franklin Road tell us where your price lands</h2>
+  <p class="point">All are colonials in Williamsburg Farms built from 1974 to 1978. Price per square foot ran from $134 for the largest home to $190 for the smallest, which is normal: bigger homes sell for less per foot.</p>
+
+  <div class="scroll" tabindex="0" role="region" aria-label="Comparable sales">
+    <table>
+      <thead><tr><th>Address</th><th>Status</th><th class="num">Price</th><th class="num">Sq ft</th><th class="num">$ / sq ft</th><th>Beds / baths</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr class="subject"><td>5483 Old Franklin (yours)</td><td>Pre-listing</td><td class="num">$284,900</td><td class="num">1,740</td><td class="num">$164</td><td>3 / 2.5 (to confirm)</td><td>1974, 0.32 acre</td></tr>
+        <tr><td>5522 Old Franklin</td><td>Sold Apr 2026</td><td class="num">$284,900</td><td class="num">1,740</td><td class="num">$164</td><td>3 / 1.5</td><td>1978. New vinyl plank floors, roof 2022, well 2023, fenced yard, deck</td></tr>
+        <tr><td>5409 Old Franklin</td><td>Sold Jun 2026</td><td class="num">$305,000</td><td class="num">1,752</td><td class="num">$174</td><td>3 / 1.5</td><td>1978. Renovated top to bottom. Listed at $285,000 and sold $20,000 over</td></tr>
+        <tr><td>5506 Old Franklin</td><td>Sold Jun 2026</td><td class="num">$287,500</td><td class="num">1,516</td><td class="num">$190</td><td>3 / 1.5</td><td>1978. New roof, siding, well, water heater, kitchen and baths</td></tr>
+        <tr><td>5349 Old Franklin</td><td>Sold Nov 2025</td><td class="num">$305,000</td><td class="num">2,276</td><td class="num">$134</td><td>4 / 2.5</td><td>1974. Larger four-bedroom colonial</td></tr>
+        <tr><td>5446 Old Franklin</td><td>Pending</td><td class="num">$285,000 list</td><td class="num">2,070</td><td class="num">$138</td><td>4 / 2.5</td><td>1978. Partly finished basement, roof 2023</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">Square footage is above grade. Your row uses the starting list price. Dates and prices come from the public listing records linked under Sources.</p>
+
+  <h3>What this means for you</h3>
+  <ul>
+    <li><b>5522 is your twin:</b> same 1,740 sq ft, same street, with fresh floors, a 2022 roof and a 2023 well. With similar updates, your home lands near $285,000.</li>
+    <li><b>5409 shows the ceiling:</b> a full renovation brought $305,000 and a bidding situation.</li>
+    <li><b>Dated homes sell lower:</b> one with original kitchen, baths and an older roof would likely trade in the $265,000 to $275,000 range.</li>
+  </ul>
+</section>
+
+<section id="market">
+  <p class="kicker"><b>04</b> Market</p>
+  <h2>Priced right, homes here sell at full price</h2>
+  <div class="stats">
+    <div class="stat"><span>48439 median sale</span><strong>$301,000</strong><small>Redfin, July 2026</small></div>
+    <div class="stat"><span>Sale to list</span><strong>99.8%</strong><small>Redfin, July 2026</small></div>
+    <div class="stat"><span>Street sales, past year</span><strong>4</strong><small>$284,900 to $305,000</small></div>
+    <div class="stat"><span>Best result</span><strong>+7%</strong><small>5409 over its asking price</small></div>
+  </div>
+  <p>In this zip code, buyers are paying close to asking. The homes that sold over asking were updated and priced at or just under $285,000. That price point brings the most buyers and lets competition push the price up.</p>
+  <p>We would go live the week after Thanksgiving. Fewer homes come on the market in late fall, so a well-priced listing faces less competition from other sellers.</p>
+</section>
+
+<section id="answers">
+  <p class="kicker"><b>05</b> Your answers</p>
+  <h2>Tell me about the house. Your answers set the price and finish the listing.</h2>
+  <p class="point">Tap the answers that fit and type in anything else. The estimate on the right updates as you go. When you are done, press <b>Send my answers to Kevin</b>.</p>
+  <p class="note">Your answers save on this device as you go, so you can come back later and finish. If you are not sure about a year, a best guess is fine; I confirm everything before it goes in the MLS.</p>
+
+  <div class="qgrid">
+    <form id="qform" class="questions" novalidate>
+
+      <p class="qhead">The rooms</p>
+
+      <fieldset class="q" data-q="beds">
+        <legend>How many bedrooms?</legend>
+        <label><input type="radio" name="beds" value="-6000" data-label="2"><span>2</span></label>
+        <label><input type="radio" name="beds" value="0" data-label="3"><span>3</span></label>
+        <label><input type="radio" name="beds" value="6000" data-label="4"><span>4</span></label>
+        <label><input type="radio" name="beds" value="8000" data-label="5 or more"><span>5 or more</span></label>
+      </fieldset>
+
+      <fieldset class="q" data-q="baths">
+        <legend>How many bathrooms?</legend>
+        <p class="hint">A half bath is a toilet and sink, no tub or shower.</p>
+        <label><input type="radio" name="baths" value="0" data-label="1.5"><span>1 full, 1 half</span></label>
+        <label><input type="radio" name="baths" value="4000" data-label="2 full"><span>2 full</span></label>
+        <label><input type="radio" name="baths" value="6000" data-label="2.5"><span>2 full, 1 half</span></label>
+        <label><input type="radio" name="baths" value="8000" data-label="3 or more full"><span>3 or more full</span></label>
+      </fieldset>
+
+      <fieldset class="q text" data-t="layout">
+        <legend>Where are the bedrooms and baths?</legend>
+        <p class="hint">For example: "3 bedrooms and 1 full bath upstairs, half bath on the main floor."</p>
+        <label class="field wide"><span>Bedrooms and baths by floor</span><input type="text" name="layout" maxlength="200"></label>
+      </fieldset>
+
+      <fieldset class="q" data-q="basement">
+        <legend>What is the basement like?</legend>
+        <label><input type="radio" name="basement" value="-5000" data-label="Crawl space or none"><span>Crawl space or none</span></label>
+        <label><input type="radio" name="basement" value="0" data-label="Full, unfinished"><span>Full, unfinished</span></label>
+        <label><input type="radio" name="basement" value="5000" data-label="Partly finished"><span>Partly finished</span></label>
+        <label><input type="radio" name="basement" value="10000" data-label="Mostly finished"><span>Mostly finished</span></label>
+      </fieldset>
+
+      <fieldset class="q" data-q="bsmtextra">
+        <legend>Does the basement have any of these?</legend>
+        <p class="hint">Choose all that apply.</p>
+        <label class="multi"><input type="checkbox" name="bsmtextra" value="0" data-label="Sump pump"><span>Sump pump</span></label>
+        <label class="multi"><input type="checkbox" name="bsmtextra" value="0" data-label="Egress window"><span>Egress window</span></label>
+        <label class="multi"><input type="checkbox" name="bsmtextra" value="0" data-label="Bathroom in the basement"><span>Bathroom</span></label>
+        <label class="multi"><input type="checkbox" name="bsmtextra" value="0" data-label="Has had water in it"><span>Has had water in it</span></label>
+      </fieldset>
+
+      <fieldset class="q" data-q="floors">
+        <legend>What is on the floors?</legend>
+        <p class="hint">Choose all that apply. Real wood and wood-look plank are different, and buyers ask.</p>
+        <label class="multi"><input type="checkbox" name="floors" value="0" data-label="Real hardwood"><span>Real hardwood</span></label>
+        <label class="multi"><input type="checkbox" name="floors" value="0" data-label="Wood-look vinyl plank"><span>Wood-look vinyl plank</span></label>
+        <label class="multi"><input type="checkbox" name="floors" value="0" data-label="Carpet"><span>Carpet</span></label>
+        <label class="multi"><input type="checkbox" name="floors" value="0" data-label="Tile"><span>Tile</span></label>
+      </fieldset>
+
+      <fieldset class="q" data-q="fireplace">
+        <legend>The county shows one fireplace. What kind is it?</legend>
+        <label><input type="radio" name="fireplace" value="0" data-label="Wood burning"><span>Wood burning</span></label>
+        <label><input type="radio" name="fireplace" value="0" data-label="Gas"><span>Gas</span></label>
+        <label><input type="radio" name="fireplace" value="0" data-label="Not used or blocked"><span>Not used or blocked</span></label>
+        <label><input type="radio" name="fireplace" value="0" data-label="No fireplace"><span>No fireplace</span></label>
+      </fieldset>
+
+      <p class="qhead">Updates</p>
+
+      <fieldset class="q" data-q="kitchen">
+        <legend>How updated is the kitchen?</legend>
+        <label><input type="radio" name="kitchen" value="-8000" data-label="Mostly original"><span>Mostly original</span></label>
+        <label><input type="radio" name="kitchen" value="0" data-label="Some updates"><span>Some updates<small>Counters, paint, appliances</small></span></label>
+        <label><input type="radio" name="kitchen" value="10000" data-label="Fully remodeled"><span>Fully remodeled<small>Cabinets and counters</small></span></label>
+      </fieldset>
+
+      <fieldset class="q" data-q="bathsupd">
+        <legend>How updated are the bathrooms?</legend>
+        <label><input type="radio" name="bathsupd" value="-4000" data-label="Mostly original"><span>Mostly original</span></label>
+        <label><input type="radio" name="bathsupd" value="0" data-label="Some updates"><span>Some updates</span></label>
+        <label><input type="radio" name="bathsupd" value="5000" data-label="Fully remodeled"><span>Fully remodeled</span></label>
+      </fieldset>
+
+      <fieldset class="q" data-q="roof">
+        <legend>When was the roof last replaced?</legend>
+        <label><input type="radio" name="roof" value="-6000" data-label="Before 2010"><span>Before 2010</span></label>
+        <label><input type="radio" name="roof" value="0" data-label="2010 to 2019"><span>2010 to 2019</span></label>
+        <label><input type="radio" name="roof" value="3000" data-label="2020 or later"><span>2020 or later</span></label>
+        <label><input type="radio" name="roof" value="0" data-label="Not sure"><span>Not sure</span></label>
+      </fieldset>
+
+      <fieldset class="q" data-q="hvac">
+        <legend>When was the furnace last replaced?</legend>
+        <label><input type="radio" name="hvac" value="-3000" data-label="Before 2010"><span>Before 2010</span></label>
+        <label><input type="radio" name="hvac" value="0" data-label="2010 to 2019"><span>2010 to 2019</span></label>
+        <label><input type="radio" name="hvac" value="2000" data-label="2020 or later"><span>2020 or later</span></label>
+        <label><input type="radio" name="hvac" value="0" data-label="Not sure"><span>Not sure</span></label>
+      </fieldset>
+
+      <fieldset class="q" data-q="ac">
+        <legend>Does the house have central air conditioning?</legend>
+        <label><input type="radio" name="ac" value="0" data-label="Yes"><span>Yes</span></label>
+        <label><input type="radio" name="ac" value="-4000" data-label="No"><span>No</span></label>
+      </fieldset>
+
+      <fieldset class="q text" data-t="years">
+        <legend>Any exact years you know?</legend>
+        <p class="hint">Leave blank anything you don't know.</p>
+        <label class="field"><span>Roof</span><input type="text" name="y_roof" maxlength="20" inputmode="numeric"></label>
+        <label class="field"><span>Furnace</span><input type="text" name="y_furnace" maxlength="20" inputmode="numeric"></label>
+        <label class="field"><span>Air conditioner</span><input type="text" name="y_ac" maxlength="20" inputmode="numeric"></label>
+        <label class="field"><span>Water heater</span><input type="text" name="y_wh" maxlength="20" inputmode="numeric"></label>
+        <label class="field"><span>Windows</span><input type="text" name="y_windows" maxlength="20" inputmode="numeric"></label>
+        <label class="field"><span>Electrical panel</span><input type="text" name="y_panel" maxlength="20" inputmode="numeric"></label>
+        <label class="field"><span>Well or well pump</span><input type="text" name="y_well" maxlength="20" inputmode="numeric"></label>
+        <label class="field"><span>Siding</span><input type="text" name="y_siding" maxlength="20" inputmode="numeric"></label>
+      </fieldset>
+
+      <p class="qhead">Outside and systems</p>
+
+      <fieldset class="q" data-q="garage">
+        <legend>What is the garage?</legend>
+        <label><input type="radio" name="garage" value="-8000" data-label="1-car attached"><span>1-car attached</span></label>
+        <label><input type="radio" name="garage" value="0" data-label="2-car attached"><span>2-car attached</span></label>
+        <label><input type="radio" name="garage" value="4000" data-label="3-car or larger"><span>3-car or larger</span></label>
+        <label><input type="radio" name="garage" value="-10000" data-label="Detached or none"><span>Detached or none</span></label>
+      </fieldset>
+
+      <fieldset class="q" data-q="water">
+        <legend>Where does the water come from?</legend>
+        <p class="hint">Many homes on Old Franklin have a private well with township sewer.</p>
+        <label><input type="radio" name="water" value="0" data-label="Private well"><span>Private well</span></label>
+        <label><input type="radio" name="water" value="0" data-label="Township water"><span>Township water</span></label>
+        <label><input type="radio" name="water" value="0" data-label="Not sure"><span>Not sure</span></label>
+      </fieldset>
+
+      <fieldset class="q" data-q="outside">
+        <legend>Which of these does the property have?</legend>
+        <p class="hint">Choose all that apply.</p>
+        <label class="multi"><input type="checkbox" name="outside" value="2000" data-label="Fenced yard"><span>Fenced yard</span></label>
+        <label class="multi"><input type="checkbox" name="outside" value="2000" data-label="Deck"><span>Deck</span></label>
+        <label class="multi"><input type="checkbox" name="outside" value="1000" data-label="Patio"><span>Patio</span></label>
+        <label class="multi"><input type="checkbox" name="outside" value="0" data-label="Covered front porch"><span>Covered front porch</span></label>
+        <label class="multi"><input type="checkbox" name="outside" value="3000" data-label="Generator hookup or generator"><span>Generator or hookup</span></label>
+        <label class="multi"><input type="checkbox" name="outside" value="0" data-label="Water softener"><span>Water softener</span></label>
+      </fieldset>
+
+      <fieldset class="q text" data-t="outbuildings">
+        <legend>Sheds, outbuildings and special wiring</legend>
+        <p class="hint">How many outbuildings are there, what is each one, and does each have electricity? Also tell me about any 240-volt outlet, subpanel or generator hookup.</p>
+        <label class="field"><span>Number of outbuildings</span><input type="text" name="ob_count" maxlength="10" inputmode="numeric"></label>
+        <label class="field"><span>Fence: full, partial or none</span><input type="text" name="fence" maxlength="60"></label>
+        <label class="field wide"><span>What each outbuilding is, its size, and whether it has electric</span><textarea name="ob_desc" rows="2" maxlength="600"></textarea></label>
+        <label class="field wide"><span>Special electrical (240V outlet, subpanel, generator hookup)</span><input type="text" name="electrical" maxlength="200"></label>
+      </fieldset>
+
+      <p class="qhead">What stays and what goes</p>
+
+      <fieldset class="q" data-q="appliances">
+        <legend>Which appliances stay with the house?</legend>
+        <p class="hint">Choose all that apply.</p>
+        <label class="multi"><input type="checkbox" name="appliances" value="0" data-label="Refrigerator"><span>Refrigerator</span></label>
+        <label class="multi"><input type="checkbox" name="appliances" value="0" data-label="Range / oven"><span>Range / oven</span></label>
+        <label class="multi"><input type="checkbox" name="appliances" value="0" data-label="Dishwasher"><span>Dishwasher</span></label>
+        <label class="multi"><input type="checkbox" name="appliances" value="0" data-label="Microwave"><span>Microwave</span></label>
+        <label class="multi"><input type="checkbox" name="appliances" value="0" data-label="Washer"><span>Washer</span></label>
+        <label class="multi"><input type="checkbox" name="appliances" value="0" data-label="Dryer"><span>Dryer</span></label>
+      </fieldset>
+
+      <fieldset class="q" data-q="laundry">
+        <legend>Where is the laundry?</legend>
+        <label><input type="radio" name="laundry" value="0" data-label="Basement"><span>Basement</span></label>
+        <label><input type="radio" name="laundry" value="0" data-label="Main floor"><span>Main floor</span></label>
+        <label><input type="radio" name="laundry" value="0" data-label="Upper floor"><span>Upper floor</span></label>
+      </fieldset>
+
+      <fieldset class="q" data-q="warranty">
+        <legend>Would you offer the buyer a one-year home warranty?</legend>
+        <p class="hint">It usually costs a few hundred dollars at closing and can make buyers more comfortable with an older home. We can talk it through.</p>
+        <label><input type="radio" name="warranty" value="0" data-label="Yes"><span>Yes</span></label>
+        <label><input type="radio" name="warranty" value="0" data-label="No"><span>No</span></label>
+        <label><input type="radio" name="warranty" value="0" data-label="Let's talk"><span>Let's talk</span></label>
+      </fieldset>
+
+      <fieldset class="q" data-q="issues">
+        <legend>Is there anything a buyer's inspector might find?</legend>
+        <p class="hint">A leak, water in the basement, well trouble or anything else. Knowing early lets us plan for it; it does not change the estimate here.</p>
+        <label><input type="radio" name="issues" value="0" data-label="Nothing I know of"><span>Nothing I know of</span></label>
+        <label><input type="radio" name="issues" value="0" data-label="Possibly, let's talk"><span>Possibly<small>Let's talk</small></span></label>
+        <label><input type="radio" name="issues" value="0" data-label="Yes, explained below"><span>Yes<small>I'll explain below</small></span></label>
+      </fieldset>
+
+      <fieldset class="q contact">
+        <legend>About you, and anything else</legend>
+        <label class="field"><span>Your names</span><input type="text" name="name" autocomplete="name" maxlength="80"></label>
+        <label class="field"><span>Best phone numbers</span><input type="text" name="contact" autocomplete="tel" maxlength="120"></label>
+        <label class="field wide"><span>Mailing address, since the house is vacant</span><input type="text" name="mailing" autocomplete="street-address" maxlength="200"></label>
+        <label class="field wide"><span>What should buyers know about this house? What do you love about it?</span><textarea name="highlights" rows="3" maxlength="1500"></textarea></label>
+        <label class="field wide"><span>Anything else: other updates, repairs, items that stay or go, questions</span><textarea name="note" rows="3" maxlength="1500"></textarea></label>
+        <label class="hp" aria-hidden="true">Leave this empty<input type="text" name="website" tabindex="-1" autocomplete="off"></label>
+      </fieldset>
+    </form>
+
+    <aside class="estimate" aria-live="polite">
+      <p class="e-label">Your estimate</p>
+      <p class="e-value" id="eValue">About $282,000</p>
+      <p class="e-sub">Market value</p>
+      <div class="e-row"><span>Suggested list price</span><strong id="eList">$284,900</strong></div>
+      <div class="e-row"><span>Expected sale</span><strong id="eRange">$278,000 to $288,000</strong></div>
+      <div class="e-row small"><span>Change from the start</span><strong id="eDelta">+$0</strong></div>
+      <p class="e-progress" id="eProgress">0 questions answered</p>
+      <button type="button" class="send" data-send>Send my answers to Kevin</button>
+      <button type="button" class="ghost" data-download>Download a copy</button>
+      <p class="e-status" data-status role="status"></p>
+      <a class="mailto" data-mail hidden>Or send them by email</a>
+    </aside>
+  </div>
+  <div class="mobile-send">
+    <button type="button" class="send" data-send>Send my answers to Kevin</button>
+    <button type="button" class="ghost" data-download>Download a copy</button>
+    <p class="e-status" data-status role="status"></p>
+    <a class="mailto" data-mail hidden>Or send them by email</a>
+  </div>
+</section>
+
+<section id="price">
+  <p class="kicker"><b>06</b> Price</p>
+  <h2>Three list prices and what each one is likely to do</h2>
+  <p class="point">My starting recommendation is $284,900. That matches what the same-size home next door sold for, and it puts you in the price range where homes on your street have drawn several offers.</p>
+  <div class="options">
+    <div class="option"><span class="tag">If it needs work</span><strong>$274,900</strong><p class="meta"><span class="nw">Expect $265,000 to $275,000</span></p><p>Original kitchen and baths, or a roof or furnace near the end of its life.</p></div>
+    <div class="option rec"><span class="tag">Starting point</span><strong>$284,900</strong><p class="meta"><span class="nw">Expect $278,000 to $288,000</span></p><p>Average condition with some updates, like 5522 Old Franklin.</p></div>
+    <div class="option"><span class="tag">If it's updated</span><strong>$299,900</strong><p class="meta"><span class="nw">Expect $295,000 to $305,000</span></p><p>Renovated kitchen and baths and a newer roof, like 5409 Old Franklin.</p></div>
+  </div>
+  <p>Why not start higher: no Old Franklin colonial has sold above $305,000, and the largest four-bedroom homes on the street sold or are pending at $285,000 to $305,000. An appraiser will use these same sales. Pricing at $284,900 or just under gives buyers a reason to compete rather than negotiate down.</p>
+  <p>We set the final number together once I have seen the house and your answers.</p>
+</section>
+
+<section id="next">
+  <p class="kicker"><b>07</b> Next steps</p>
+  <h2>Live the week after Thanksgiving</h2>
+  <ol class="timeline">
+    <li><span class="when">Now</span><span class="what">Answer the questions above and send them. A best guess is fine for any year you don't know.</span></li>
+    <li><span class="when">Next week</span><span class="what">Photos. Have the house clean, bright and empty of personal items, with all lights working.</span></li>
+    <li><span class="when">Before we go live</span><span class="what">Sign the listing paperwork, including the Seller's Disclosure and the lead-based paint form, which is required for homes built before 1978.</span></li>
+    <li><span class="when">November 27</span><span class="what">The listing goes live in the MLS, with a yard sign, Facebook and postcards.</span></li>
+    <li><span class="when">Every week</span><span class="what">I send you a report of showings, feedback and online views.</span></li>
+  </ol>
+</section>
+
+<section id="sources" class="sources">
+  <p class="kicker">Sources</p>
+  <p>Your home's details come from the Genesee County tax record through the MLS. Sale prices and dates come from the public listing records below, pulled November 20, 2026. Final numbers will be confirmed against the MLS and your answers.</p>
+  <ul>
+    <li><a href="https://www.century21.com/homes/detail/mi/grand-blanc/5522-old-franklin-rd/lid-P00800000H7iq8xHtfKdUJ47Ylaw0SNkuSANruix">5522 Old Franklin</a> and <a href="https://www.atproperties.com/5050201488/5522-old-franklin-road-grand-blanc-michigan-48439-realcomp">listing details</a></li>
+    <li><a href="https://www.exprealty.com/grand-blanc-mi-real-estate/williamsburg-farms-8/5409-old-franklin-rd">5409 Old Franklin</a></li>
+    <li><a href="https://www.lakeplace.com/listing-realcomp/20261036887-5506-old-franklin-road-grand-blanc-charter-township-michigan-48439/">5506 Old Franklin</a></li>
+    <li><a href="https://www.trulia.com/home/5349-old-franklin-rd-grand-blanc-mi-48439-73894298">5349 Old Franklin</a></li>
+    <li><a href="https://livinginmichigan.com/properties/listing/Realcomp/20261022807/Grand-Blanc-Charter-Township/5446-Old-Franklin-Road">5446 Old Franklin</a></li>
+    <li><a href="https://www.redfin.com/MI/Grand-Blanc/5236-Old-Franklin-Rd-48439/home/102577350">48439 market trends and recent Old Franklin sales on Redfin</a></li>
+  </ul>
+</section>
+
+</div>
+</main>
+
+<footer>Prepared for Cameron and Elizabeth Carr by <strong>Kevin Hershock</strong> · Berkshire Hathaway HomeServices Michigan Real Estate · November 20, 2026</footer>
+
+<script>
+/* The estimate starts from $282,000: a 1,740 sq ft Old Franklin colonial in
+   average shape, per 5522 (sold $284,900 with fresh floors, a 2022 roof and a
+   2023 well) and 5409 (sold $305,000 fully renovated). Each priced option is a
+   rough dollar change from that base; Kevin sets the final price.
+   Answers persist on this device only; "Send" posts them to /api/answers,
+   which emails Kevin, and falls back to a prefilled email if that fails.
+   "Download a copy" saves them as a text file. */
+(function () {
+  var BASE = 282000;
+  var KEY = "oldfranklin5483-answers";
+  var TO = "kevin@glazedweb.com";
+  var ADDRESS = "5483 Old Franklin Rd";
+  var form = document.getElementById("qform");
+  if (!form) return;
+  var CHOICES = Array.prototype.map.call(form.querySelectorAll("fieldset[data-q]"), function (f) { return f.dataset.q; });
+  var TEXTS = Array.prototype.filter.call(form.querySelectorAll("input[type=text], textarea"), function (el) { return el.name !== "website"; }).map(function (el) { return el.name; });
+
+  function money(n) { return "$" + Math.round(n).toLocaleString("en-US"); }
+  function to5k(n) { return Math.round(n / 5000) * 5000; }
+  function labelFor(el) {
+    var f = el.closest(".field");
+    return f ? f.querySelector("span").textContent : el.name;
+  }
+
+  function read() {
+    var a = { picks: {}, fields: {}, value: BASE };
+    CHOICES.forEach(function (q) {
+      var inputs = form.querySelectorAll('input[name="' + q + '"]:checked');
+      if (!inputs.length) return;
+      var labels = [], sum = 0;
+      inputs.forEach(function (i) { labels.push(i.dataset.label); sum += Number(i.value); });
+      a.picks[q] = labels.join(", ");
+      a.value += sum;
+    });
+    TEXTS.forEach(function (n) { var v = (form.elements[n].value || "").trim(); if (v) a.fields[n] = v; });
+    a.website = (form.elements.website.value || "").trim();
+    a.list = to5k(a.value + 3000) - 100;
+    a.low = Math.round(a.value * 0.985 / 1000) * 1000;
+    a.high = Math.round(a.value * 1.02 / 1000) * 1000;
+    return a;
+  }
+
+  function paint() {
+    var a = read();
+    var answered = Object.keys(a.picks).length + Object.keys(a.fields).length;
+    document.getElementById("eValue").textContent = "About " + money(Math.round(a.value / 1000) * 1000);
+    document.getElementById("eList").textContent = money(a.list);
+    document.getElementById("eRange").textContent = money(a.low) + " to " + money(a.high);
+    var d = Math.round((a.value - BASE) / 100) * 100;
+    document.getElementById("eDelta").textContent = (d >= 0 ? "+" : "−") + money(Math.abs(d));
+    document.getElementById("eProgress").textContent = answered + (answered === 1 ? " answer" : " answers") + " so far";
+    return a;
+  }
+
+  function save() {
+    var data = {};
+    Array.prototype.forEach.call(form.elements, function (el) {
+      if (!el.name || el.name === "website") return;
+      if (el.type === "radio" || el.type === "checkbox") { if (el.checked) (data[el.name] = data[el.name] || []).push(el.dataset.label); }
+      else data[el.name] = el.value;
+    });
+    try { localStorage.setItem(KEY, JSON.stringify(data)); } catch (e) {}
+  }
+
+  function restore() {
+    var data;
+    try { data = JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { data = null; }
+    if (!data) return;
+    Array.prototype.forEach.call(form.elements, function (el) {
+      if (!el.name || !(el.name in data)) return;
+      if (el.type === "radio" || el.type === "checkbox") el.checked = data[el.name].indexOf(el.dataset.label) !== -1;
+      else el.value = data[el.name];
+    });
+  }
+
+  function summary(a) {
+    var lines = ["Answers for " + ADDRESS, ""];
+    CHOICES.forEach(function (q) {
+      var legend = form.querySelector('[data-q="' + q + '"] legend').textContent;
+      lines.push(legend + " " + (a.picks[q] || "(not answered)"));
+    });
+    lines.push("");
+    TEXTS.forEach(function (n) { if (a.fields[n]) lines.push(labelFor(form.elements[n]) + ": " + a.fields[n]); });
+    lines.push("", "Estimated value: " + money(a.value), "Suggested list: " + money(a.list), "Expected sale: " + money(a.low) + " to " + money(a.high));
+    return lines.join("\n");
+  }
+
+  function status(msg) { document.querySelectorAll("[data-status]").forEach(function (p) { p.textContent = msg; }); }
+  function offerMail(a) {
+    var href = "mailto:" + TO + "?subject=" + encodeURIComponent(ADDRESS + " answers") + "&body=" + encodeURIComponent(summary(a));
+    document.querySelectorAll("[data-mail]").forEach(function (m) { m.href = href; m.hidden = false; });
+  }
+
+  function download() {
+    var a = paint();
+    var blob = new Blob([summary(a) + "\n"], { type: "text/plain" });
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement("a");
+    link.href = url; link.download = "5483-Old-Franklin-answers.txt";
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  function send() {
+    var a = paint();
+    if (!Object.keys(a.picks).length && !Object.keys(a.fields).length) { status("Answer a question first, or leave a note."); return; }
+    var buttons = document.querySelectorAll("[data-send]");
+    buttons.forEach(function (b) { b.disabled = true; });
+    status("Sending…");
+    var labels = {};
+    TEXTS.forEach(function (n) { labels[n] = labelFor(form.elements[n]); });
+    CHOICES.forEach(function (q) { labels[q] = form.querySelector('[data-q="' + q + '"] legend').textContent; });
+    var ctrl = typeof AbortController === "function" ? new AbortController() : null;
+    var timer = ctrl && setTimeout(function () { ctrl.abort(); }, 12000);
+    fetch("/api/answers", {
+      method: "POST",
+      signal: ctrl ? ctrl.signal : undefined,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ page: "5483", picks: a.picks, fields: a.fields, labels: labels, value: Math.round(a.value), list: a.list, low: a.low, high: a.high, name: a.fields.name || "", contact: a.fields.contact || "", note: a.fields.note || "", website: a.website })
+    }).then(function (r) {
+      clearTimeout(timer);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      status("Sent. Thank you, I will follow up soon.");
+      buttons.forEach(function (b) { b.textContent = "Send an update"; b.disabled = false; });
+    }).catch(function () {
+      clearTimeout(timer);
+      status("One more step: tap the link below to email your answers to me.");
+      offerMail(a);
+      buttons.forEach(function (b) { b.disabled = false; });
+    });
+  }
+
+  restore();
+  paint();
+  form.addEventListener("input", function () { paint(); save(); });
+  form.addEventListener("change", function () { paint(); save(); });
+  document.querySelectorAll("[data-send]").forEach(function (b) { b.addEventListener("click", send); });
+  document.querySelectorAll("[data-download]").forEach(function (b) { b.addEventListener("click", download); });
+})();
+</script>
+</body>
+</html>

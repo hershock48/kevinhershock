@@ -8,7 +8,9 @@
 //
 // Without a key this answers 503, and the page falls back to a prefilled email.
 
-const PAGES = { "130Turnberry": "130 Turnberry Ln" };
+// Pages whose answers this endpoint accepts. A page without its own labels
+// sends them with the post (questionnaire pages with free-text fields).
+const PAGES = { "130Turnberry": "130 Turnberry Ln", "5483": "5483 Old Franklin Rd" };
 const LABELS = {
   lower: "Finished lower level",
   bath: "Lower-level bathroom",
@@ -54,7 +56,18 @@ module.exports = async (req, res) => {
   if (!key) return res.status(503).json({ ok: false, reason: "not configured" });
 
   const picks = body.picks && typeof body.picks === "object" ? body.picks : {};
-  const rows = Object.keys(LABELS).map((k) => [LABELS[k], clip(picks[k], 200) || "(not answered)"]);
+  let rows;
+  if (body.page === "130Turnberry") {
+    rows = Object.keys(LABELS).map((k) => [LABELS[k], clip(picks[k], 200) || "(not answered)"]);
+  } else {
+    // Labels come from the page itself; keys and labels are clipped and only
+    // ever rendered as escaped text.
+    const labels = body.labels && typeof body.labels === "object" ? body.labels : {};
+    const fields = body.fields && typeof body.fields === "object" ? body.fields : {};
+    const skip = { name: 1, contact: 1, note: 1 };
+    const keys = Object.keys(picks).concat(Object.keys(fields)).filter((k) => !skip[k]).slice(0, 80);
+    rows = keys.map((k) => [clip(labels[k] || k, 160), clip(k in picks ? picks[k] : fields[k], 1500) || "(not answered)"]);
+  }
   const name = clip(body.name, 80);
   const contact = clip(body.contact, 120);
   const note = clip(body.note, 1500);
